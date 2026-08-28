@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+/*
+ * Design direction (Application Management.md §8): minimal, calm, highly
+ * legible, action-oriented, low visual noise, hierarchy over decoration.
+ * A personal operating console — not a conventional ATS.
+ */
+:root {
+  --background: #fbfbfa;
+  --surface: #ffffff;
+  --surface-muted: #f5f5f4;
+  --foreground: #1c1917;
+  --muted: #78716c;
+  --subtle: #a8a29e;
+  --border: #e7e5e4;
+  --border-strong: #d6d3d1;
+  --accent: #1c1917;
+  --positive: #15803d;
+  --positive-bg: #f0fdf4;
+  --warning: #b45309;
+  --warning-bg: #fffbeb;
+  --negative: #b91c1c;
+  --negative-bg: #fef2f2;
+  --info: #1d4ed8;
+  --info-bg: #eff6ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0c0a09;
+    --surface: #1c1917;
+    --surface-muted: #292524;
+    --foreground: #f5f5f4;
+    --muted: #a8a29e;
+    --subtle: #78716c;
+    --border: #292524;
+    --border-strong: #44403c;
+    --accent: #f5f5f4;
+    --positive: #4ade80;
+    --positive-bg: #14261a;
+    --warning: #fbbf24;
+    --warning-bg: #2a1f08;
+    --negative: #f87171;
+    --negative-bg: #2a1010;
+    --info: #93c5fd;
+    --info-bg: #10203a;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-positive: var(--positive);
+  --color-positive-bg: var(--positive-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-negative: var(--negative);
+  --color-negative-bg: var(--negative-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* Rendered markdown for resumes, cover letters and score reports. */
+.prose-doc {
+  line-height: 1.65;
+}
+.prose-doc h1 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+  letter-spacing: -0.01em;
+}
+.prose-doc h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+.prose-doc h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 1rem 0 0.25rem;
+}
+.prose-doc p {
+  margin: 0 0 0.75rem;
+}
+.prose-doc ul {
+  margin: 0 0 0.75rem;
+  padding-left: 1.1rem;
+  list-style: disc;
+}
+.prose-doc li {
+  margin-bottom: 0.25rem;
+}
+.prose-doc strong {
+  font-weight: 600;
+}
+.prose-doc hr {
+  margin: 1.25rem 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.prose-doc em {
+  color: var(--muted);
+  font-style: italic;
+}

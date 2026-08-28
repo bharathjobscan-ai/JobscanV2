@@ -1,0 +1,51 @@
+import { z } from "zod";
+
+/**
+ * Server-side environment. Never import this from a client component.
+ *
+ * DATABASE_URL vs DIRECT_URL: Supabase exposes a transaction pooler (port 6543)
+ * and a direct connection (port 5432). Serverless runtime uses the pooler with
+ * `prepare: false`; drizzle-kit migrations need the direct connection.
+ */
+const EnvSchema = z.object({
+  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  DIRECT_URL: z.string().min(1).optional(),
+
+  /** Password gate for the deployed app (D3). Optional in local development. */
+  APP_PASSWORD: z.string().min(1).optional(),
+
+  /** D4. `mock` needs no Claude Code; `claude_local` requires the worker running. */
+  AI_PROVIDER: z.enum(["mock", "claude_local"]).default("mock"),
+
+  /** D5 — per-task models, deliberately configurable rather than hardcoded. */
+  MODEL_SCORING: z.string().default("claude-sonnet-5"),
+  MODEL_CV: z.string().default("claude-opus-5"),
+  AI_EFFORT: z.enum(["low", "medium", "high", "xhigh", "max"]).default("high"),
+
+  /**
+   * C1 — the PRD says 2 weeks, Application Analytics §6 says 21 days.
+   * Single knob, defaulting to 21. Drives the Pending view and, later, Ghost Rate.
+   */
+  DEEMED_PENDING_DAYS: z.coerce.number().int().positive().default(21),
+});
+
+export type Env = z.infer<typeof EnvSchema>;
+
+let cached: Env | null = null;
+
+export function getEnv(): Env {
+  if (cached) return cached;
+
+  const parsed = EnvSchema.safeParse(process.env);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .map((i) => `  ${i.path.join(".") || "(root)"}: ${i.message}`)
+      .join("\n");
+    throw new Error(
+      `Invalid environment configuration:\n${detail}\n\nCopy .env.example to .env.local and fill it in.`,
+    );
+  }
+
+  cached = parsed.data;
+  return cached;
+}
