@@ -36,7 +36,14 @@ let cached: Env | null = null;
 export function getEnv(): Env {
   if (cached) return cached;
 
-  const parsed = EnvSchema.safeParse(process.env);
+  // `.env.example` ships optional keys as FOO="" so they are visible but unset.
+  // Without this, an empty string reads as "present but invalid" rather than
+  // absent, and a fresh checkout fails on APP_PASSWORD before it ever starts.
+  const source = Object.fromEntries(
+    Object.entries(process.env).filter(([, value]) => value !== ""),
+  );
+
+  const parsed = EnvSchema.safeParse(source);
   if (!parsed.success) {
     const detail = parsed.error.issues
       .map((i) => `  ${i.path.join(".") || "(root)"}: ${i.message}`)

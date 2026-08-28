@@ -10,11 +10,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:push": "drizzle-kit push",
+    "db:migrate": "drizzle-kit migrate",
     "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "worker": "node workers/ai/run.mjs",
-    "worker:once": "node workers/ai/run.mjs --once"
+    "worker:once": "node workers/ai/run.mjs --once",
+    "test:integration": "vitest run --config vitest.integration.config.mts"
   },
   "dependencies": {
     "date-fns": "^4.4.0",

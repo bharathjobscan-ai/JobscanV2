@@ -13,21 +13,34 @@ fetching and analytics are later phases.
 
 ### 1. Supabase
 
-Create a free project at [supabase.com](https://supabase.com). From
-**Project Settings → Database → Connection string**, copy both:
+Create a free project at [supabase.com](https://supabase.com), then use the
+**Connect** button in the top bar of the project dashboard (not Project
+Settings — it moved). Copy two strings from that modal:
 
-- the **transaction pooler** URL (port `6543`) → `DATABASE_URL`
-- the **direct** connection (port `5432`) → `DIRECT_URL`
+| Tab | Port | → |
+|---|---|---|
+| Transaction pooler | `6543` | `DATABASE_URL` |
+| Session pooler | `5432` | `DIRECT_URL` |
 
 Two strings, not one: the app runs on the pooler, but `drizzle-kit` migrations
-need a direct connection. DDL through the pooler fails in confusing ways.
+need a session/direct connection. DDL through the transaction pooler fails in
+confusing ways.
+
+Use the **Session pooler** for `DIRECT_URL`, not the "Direct connection" tab —
+`db.<ref>.supabase.co` is IPv6-only on new free projects, so it times out on
+most home ISPs.
+
+> **Percent-encode the password.** The string contains a literal
+> `[YOUR-PASSWORD]` placeholder you must replace. If your password contains
+> `%`, `@`, `/`, `#`, `?` or `:`, encode it — `%` becomes `%25`, `@` becomes
+> `%40`. An unencoded `%` fails with a bare `URIError: URI malformed`.
 
 ### 2. Configure and start
 
 ```bash
 cp .env.example .env.local     # then fill in both connection strings
 npm install
-npm run db:push                # creates the six tables
+npm run db:migrate             # creates the six tables
 npm run dev                    # http://localhost:3000
 ```
 
@@ -100,30 +113,28 @@ Unit tests need no database:
 npm test && npm run typecheck && npm run build
 ```
 
-Against a real database, walk this once:
+The database-backed checklist is automated. It seeds the fixture, asserts each
+behaviour, and cleans up after itself — scoped to the fixture companies, so it
+is safe to run against a database holding real applications:
 
-1. **Schema** — `npm run db:push`, confirm six tables and the two unique indexes
-   on `raw_jobs`.
-2. **Upload** — `tests/fixtures/sample-jobs.csv` (10 rows) should give
-   **7 inserted · 1 duplicate · 2 rejected**, with reasons. The Monzo row
-   imports flagged *Incomplete* with generation disabled.
-3. **Idempotency** — re-upload the same file: **0 inserted · 10 duplicate**, no
-   new applications.
-4. **Views** — the five tabs' counts sum to the total. Back-date an `applied_at`
-   past `DEEMED_PENDING_DAYS` and confirm it moves from Active to Pending with
-   no stored status change.
-5. **Lifecycle** — drive one application `ready_to_apply → applied →
-   shortlisted → interview → offer`. The timeline should show one event per
-   transition, and attempt 1 should carry the outcome.
-6. **Attempts** — record a second attempt with a different email; both persist
-   independently.
-7. **Mock AI** — trigger all three actions; documents persist, version and
-   download.
-8. **Real AI** — with the worker running, trigger a score. The `ai_jobs` row
-   goes `queued → running → succeeded`, then settles into a document and a
-   score. Kill the worker mid-run: the row is retried, not lost.
-9. **Deploy** — a wrong password is rejected; the dashboard reads live data with
-   the worker offline.
+```bash
+npm run test:integration
+```
+
+It covers: upload counts (**7 inserted · 1 duplicate · 2 rejected**), per-row
+rejection reasons, the incomplete-description flag, auto-created applications
+(D1), idempotent re-upload, view partitioning, derived `deemed_pending` without
+a stored status change, the full lifecycle with one event per transition,
+independent attempts with their own emails and outcomes, mock generation of all
+three documents, version-on-regenerate, and cascade deletes.
+
+Two steps still need a human:
+
+- **Real AI** — with the worker running, trigger a score. The `ai_jobs` row goes
+  `queued → running → succeeded`, then settles into a document and a score. Kill
+  the worker mid-run: the row is retried, not lost.
+- **Deploy** — a wrong password is rejected; the dashboard reads live data with
+  the worker offline.
 
 ---
 
@@ -143,7 +154,8 @@ Against a real database, walk this once:
 |---|---|
 | `npm run dev` | Local app |
 | `npm run worker` | Local Claude Code worker |
-| `npm run db:push` | Apply schema |
+|  `npm run db:migrate` | Apply schema |
 | `npm run db:studio` | Browse the data |
-| `npm test` | Unit tests |
+| `npm test` | Unit tests (no database) |
+| `npm run test:integration` | Database-backed verification |
 | `npm run typecheck` / `npm run build` | |
