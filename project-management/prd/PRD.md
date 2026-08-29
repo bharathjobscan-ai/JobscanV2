@@ -1,10 +1,23 @@
 # JobScan V2 — Product Requirements Document
 
-**Current version:** 1.3 · **Last updated:** 2026-08-29 · **Owner:** Bharath Raghu
+**Current version:** 1.4 · **Last updated:** 2026-08-29 · **Owner:** Bharath Raghu
 
 ---
 
 ## Document control
+
+**Version 1.4 — 2026-08-29 — Document deliverable format**
+
+- CV and cover letter are delivered as **.docx**, rendered on download from the
+  stored markdown. Nothing is persisted: storage growth is zero and template
+  fixes reach every document already generated.
+- .docx over PDF because it is the format ATS parsers handle most reliably, and
+  the CVG skill names DOCX the canonical deliverable.
+- Layout lives in application code, not in the model's output. Asking Claude for
+  formatted markup would cost roughly 3x the output tokens and drift between
+  runs; formatting is deterministic work.
+- Added JSV2S1126 (Phase 2): accept recommendations before download, then persist
+  the .docx to Supabase Storage.
 
 **Version 1.3 — 2026-08-29 — Pass G scope clarified**
 
@@ -253,6 +266,26 @@ sign-up, no roles.
 
 All database access is server-side through Drizzle. `supabase-js` is not used for
 data access, so Supabase keys never reach the browser.
+
+### 9.8 Document generation (added in v1.4)
+
+Claude drafts the CV and cover letter as markdown. The application renders the
+final **.docx** in `lib/documents/`, applying the constraints in
+`prompts/cvg/SKILL.md` exactly: single column, no tables or text boxes, A4,
+Calibri, body 10-11pt, bullets 9.5-10pt calibrated to hold one page, 0.6in
+margins, no header or footer.
+
+Rendering happens **on download**; no binary is stored. Storage growth is zero,
+and a template improvement applies retroactively to every document already
+generated.
+
+The skill targets Claude.ai, where a docx skill and a file-presentation tool
+exist. Neither exists in the worker, so the prompt carries a delivery override
+telling Claude to return markdown. The skill's intent is unchanged: DOCX is the
+canonical deliverable, markdown the drafting stage.
+
+Persisting the produced file to Supabase Storage, after a review-and-accept
+step, is JSV2S1126 in Phase 2.
 
 ### 9.7 Token accounting (added in v1.2)
 

@@ -8,6 +8,63 @@ version of the PRD always corresponds to a known state of the backlog.
 
 ---
 
+## v1.4 — 2026-08-29 — .docx deliverable
+
+### Decision: documents are rendered, not stored
+
+CV and cover letter are generated as **.docx on download** from the stored
+markdown. Nothing is persisted, so storage growth is zero and template fixes
+reach every document ever generated.
+
+Chosen over storing binaries because the files are small, regenerating costs
+milliseconds, and the alternative adds a bucket, orphaned-file management and no
+retroactive fixes. Google Drive / OneDrive was assessed and rejected for Phase 1:
+OAuth flow, refresh-token handling and API quota is heavy machinery for a
+single-user tool.
+
+**.docx only, not PDF.** It is the format ATS parsers handle most reliably, and
+`prompts/cvg/SKILL.md` names DOCX the canonical deliverable. PDF was verified as
+technically viable (pdfkit, real text layer) but adds a second renderer for a
+format portals accept less reliably.
+
+### Token impact
+
+Claude drafts markdown; the template does layout. Asking the model for formatted
+markup instead would cost roughly 3x the output tokens (~1,000 vs ~3,000 per CV)
+and drift between runs. Formatting is deterministic work, so it belongs in code.
+
+### Added
+
+- `lib/documents/parse.ts` — markdown to a block structure, with density
+  calibration that keeps the CV to one A4 page. Steps font down only as content
+  grows and never below 9pt, as the skill requires.
+- `lib/documents/docx.ts` — renderer honouring the skill's constraints exactly:
+  single column, no tables or text boxes, A4, Calibri, body 10-11pt, bullets
+  9.5-10pt, 0.6in margins, no header or footer. Filenames follow the skill's
+  convention, `CV_Bharath_Raghu_[Company]_[Role]_[YYYYMMDD].docx`.
+- 15 tests covering parsing, density rules, the filename convention, and text
+  extraction from the generated .docx as an ATS would perform it.
+
+### Changed
+
+- The download route renders .docx on demand; `?format=md` returns the draft.
+  Score reports stay markdown - they are analysis, not an application
+  deliverable.
+- **Prompt delivery override.** The CVG skill instructs Claude to use a docx
+  skill at `/mnt/skills` and a present_files tool, neither of which exists in the
+  worker. The prompt now tells Claude to return markdown and states that the
+  application renders the .docx under the skill's own constraints. The skill's
+  intent is preserved: DOCX canonical, markdown intermediate.
+
+### Backlog
+
+- **Added JSV2S1126** (Phase 2) — review and accept CV/CL recommendations before
+  download. Accept wholly or partially, regenerate the markdown revision, then
+  persist the .docx to Supabase Storage on download so the submitted file is
+  retained.
+
+---
+
 ## v1.3 — 2026-08-29 — Backlog additions, docx pipeline removed
 
 ### Backlog

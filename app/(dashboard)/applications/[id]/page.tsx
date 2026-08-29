@@ -227,12 +227,22 @@ export default async function ApplicationDetailPage({
                   action={
                     <div className="flex items-center gap-2">
                       {doc ? (
-                        <a
-                          href={`/api/documents/${doc.id}`}
-                          className="text-xs text-muted underline underline-offset-2 hover:text-foreground"
-                        >
-                          Download
-                        </a>
+                        <>
+                          <a
+                            href={`/api/documents/${doc.id}`}
+                            className="text-xs font-medium underline underline-offset-2 hover:text-foreground"
+                            title="Rendered to the CVG formatting rules: one-page A4, single column, no tables"
+                          >
+                            Download .docx
+                          </a>
+                          <a
+                            href={`/api/documents/${doc.id}?format=md`}
+                            className="text-xs text-subtle underline underline-offset-2 hover:text-foreground"
+                            title="Raw draft"
+                          >
+                            .md
+                          </a>
+                        </>
                       ) : null}
                       <GenerateButton
                         applicationId={application.id}
@@ -409,7 +419,7 @@ export default async function ApplicationDetailPage({
                       href={`/api/documents/${doc.id}`}
                       className="text-muted underline underline-offset-2 hover:text-foreground"
                     >
-                      Download
+                      {doc.docType === "score_report" ? ".md" : ".docx"}
                     </a>
                   </li>
                 ))}
