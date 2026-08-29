@@ -23,10 +23,10 @@ const EnvSchema = z.object({
   AI_EFFORT: z.enum(["low", "medium", "high", "xhigh", "max"]).default("high"),
 
   /**
-   * C1 — the PRD says 2 weeks, Application Analytics §6 says 21 days.
-   * Single knob, defaulting to 21. Drives the Pending view and, later, Ghost Rate.
+   * C1 — RESOLVED 2026-08-29: 14 days, per the PRD's "2 weeks". The Analytics
+   * document's 21 days is superseded. Drives the Pending view and Ghost Rate.
    */
-  DEEMED_PENDING_DAYS: z.coerce.number().int().positive().default(21),
+  DEEMED_PENDING_DAYS: z.coerce.number().int().positive().default(14),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

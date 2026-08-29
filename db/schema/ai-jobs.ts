@@ -41,6 +41,19 @@ export const aiJobs = pgTable(
     result: jsonb("result").$type<Record<string, unknown>>(),
     error: text("error"),
 
+    /**
+     * Real token counts reported by Claude Code, captured per run so cost per
+     * job is measured rather than estimated. See lib/ai/pricing.ts.
+     */
+    usage: jsonb("usage").$type<{
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens: number;
+      cacheCreationTokens: number;
+      reportedCostUsd?: number;
+      durationMs?: number;
+    }>(),
+
     /** Incremented on claim, so a crashed run can be retried but not forever. */
     attempts: integer("attempts").notNull().default(0),
 

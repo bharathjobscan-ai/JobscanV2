@@ -121,7 +121,7 @@ function runClaude(prompt, model) {
         reject(new Error(`claude exited ${code}: ${stderr.trim() || "no stderr"}`));
         return;
       }
-      resolve(extractText(stdout));
+      resolve(extractResult(stdout));
     });
 
     child.stdin.write(prompt);
@@ -129,20 +129,52 @@ function runClaude(prompt, model) {
   });
 }
 
-/** `--output-format json` wraps the answer; fall back to raw stdout. */
-function extractText(stdout) {
+/**
+ * `--output-format json` wraps the answer alongside token usage.
+ *
+ * Usage is captured per run so cost per job is measured rather than estimated.
+ * Parsed defensively: an unexpected shape must still yield the text, because
+ * losing a generated CV to a telemetry field would be absurd.
+ */
+function extractResult(stdout) {
   const trimmed = stdout.trim();
+
+  let parsed;
   try {
-    const parsed = JSON.parse(trimmed);
-    if (typeof parsed?.result === "string") return parsed.result;
-    if (Array.isArray(parsed)) {
-      const last = parsed.filter((m) => typeof m?.result === "string").pop();
-      if (last) return last.result;
-    }
+    parsed = JSON.parse(trimmed);
   } catch {
-    // Not JSON — the CLI printed plain text.
+    return { text: trimmed, usage: null }; // CLI printed plain text
   }
-  return trimmed;
+
+  const envelope = Array.isArray(parsed)
+    ? parsed.filter((m) => typeof m?.result === "string").pop() ?? {}
+    : parsed;
+
+  const text =
+    typeof envelope?.result === "string" ? envelope.result : trimmed;
+
+  const u = envelope?.usage ?? {};
+  const usage = {
+    inputTokens: num(u.input_tokens),
+    outputTokens: num(u.output_tokens),
+    cacheReadTokens: num(u.cache_read_input_tokens),
+    cacheCreationTokens: num(u.cache_creation_input_tokens),
+    reportedCostUsd:
+      typeof envelope?.total_cost_usd === "number"
+        ? envelope.total_cost_usd
+        : undefined,
+    durationMs:
+      typeof envelope?.duration_ms === "number" ? envelope.duration_ms : undefined,
+  };
+
+  const measured =
+    usage.inputTokens + usage.outputTokens + usage.cacheReadTokens > 0;
+
+  return { text, usage: measured ? usage : null };
+}
+
+function num(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 async function processOne() {
@@ -161,18 +193,23 @@ async function processOne() {
   }
 
   try {
-    const text = await runClaude(job.prompt, job.model);
+    const { text, usage } = await runClaude(job.prompt, job.model);
     if (!text.trim()) throw new Error("Claude returned an empty response");
 
     await sql`
       update ai_jobs
          set status = 'succeeded',
              result = ${sql.json({ text })},
+             usage = ${usage ? sql.json(usage) : null},
              error = null,
              finished_at = now()
        where id = ${job.id}
     `;
-    log(`✔ ${job.task_type} ${job.id} (${text.length} chars)`);
+
+    const tokens = usage
+      ? `${usage.inputTokens} in / ${usage.outputTokens} out`
+      : "usage not reported";
+    log(`✔ ${job.task_type} ${job.id} (${text.length} chars, ${tokens})`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const giveUp = job.attempts >= MAX_ATTEMPTS;

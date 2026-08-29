@@ -7,15 +7,17 @@ Resolved items are in [docs/decisions/](../decisions/).
 
 ---
 
-## C1 · Waiting period before an application reads as Pending
+## C1 · Waiting period before an application reads as Pending — RESOLVED
 
-**Conflict.** PRD (p2): "Deemed Rejected (after 2 weeks of no response)".
+**Was.** PRD (p2): "Deemed Rejected (after 2 weeks of no response)".
 Application Analytics §6: "a defined waiting period of **21 days**".
 
-**Current state.** Single config knob `DEEMED_PENDING_DAYS`, default **21**.
-No schema impact; changing it is an env edit.
+**Resolved 2026-08-29: 14 days.** The PRD's "2 weeks" stands; the Analytics
+document's 21 days is superseded. `DEEMED_PENDING_DAYS` defaults to 14.
 
-**Needs.** Your confirmation of 14 or 21. Also drives the future Ghost Rate.
+Because the state is derived rather than stored, changing this reclassifies
+existing applications on the next read — the intended behaviour. It also becomes
+the Ghost Rate threshold in Phase 3.
 
 ---
 
@@ -53,17 +55,20 @@ constraint.
 
 ---
 
-## C4 · Outreach is P0 in the backlog but absent from the MVP pipeline
+## C4 · Outreach placement — RESOLVED
 
-**Conflict.** JSV2S1089–1093 are marked **P0** and Application Management.md
-gives Outreach its own section. The stated MVP pipeline (manual ingestion →
-dashboard → workspace → on-demand generation → tracking) does not mention it.
+**Was.** JSV2S1089–1093 marked **P0** with their own section in
+Application Management.md, but absent from the stated MVP pipeline.
 
-**Current state.** Deferred to Phase 1.5. No outreach table exists.
+**Resolved 2026-08-29: Phase 2.** Outreach lives on the Application board and is
+invoked on request, not generated for every application. JSV2S1089–1093 moved
+from Deferred to Phase 2 / Not Started.
 
-**Needs.** Confirmation that deferring a P0 is intended. If outreach comes back
-into Phase 1, it needs its own table — unlike referral, there are many messages
-per application (JSV2S1090 asks for outreach history).
+**Design note for when it is built.** Unlike referral — which is columns on
+`applications` because there is at most one per application — outreach needs its
+own table: JSV2S1090 asks for outreach history, so there are many messages per
+application. Timeline event types `outreach_generated` and `outreach_sent` are
+already reserved in `lib/config/constants.ts`.
 
 ---
 

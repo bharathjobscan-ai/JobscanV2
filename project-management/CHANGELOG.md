@@ -8,6 +8,37 @@ version of the PRD always corresponds to a known state of the backlog.
 
 ---
 
+## v1.2 — 2026-08-29 — Open decisions closed, token accounting added
+
+### Decisions
+
+- **C1 resolved: 14 days.** `DEEMED_PENDING_DAYS` default changed from 21 to 14.
+  Affects the Pending dashboard view immediately and the future Ghost Rate.
+  Because the state is derived rather than stored, the change reclassifies
+  existing applications on the next read — which is the intended behaviour.
+- **C4 resolved: outreach is Phase 2**, not Phase 1.5. On the Application board,
+  invoked on request. JSV2S1089–1093 moved from Deferred to Phase 2 /
+  Not Started.
+
+### Added
+
+- **Measured token usage.** `ai_jobs.usage` captures the input, output and cache
+  token counts Claude Code reports per run, plus its own cost figure and
+  duration. Cost per job is now measured rather than estimated.
+- `lib/ai/pricing.ts` — rate table and cost computation, including cache read
+  and write multipliers.
+- `npm run ai:report` — per-run detail, per-task averages, cost of one fully
+  processed application, and projections at daily, weekly and monthly cadence.
+- `prompts/EXPORT-GUIDE.md` — exactly what to export from each Claude project,
+  under what filename.
+
+### Schema
+
+- Migration `0001_ai_job_usage` adds `ai_jobs.usage` (jsonb, nullable). Additive
+  only; no backfill needed.
+
+---
+
 ## v1.1 — 2026-08-29 — Phase 1 delivered
 
 Phase 1 (Manual Ingestion + Application Management) built, validated against a

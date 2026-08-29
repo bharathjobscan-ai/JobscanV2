@@ -1,10 +1,21 @@
 # JobScan V2 — Product Requirements Document
 
-**Current version:** 1.1 · **Last updated:** 2026-08-29 · **Owner:** Bharath Raghu
+**Current version:** 1.2 · **Last updated:** 2026-08-29 · **Owner:** Bharath Raghu
 
 ---
 
 ## Document control
+
+**Version 1.2 — 2026-08-29 — Open decisions closed**
+
+- **C1 resolved.** The waiting period before an application reads as Deemed
+  Pending is **14 days**, per this PRD's original "2 weeks". The Application
+  Analytics document's 21 days is superseded.
+- **C4 resolved.** Outreach moves to **Phase 2**, not Phase 1.5. It lives on the
+  Application board and is invoked on request rather than generated for every
+  application.
+- **Added §9.7** Token accounting. Usage is measured per run from Claude Code's
+  own reporting rather than estimated, and stored against each job.
 
 **Version 1.1 — 2026-08-29 — Phase 1 delivered**
 
@@ -228,6 +239,17 @@ sign-up, no roles.
 All database access is server-side through Drizzle. `supabase-js` is not used for
 data access, so Supabase keys never reach the browser.
 
+### 9.7 Token accounting (added in v1.2)
+
+Token usage is **measured, not estimated**. The worker captures the counts
+Claude Code reports for each run and stores them against the job, so cost per
+job comes from real data. `npm run ai:report` summarises measured runs, averages
+per task, and projects the cadences above.
+
+On the Pro subscription nothing is charged. The figures answer what the work
+would cost on the metered API, and indicate how hard each run draws on the
+subscription allowance.
+
 ---
 
 ## 10. Data model (added in v1.1)
@@ -263,9 +285,9 @@ several URLs.
 
 ## 11. Open decisions (added in v1.1)
 
-**C1 — Waiting period.** PRD v1.0 says 2 weeks; the Application Analytics design
-document says 21 days. Currently a single configuration value defaulting to 21.
-Needs a decision.
+**C1 — Waiting period. RESOLVED (v1.2).** 14 days. PRD v1.0's "2 weeks" stands;
+the Application Analytics document's 21 days is superseded. Held as a single
+configuration value so it remains one place to change.
 
 **C2 — Deemed Pending stored or derived.** Resolved as derived (§9.2). Recorded
 because the Application Management document lists it among lifecycle outcomes,
@@ -276,9 +298,10 @@ documents: Perfect / Dicey / Rejection Pool; Absolute / Relative / No Match; and
 a separate pre-qualification classification. Stored as free text until the
 scoring taxonomy is frozen.
 
-**C4 — Outreach.** Marked P0 in the backlog and given its own section in the
-design document, but absent from the stated MVP pipeline. Currently deferred.
-Needs confirmation that deferring a P0 is intended.
+**C4 — Outreach. RESOLVED (v1.2).** Moves to Phase 2. It belongs on the
+Application board and is invoked on request, not generated for every
+application. It needs its own table, because unlike referral there are many
+messages per application.
 
 **C5 — Table count.** Resolved: six tables, not four (§10).
 
@@ -295,10 +318,9 @@ validation, deduplication, the application dashboard and workspace, job score
 display, resume and cover letter storage and download, status lifecycle,
 referral tracking, application attempts and the activity timeline.
 
-**Phase 1.5 — deferred.** Outreach generation and history, pending C4.
-
-**Phase 2.** Automated fetching, source adapters, LinkedIn via Apify, other job
-boards, career-site watchers, the scheduler, pre-qualification filters and the
-daily digest. Also the scoring and CV-optimiser refinements.
+**Phase 2.** Outreach generation and history on the Application board, invoked
+on request (C4). Automated fetching, source adapters, LinkedIn via Apify, other
+job boards, career-site watchers, the scheduler, pre-qualification filters and
+the daily digest. Also the scoring and CV-optimiser refinements.
 
 **Phase 3.** Application analytics and interview preparation.
