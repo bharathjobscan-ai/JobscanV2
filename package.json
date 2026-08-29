@@ -16,7 +16,8 @@
     "db:studio": "drizzle-kit studio",
     "worker": "node workers/ai/run.mjs",
     "worker:once": "node workers/ai/run.mjs --once",
-    "test:integration": "vitest run --config vitest.integration.config.mts"
+    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "pm:docs": "node scripts/build-pm-docs.mjs"
   },
   "dependencies": {
     "date-fns": "^4.4.0",

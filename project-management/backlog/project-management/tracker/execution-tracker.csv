@@ -1,0 +1,57 @@
+Parent ID,Subtask ID,Type,Task,Status,Notes
+JSV2S1007,JSV2S1007-T01,DB,RawJob canonical schema,Completed,Zod at the boundary; source-agnostic for Phase 2
+JSV2S1008,JSV2S1008-T01,DB,schema_version column,Completed,
+JSV2S1009,JSV2S1009-T01,DB,raw_jobs table + identity indexes,Completed,"Partial unique on (source, source_job_id); unique fingerprint"
+-,E1-T04,Infra,Next.js 16 + Tailwind 4 + TypeScript scaffold,Completed,
+-,E1-T05,Infra,"Drizzle + postgres client, pooler-safe",Completed,prepare:false for the transaction pooler
+-,E1-T06,DB,"Six tables, indexes, drizzle.config.ts",Completed,"Verified in Supabase: 6 tables, 4 unique indexes, 6 FKs"
+-,E1-T07,Infra,Password proxy + login,Completed,SHA-256 session cookie; Next 16 proxy convention
+-,E1-T08,Infra,Supabase project + connection strings,Completed,Migration applied via drizzle-kit migrate
+JSV2S1031,JSV2S1031-T01,Product,upload-template.csv + field reference UI,Completed,
+JSV2S1031,JSV2S1031-T02,Frontend,Upload page + result summary,Completed,Per-row outcome with reasons
+JSV2S1032,JSV2S1032-T01,Backend,CSV / XLSX / JSON parsers behind one interface,Completed,"papaparse, exceljs, JSON"
+JSV2S1032,JSV2S1032-T02,Backend,Auto-create an application per job (D1),Completed,Same transaction as the job insert
+JSV2S1033,JSV2S1033-T01,Backend,Row-level validation with per-row rejection,Completed,Batch continues past a bad row
+JSV2S1033,JSV2S1033-T02,Backend,Identity resolution + in-file and DB dedupe,Completed,Duplicates advance last_seen_at
+JSV2S1034,JSV2S1034-T01,Backend,inbound_source_detail capture,Completed,
+-,E2-T08,QA,Unit tests + sample-jobs.csv fixture,Completed,65 unit tests
+JSV2S1074,JSV2S1074-T01,Frontend,Unified dashboard,Completed,
+JSV2S1075,JSV2S1075-T01,Frontend,"Five views, non-overlapping",Completed,Counts sum to the total
+JSV2S1075,JSV2S1075-T02,Backend,Derived deemed_pending (C2),Completed,Never stored; single shared predicate
+JSV2S1076,JSV2S1076-T01,Frontend,Application detail workspace,Completed,Outreach section pending C4
+JSV2S1077,JSV2S1077-T01,Frontend,Job context panel + source/apply links,Completed,
+-,E3-T06,Design,Next-action rules,Completed,Incomplete > score > referral > resume > apply
+JSV2S1078,JSV2S1078-T01,DB,"application_documents, versioned",Completed,"Unique (application_id, doc_type, version)"
+JSV2S1078,JSV2S1078-T02,Frontend,Resume + cover letter panels,Completed,
+JSV2S1079,JSV2S1079-T01,Backend,Download route with meaningful filenames,Completed,Markdown; PDF deferred per PRD
+JSV2S1080,JSV2S1080-T01,Frontend,Job score display,Completed,
+JSV2S1081,JSV2S1081-T01,Frontend,"Strengths, gaps, visa signals, full analysis",Completed,
+JSV2S1082,JSV2S1082-T01,DB,Status model (ADR-0001),Completed,Nine statuses; offer restored; deemed_pending excluded
+JSV2S1083,JSV2S1083-T01,Backend,Transactional status change,Completed,Application + attempt outcome + event in one transaction
+JSV2S1084,JSV2S1084-T01,DB,"application_events, append-only",Completed,Serves history and timeline; feeds Phase 3
+JSV2S1085,JSV2S1085-T01,Backend,Deemed-pending derivation,Completed,"DEEMED_PENDING_DAYS, default 21 - C1 open"
+JSV2S1086,JSV2S1086-T01,Frontend,Referral status,Completed,
+JSV2S1087,JSV2S1087-T01,Frontend,Referrer name + notes,Completed,
+JSV2S1088,JSV2S1088-T01,Backend,Referral events on the timeline,Completed,
+JSV2S1094,JSV2S1094-T01,DB,application_attempts,Completed,
+JSV2S1095,JSV2S1095-T01,Frontend,Attempt capture incl. email_used,Completed,
+JSV2S1096,JSV2S1096-T01,Backend,Per-attempt outcome,Completed,Verified by integration test
+JSV2S1097,JSV2S1097-T01,Frontend,Activity timeline + notes,Completed,
+JSV2S1098,JSV2S1098-T01,DB,Full history preserved,Completed,Append-only; documents versioned
+-,E6-T01,AI,AiProvider interface,Completed,Keeps the subscription path from being a one-way door
+-,E6-T02,AI,Mock driver + deterministic fixtures,Completed,Zero Claude usage
+-,E6-T03,DB,ai_jobs queue,Completed,
+-,E6-T04,AI,"Local worker: claim, claude -p, store",Completed,Written and typechecked; NOT yet run end to end
+-,E6-T05,Backend,settleAiJobs - the single write path,Completed,Worker performs no domain writes
+-,E6-T06,Frontend,Queued / running / failed chips,Completed,
+-,E6-T07,Product,Export ScoreG + CVG + master resume to /prompts/,Blocked,NEEDS YOU - blocks real generation; mock unaffected
+-,E6-T08,QA,Verify real Claude generation end to end,Blocked,Depends on E6-T07
+-,E7-T01,Product,ADR-0001 to ADR-0004,Completed,
+-,E7-T02,Product,docs/architecture/overview.md,Completed,
+-,E7-T03,Product,docs/product/open-decisions.md (C1-C5),Completed,
+-,E7-T04,Product,README with setup + verification,Completed,
+-,E7-T05,Product,Add the four source documents to docs/product/,Blocked,NEEDS YOU
+-,E7-T06,Product,"Project management pack (PRD, backlog, tracker, changelog)",Completed,project-management/
+-,E8-T01,QA,Integration suite against a live database,Completed,"15 assertions, all passing"
+-,E8-T02,Infra,Deploy to Vercel,Not Started,Ready to run; needs env vars set
+-,E8-T03,QA,Verify password gate on the deployed URL,Not Started,Depends on E8-T02
