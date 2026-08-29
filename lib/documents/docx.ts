@@ -4,73 +4,96 @@ import {
   Document,
   Packer,
   Paragraph,
+  TabStopType,
   TextRun,
 } from "docx";
 
-import { densityFor, parseDocument, type ParsedDocument } from "./parse";
+import { densityFor, parseDocument, type Density, type ParsedDocument } from "./parse";
 
 /**
  * Render a CV or cover letter to .docx.
  *
- * Layout follows the constraints in prompts/cvg/SKILL.md exactly:
- *   - single column, no tables, no columns, no text boxes
- *   - strict one-page A4 for the CV
- *   - body 10-11pt, bullets 9.5-10pt, never below 9pt
- *   - margins 0.5-0.7in
- *   - standard section headers, consistent bullet formatting
- *   - no header/footer on the cover letter
+ * Layout follows the constraints in prompts/cvg/SKILL.md and matches the
+ * house style of the reference CVs: centred header, coloured section headings
+ * with a rule beneath, company and title on one line with dates set flush
+ * right, and tight bullet spacing so a dense CV still holds one A4 page.
  *
- * Those are ATS rules as much as aesthetic ones: parsers break on multi-column
- * layouts and tables, so the template refuses to produce them.
+ * Single column, no tables, no text boxes and no header/footer throughout —
+ * those are ATS requirements as much as stylistic ones, since parsers drop or
+ * scramble all four.
  */
 
-/** 1 inch = 1440 twips. 0.6in sits mid-range of the 0.5-0.7in the skill allows. */
-const MARGIN = 864;
+/** 1 inch = 1440 twips. 0.5in is the tight end of the skill's 0.5-0.7in range. */
+const MARGIN = 720;
+const PAGE_WIDTH = 11906; // A4
+const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 const FONT = "Calibri";
+/** Section headings, matching the reference CVs. */
+const ACCENT = "1F3864";
 
 export type DocxKind = "resume" | "cover_letter";
 
+function headerBlock(text: string, d: Density, italic = false): Paragraph {
+  return new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 20, line: d.lineSpacing },
+    children: [
+      new TextRun({ text, size: d.bullet, font: FONT, italics: italic }),
+    ],
+  });
+}
+
 function buildParagraphs(doc: ParsedDocument, kind: DocxKind): Paragraph[] {
-  // A cover letter is prose at a fixed comfortable size; a CV is calibrated to
-  // fill one page.
   const d =
     kind === "cover_letter"
-      ? { body: 22, bullet: 22, name: 26, section: 22, lineSpacing: 276 }
+      ? {
+          body: 21, bullet: 21, name: 26, section: 21,
+          lineSpacing: 250, bulletSpacing: 60, sectionBefore: 140,
+        }
       : densityFor(doc);
 
   const out: Paragraph[] = [];
+  let headerLine = 0;
 
   for (const block of doc.blocks) {
     switch (block.kind) {
       case "name":
         out.push(
           new Paragraph({
-            spacing: { after: 40 },
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 30 },
             children: [
-              new TextRun({ text: block.text, bold: true, size: d.name, font: FONT }),
+              new TextRun({
+                text: block.text.toUpperCase(),
+                bold: true,
+                size: d.name,
+                font: FONT,
+                color: ACCENT,
+              }),
             ],
           }),
         );
         break;
 
       case "contact":
-        out.push(
-          new Paragraph({
-            spacing: { after: 40, line: d.lineSpacing },
-            children: [
-              new TextRun({ text: block.text, size: d.bullet, font: FONT }),
-            ],
-          }),
-        );
+        // First header line is contact detail; anything after is the work
+        // authorisation line, which the reference CVs set in italic.
+        out.push(headerBlock(block.text, d, headerLine > 0));
+        headerLine += 1;
         break;
 
       case "section":
         out.push(
           new Paragraph({
-            spacing: { before: 160, after: 60 },
+            spacing: { before: d.sectionBefore, after: 40 },
             // A bottom rule, not a table — tables break ATS parsers.
             border: {
-              bottom: { style: BorderStyle.SINGLE, size: 4, color: "999999", space: 1 },
+              bottom: {
+                style: BorderStyle.SINGLE,
+                size: 6,
+                color: ACCENT,
+                space: 1,
+              },
             },
             children: [
               new TextRun({
@@ -78,18 +101,51 @@ function buildParagraphs(doc: ParsedDocument, kind: DocxKind): Paragraph[] {
                 bold: true,
                 size: d.section,
                 font: FONT,
+                color: ACCENT,
               }),
             ],
           }),
         );
         break;
 
+      case "role": {
+        // Company/title left, dates flush right on one line via a tab stop.
+        const children = [
+          new TextRun({ text: block.text, bold: true, size: d.body, font: FONT }),
+        ];
+        if (block.right) {
+          children.push(
+            new TextRun({ text: "\t", size: d.body, font: FONT }),
+            new TextRun({
+              text: block.right,
+              italics: true,
+              size: d.bullet,
+              font: FONT,
+            }),
+          );
+        }
+        out.push(
+          new Paragraph({
+            spacing: { before: 60, after: 20 },
+            tabStops: [{ type: TabStopType.RIGHT, position: CONTENT_WIDTH }],
+            children,
+          }),
+        );
+        break;
+      }
+
       case "subsection":
         out.push(
           new Paragraph({
-            spacing: { before: 80, after: 30 },
+            spacing: { before: 30, after: 20 },
             children: [
-              new TextRun({ text: block.text, bold: true, size: d.body, font: FONT }),
+              new TextRun({
+                text: block.text,
+                italics: true,
+                size: d.bullet,
+                font: FONT,
+                color: ACCENT,
+              }),
             ],
           }),
         );
@@ -99,7 +155,7 @@ function buildParagraphs(doc: ParsedDocument, kind: DocxKind): Paragraph[] {
         out.push(
           new Paragraph({
             bullet: { level: 0 },
-            spacing: { after: 30, line: d.lineSpacing },
+            spacing: { after: d.bulletSpacing, line: d.lineSpacing },
             children: [
               new TextRun({ text: block.text, size: d.bullet, font: FONT }),
             ],
@@ -110,7 +166,7 @@ function buildParagraphs(doc: ParsedDocument, kind: DocxKind): Paragraph[] {
       case "paragraph":
         out.push(
           new Paragraph({
-            spacing: { after: 80, line: d.lineSpacing },
+            spacing: { after: d.bulletSpacing + 10, line: d.lineSpacing },
             alignment: AlignmentType.LEFT,
             children: [
               new TextRun({ text: block.text, size: d.body, font: FONT }),
@@ -120,8 +176,7 @@ function buildParagraphs(doc: ParsedDocument, kind: DocxKind): Paragraph[] {
         break;
 
       case "rule":
-        // Horizontal rules in the draft are section separators we already
-        // express through heading borders. Dropping them avoids stray lines.
+        // Separators are already expressed through section heading borders.
         break;
     }
   }
@@ -139,17 +194,12 @@ export async function renderDocx(
     creator: "JobScan",
     description: kind === "resume" ? "Tailored CV" : "Cover letter",
     title: parsed.name ?? "Document",
-    styles: {
-      default: {
-        document: { run: { font: FONT, size: 22 } },
-      },
-    },
+    styles: { default: { document: { run: { font: FONT, size: 20 } } } },
     sections: [
       {
         properties: {
           page: {
-            // A4 in twips: 11906 x 16838.
-            size: { width: 11906, height: 16838 },
+            size: { width: PAGE_WIDTH, height: 16838 },
             margin: {
               top: MARGIN,
               bottom: MARGIN,

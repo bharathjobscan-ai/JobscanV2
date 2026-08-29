@@ -110,8 +110,29 @@ cannot carry: the entity you resolved, what each search returned, how you
 weighed conflicting evidence, and the application strategy. Keep it under 400
 words.
 
-**Resume and cover letter:** keep the markdown to the document itself, and
-include only \`analysis.summary\` and \`analysis.gaps\` in the JSON block.
+**Resume and cover letter:** the markdown must be **the document and nothing
+else** — no commentary, no output summary, no preamble. It is rendered straight
+into a .docx.
+
+Put the output summary in the JSON instead, as \`summary\`, using the
+method's own Output Summary items:
+
+\`\`\`json
+"summary": {
+  "emailSubject": "...",
+  "companyCategory": "the category chosen, and why",
+  "emphasis": "the emphasis style applied",
+  "matchBefore": 0, "matchAfter": 0,
+  "keywords": {
+    "mustHaveFound": 0, "mustHaveTotal": 0,
+    "goodToHaveFound": 0, "goodToHaveTotal": 0,
+    "missing": ["keywords not present"]
+  },
+  "gaps": ["missing experience areas, with specifics"],
+  "gapBridging": ["what to learn or prepare before interview"],
+  "verdict": "Pass | Borderline | Reject, with brief reasoning"
+}
+\`\`\`
 `.trim();
 
 /**

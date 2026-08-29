@@ -1,6 +1,7 @@
 import {
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -8,6 +9,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import type { GenerationSummary } from "@/lib/ai/types";
 import type { DocumentType } from "@/lib/config/constants";
 import { applications } from "./applications";
 
@@ -36,6 +38,15 @@ export const applicationDocuments = pgTable(
     version: integer("version").notNull().default(1),
 
     contentMd: text("content_md"),
+
+    /**
+     * The CVG output summary for this generation — classification, match
+     * uplift, keyword coverage, gaps, verdict.
+     *
+     * Rendered in the workspace in place of the document body: the .docx is
+     * the deliverable, so the screen should show what changed and why.
+     */
+    summary: jsonb("summary").$type<GenerationSummary>(),
 
     /** Null in Phase 1 — reserved for Supabase Storage. */
     storagePath: text("storage_path"),

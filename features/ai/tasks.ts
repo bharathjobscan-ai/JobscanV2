@@ -218,6 +218,7 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
         docType,
         version,
         contentMd: parsed.markdown,
+        summary: parsed.payload.summary ?? null,
         generatedBy: job.provider,
         model: job.model,
         generatedAt: job.finishedAt ?? sql`now()`,

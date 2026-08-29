@@ -79,12 +79,38 @@ describe("parseDocument", () => {
     expect(contact[0].text).toContain("bharathvraghu@gmail.com");
   });
 
-  it("captures sections, subsections and bullets", () => {
+  it("captures sections, roles and bullets", () => {
     const kinds = parsed.blocks.map((b) => b.kind);
     expect(kinds).toContain("section");
-    expect(kinds).toContain("subsection");
+    expect(kinds).toContain("role");
     expect(kinds).toContain("bullet");
     expect(parsed.bulletCount).toBe(2);
+  });
+
+  it("pulls a following date range onto the role line", () => {
+    const doc = parseDocument(
+      "# NAME\n\n## EXPERIENCE\n\n### Juspay | Senior PM\n**Sep 2022 – Present**\n\n- Did a thing\n",
+    );
+    const role = doc.blocks.find(
+      (b): b is Extract<DocBlock, { kind: "role" }> => b.kind === "role",
+    );
+    expect(role?.text).toBe("Juspay | Senior PM");
+    expect(role?.right).toBe("Sep 2022 – Present");
+    // The date must not also appear as a stray paragraph.
+    expect(doc.blocks.filter((b) => b.kind === "paragraph")).toHaveLength(0);
+  });
+
+  it.each([
+    "**Apr 2019 – Aug 2022**",
+    "Jun 2015 – May 2017",
+    "2017 – 2019",
+    "Sep 2022 – Current",
+  ])("recognises %s as a date range", (dates) => {
+    const doc = parseDocument(`# N\n\n## E\n\n### Co | Title\n${dates}\n\n- x\n`);
+    const role = doc.blocks.find(
+      (b): b is Extract<DocBlock, { kind: "role" }> => b.kind === "role",
+    );
+    expect(role?.right).toBeTruthy();
   });
 
   it("strips inline emphasis so the renderer controls weight", () => {
@@ -98,19 +124,20 @@ describe("parseDocument", () => {
 });
 
 describe("densityFor — one-page discipline", () => {
-  it("never drops bullets below 9pt, per the skill's rule", () => {
+  it("never drops below 9pt, per the skill's rule", () => {
     const huge = parseDocument(
       SAMPLE + "\n" + "- A reasonably long achievement bullet.\n".repeat(200),
     );
     // Sizes are half-points: 18 = 9pt.
     expect(densityFor(huge).bullet).toBeGreaterThanOrEqual(18);
+    expect(densityFor(huge).body).toBeGreaterThanOrEqual(18);
   });
 
-  it("keeps body within the 10-11pt band the skill prescribes", () => {
+  it("stays within 9-10pt so a dense CV still holds one page", () => {
     for (const doc of [parseDocument(SAMPLE), parseDocument(SAMPLE.repeat(4))]) {
       const d = densityFor(doc);
-      expect(d.body).toBeGreaterThanOrEqual(20); // 10pt
-      expect(d.body).toBeLessThanOrEqual(22); // 11pt
+      expect(d.body).toBeGreaterThanOrEqual(18);
+      expect(d.body).toBeLessThanOrEqual(20);
     }
   });
 

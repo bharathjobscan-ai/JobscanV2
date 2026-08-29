@@ -1,0 +1,1 @@
+ALTER TABLE "application_documents" ADD COLUMN "summary" jsonb;

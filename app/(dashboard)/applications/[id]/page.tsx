@@ -14,8 +14,9 @@ import {
   ReferralForm,
   StatusForm,
 } from "@/components/applications/workspace-forms";
+import { GenerationSummary } from "@/components/applications/generation-summary";
 import { ScoreBreakdown } from "@/components/applications/score-breakdown";
-import { Badge, Card, CardHeader, EmptyState } from "@/components/ui/base";
+import { Badge, buttonClass, Card, CardHeader, EmptyState } from "@/components/ui/base";
 import { Markdown } from "@/components/ui/markdown";
 import { getTaskStates, settleAiJobs } from "@/features/ai/tasks";
 import { getApplicationDetail } from "@/features/applications/queries";
@@ -254,26 +255,17 @@ export default async function ApplicationDetailPage({
               <Card key={docType}>
                 <CardHeader
                   title={DOCUMENT_LABELS[docType]}
-                  meta={doc ? `v${doc.version} · ${doc.generatedBy}` : undefined}
+                  meta={doc ? `v${doc.version} · ${doc.model ?? doc.generatedBy}` : undefined}
                   action={
                     <div className="flex items-center gap-2">
                       {doc ? (
-                        <>
-                          <a
-                            href={`/api/documents/${doc.id}`}
-                            className="text-xs font-medium underline underline-offset-2 hover:text-foreground"
-                            title="Rendered to the CVG formatting rules: one-page A4, single column, no tables"
-                          >
-                            Download .docx
-                          </a>
-                          <a
-                            href={`/api/documents/${doc.id}?format=md`}
-                            className="text-xs text-subtle underline underline-offset-2 hover:text-foreground"
-                            title="Raw draft"
-                          >
-                            .md
-                          </a>
-                        </>
+                        <a
+                          href={`/api/documents/${doc.id}`}
+                          className={`${buttonClass.secondary}`}
+                          title="One-page A4, single column, ATS-safe"
+                        >
+                          Download .docx
+                        </a>
                       ) : null}
                       <GenerateButton
                         applicationId={application.id}
@@ -286,15 +278,23 @@ export default async function ApplicationDetailPage({
                     </div>
                   }
                 />
-                {doc?.contentMd ? (
-                  <div className="p-4">
-                    <Markdown content={doc.contentMd} />
-                  </div>
-                ) : (
+                {!doc ? (
                   <EmptyState
                     title={`No ${DOCUMENT_LABELS[docType].toLowerCase()} yet`}
                     hint="Generated on demand, tailored to this job."
                   />
+                ) : doc.summary ? (
+                  /* The .docx is the deliverable — show what changed, not the text. */
+                  <GenerationSummary summary={doc.summary} />
+                ) : (
+                  <details className="p-4">
+                    <summary className="cursor-pointer text-xs text-muted">
+                      No summary captured — view the draft
+                    </summary>
+                    <div className="mt-3">
+                      <Markdown content={doc.contentMd ?? ""} />
+                    </div>
+                  </details>
                 )}
               </Card>
             );

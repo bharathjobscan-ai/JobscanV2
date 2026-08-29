@@ -29,11 +29,38 @@ export type TaskContext = {
  * score can populate `applications.job_score` while the same response also
  * produces a readable document.
  */
+/**
+ * The CVG output summary — company classification, match uplift, keyword
+ * coverage, gaps and verdict.
+ *
+ * Surfaced in the workspace so the generated document itself does not need
+ * reading on screen; the .docx is the deliverable.
+ */
+export type GenerationSummary = {
+  emailSubject?: string;
+  companyCategory?: string;
+  emphasis?: string;
+  /** Match percentage before and after tailoring. */
+  matchBefore?: number;
+  matchAfter?: number;
+  keywords?: {
+    mustHaveFound?: number;
+    mustHaveTotal?: number;
+    goodToHaveFound?: number;
+    goodToHaveTotal?: number;
+    missing?: string[];
+  };
+  gaps?: string[];
+  gapBridging?: string[];
+  verdict?: string;
+};
+
 export type TaskPayload = {
   score?: number;
   matchCategory?: MatchCategory;
   visaSignal?: string;
   analysis?: JobScoreAnalysis;
+  summary?: GenerationSummary;
 };
 
 export type TaskResult = {
@@ -73,6 +100,10 @@ export function parseTaskResponse(text: string): {
   try {
     const parsed = JSON.parse(fence[1]) as Record<string, unknown>;
     payload = {
+      summary:
+        typeof parsed.summary === "object" && parsed.summary !== null
+          ? (parsed.summary as TaskPayload["summary"])
+          : undefined,
       score:
         typeof parsed.score === "number"
           ? Math.max(0, Math.min(100, Math.round(parsed.score)))
