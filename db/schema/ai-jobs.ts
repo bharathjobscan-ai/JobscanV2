@@ -37,6 +37,16 @@ export const aiJobs = pgTable(
     model: text("model"),
     effort: text("effort"),
 
+    /**
+     * Tools Claude Code may use for this task, space-separated.
+     *
+     * Scoring needs WebSearch — ScoreG verifies sponsor-register status live,
+     * and without it the visa pillar is capped. CV and cover letter work from
+     * the JD and master resume alone, so they get none: fewer tool definitions
+     * means a smaller cached context and a cheaper run.
+     */
+    allowedTools: text("allowed_tools"),
+
     prompt: text("prompt"),
     result: jsonb("result").$type<Record<string, unknown>>(),
     error: text("error"),

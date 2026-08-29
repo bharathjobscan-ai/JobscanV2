@@ -114,27 +114,55 @@ export const REFERRAL_LABELS: Record<ReferralStatus, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Match category (C3 — open decision, UI vocabulary only)
+// Match category — ScoreG decision bands (C3, resolved 2026-08-29)
 // ---------------------------------------------------------------------------
 
 /**
- * The PRD user-flow vocabulary. JSV2S1052 proposes a different set
- * (Absolute / Relative / No Match) and JSV2S1055 a third for pre-qualification.
- * Stored as free text until ScoreG is finalised.
+ * The bands defined in prompts/scoreg/SKILL.md. ScoreG is the authority on
+ * scoring, so its vocabulary wins over the PRD's earlier
+ * Perfect / Dicey / Rejection Pool wording.
+ *
+ * Derived from the numeric score in code (see `matchCategoryFor`) rather than
+ * asked of the model: it is a pure function of the score, so deriving it is
+ * deterministic, free, and cannot drift between runs.
  */
 export const MATCH_CATEGORIES = [
-  "perfect_match",
-  "dicey_match",
-  "rejection_pool",
+  "priority_apply",
+  "apply",
+  "referral_only",
+  "reject",
 ] as const;
 
 export type MatchCategory = (typeof MATCH_CATEGORIES)[number];
 
 export const MATCH_LABELS: Record<MatchCategory, string> = {
-  perfect_match: "Perfect Match",
-  dicey_match: "Dicey Match",
-  rejection_pool: "Rejection Pool",
+  priority_apply: "Priority Apply",
+  apply: "Apply",
+  referral_only: "Referral Only",
+  reject: "Reject",
 };
+
+/** What the band means, shown as a tooltip. */
+export const MATCH_HINTS: Record<MatchCategory, string> = {
+  priority_apply: "85+ · Apply immediately and trigger outreach",
+  apply: "70-84 · Apply and seek a referral in parallel",
+  referral_only: "55-69 · Apply only if a referral is available",
+  reject: "Below 55 · Do not apply",
+};
+
+/** ScoreG's decision bands, applied to the final weighted score. */
+export function matchCategoryFor(score: number | null): MatchCategory | null {
+  if (score === null || Number.isNaN(score)) return null;
+  if (score >= 85) return "priority_apply";
+  if (score >= 70) return "apply";
+  if (score >= 55) return "referral_only";
+  return "reject";
+}
+
+/** Referral is the differentiator in the 55-84 range. */
+export function referralAdvised(score: number | null): boolean {
+  return score !== null && score >= 55 && score < 85;
+}
 
 // ---------------------------------------------------------------------------
 // Ingestion (JSV2S1031–1034)

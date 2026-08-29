@@ -14,6 +14,7 @@ import {
   AI_TASK_DOCUMENT,
   AI_TASK_LABELS,
   DOCUMENT_LABELS,
+  matchCategoryFor,
   type AiTaskType,
 } from "@/lib/config/constants";
 import { getEnv } from "@/lib/config/env";
@@ -25,6 +26,16 @@ export class TaskBlocked extends Error {}
 function modelFor(taskType: AiTaskType): string {
   const env = getEnv();
   return taskType === "score" ? env.MODEL_SCORING : env.MODEL_CV;
+}
+
+/**
+ * Only scoring gets tools. ScoreG verifies UK sponsor-register status and
+ * hiring signals live; without WebSearch its visa pillar is capped and it says
+ * so in the gaps. CV and cover letter work from the JD and master resume, so
+ * granting them nothing keeps the cached context — and the cost — smaller.
+ */
+function allowedToolsFor(taskType: AiTaskType): string | null {
+  return taskType === "score" ? "WebSearch WebFetch" : null;
 }
 
 /**
@@ -119,6 +130,7 @@ export async function enqueueTask(
       provider: "claude_local",
       model,
       effort: env.AI_EFFORT,
+      allowedTools: allowedToolsFor(taskType),
       prompt,
     })
     .returning({ id: aiJobs.id });
@@ -210,7 +222,10 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
           .update(applications)
           .set({
             jobScore: parsed.payload.score,
-            matchCategory: parsed.payload.matchCategory ?? null,
+            // Derived from ScoreG's decision bands, never taken from the model:
+            // it is a pure function of the score, so deriving it is
+            // deterministic and cannot drift between runs (C3).
+            matchCategory: matchCategoryFor(parsed.payload.score),
             visaSignal: parsed.payload.visaSignal ?? null,
             jobScoreAnalysis: parsed.payload.analysis ?? null,
             jobScoreGeneratedAt: job.finishedAt ?? sql`now()`,

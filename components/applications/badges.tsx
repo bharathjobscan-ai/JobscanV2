@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/base";
 import {
+  MATCH_HINTS,
   MATCH_LABELS,
   REFERRAL_LABELS,
   REJECTION_STATUSES,
@@ -36,19 +37,27 @@ export function StatusBadge({
 
 export function ScoreBadge({ score }: { score: number | null }) {
   if (score === null) return <span className="text-xs text-subtle">—</span>;
-  const tone = score >= 85 ? "positive" : score >= 70 ? "info" : "neutral";
+  // Same thresholds as ScoreG's decision bands, so colour and label agree.
+  const tone =
+    score >= 85 ? "positive" : score >= 70 ? "info" : score >= 55 ? "warning" : "negative";
   return <Badge tone={tone}>{score}</Badge>;
 }
 
 export function MatchBadge({ category }: { category: MatchCategory | null }) {
   if (!category) return null;
   const tone =
-    category === "perfect_match"
+    category === "priority_apply"
       ? "positive"
-      : category === "dicey_match"
-        ? "warning"
-        : "neutral";
-  return <Badge tone={tone}>{MATCH_LABELS[category] ?? category}</Badge>;
+      : category === "apply"
+        ? "info"
+        : category === "referral_only"
+          ? "warning"
+          : "negative";
+  return (
+    <Badge tone={tone} title={MATCH_HINTS[category]}>
+      {MATCH_LABELS[category] ?? category}
+    </Badge>
+  );
 }
 
 export function ReferralBadge({ status }: { status: ReferralStatus }) {

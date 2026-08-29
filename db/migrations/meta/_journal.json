@@ -15,6 +15,13 @@
       "when": 1787988815374,
       "tag": "0001_ai_job_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788012149849,
+      "tag": "0002_ai_job_allowed_tools",
+      "breakpoints": true
     }
   ]
 }

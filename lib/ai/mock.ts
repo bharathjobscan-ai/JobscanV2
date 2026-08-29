@@ -37,8 +37,6 @@ export class MockProvider implements AiProvider {
 
   private score(context: TaskContext, model: string, seed: number): TaskResult {
     const score = 62 + (seed % 34); // 62–95
-    const matchCategory =
-      score >= 85 ? "perfect_match" : score >= 72 ? "dicey_match" : "rejection_pool";
 
     const analysis = {
       summary: `Mock analysis for ${context.title} at ${context.company}. Generated without calling Claude — enable AI_PROVIDER=claude_local for a real score.`,
@@ -68,7 +66,7 @@ export class MockProvider implements AiProvider {
       `# Job Score — ${context.title}`,
       `**${context.company}**${context.location ? ` · ${context.location}` : ""}`,
       "",
-      `## Score: ${score}/100 (${matchCategory.replace("_", " ")})`,
+      `## Score: ${score}/100`,
       "",
       analysis.summary,
       "",
@@ -87,8 +85,9 @@ export class MockProvider implements AiProvider {
 
     return {
       payload: {
+        // The decision band is derived from the score in settleAiJobs, so the
+        // mock deliberately does not supply one.
         score,
-        matchCategory,
         visaSignal: context.visaSponsorshipMentioned
           ? "Sponsorship mentioned"
           : "Unconfirmed",

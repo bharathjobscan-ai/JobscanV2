@@ -15,9 +15,9 @@
  *   node workers/ai/run.mjs          # poll forever
  *   node workers/ai/run.mjs --once   # drain the queue and exit
  *
- * Effort: Claude Code takes its effort level from ~/.claude/settings.json
- * (`effortLevel`), not from a per-invocation flag. AI_EFFORT is recorded on the
- * row for provenance only.
+ * Effort and tools are set per task on the ai_jobs row and passed as
+ * `--effort` / `--allowedTools`, so a run never depends on the machine's global
+ * Claude Code settings.
  */
 import { spawn } from "node:child_process";
 import process from "node:process";
@@ -68,7 +68,7 @@ async function claimJob() {
         limit 1
         for update skip locked
      )
-    returning id, application_id, task_type, model, prompt, attempts
+    returning id, application_id, task_type, model, effort, allowed_tools, prompt, attempts
   `;
   return rows[0] ?? null;
 }
@@ -90,10 +90,14 @@ async function requeueStale() {
 }
 
 /** Run Claude Code headless. Prompt goes over stdin to avoid arg-length limits. */
-function runClaude(prompt, model) {
+function runClaude(prompt, { model, effort, allowedTools }) {
   return new Promise((resolve, reject) => {
     const args = ["-p", "--output-format", "json"];
     if (model) args.push("--model", model);
+    // Effort drives thinking depth, which dominates output cost.
+    if (effort) args.push("--effort", effort);
+    // Tools are granted per task; anything not listed stays unavailable.
+    if (allowedTools) args.push("--allowedTools", ...allowedTools.split(/\s+/));
     args.push(...EXTRA_ARGS);
 
     const child = spawn(CLAUDE_BIN, args, {
@@ -181,7 +185,10 @@ async function processOne() {
   const job = await claimJob();
   if (!job) return false;
 
-  log(`▶ ${job.task_type} ${job.id} (attempt ${job.attempts}, model ${job.model})`);
+  log(
+    `▶ ${job.task_type} ${job.id} (attempt ${job.attempts}, ${job.model}, ` +
+      `effort ${job.effort ?? "default"}, tools ${job.allowed_tools ?? "none"})`,
+  );
 
   if (!job.prompt) {
     await sql`
@@ -193,7 +200,11 @@ async function processOne() {
   }
 
   try {
-    const { text, usage } = await runClaude(job.prompt, job.model);
+    const { text, usage } = await runClaude(job.prompt, {
+      model: job.model,
+      effort: job.effort,
+      allowedTools: job.allowed_tools,
+    });
     if (!text.trim()) throw new Error("Claude returned an empty response");
 
     await sql`

@@ -65,7 +65,6 @@ Respond with a fenced \`json\` block, then the document body as markdown.
 \`\`\`json
 {
   "score": 0-100,
-  "matchCategory": "perfect_match" | "dicey_match" | "rejection_pool",
   "visaSignal": "short phrase describing sponsorship evidence",
   "analysis": {
     "summary": "one paragraph",
@@ -77,8 +76,16 @@ Respond with a fenced \`json\` block, then the document body as markdown.
 }
 \`\`\`
 
-Then the readable report or document in markdown. For resume and cover letter
-tasks include only \`analysis.summary\` and \`analysis.gaps\` in the JSON block.
+Then the readable report or document in markdown.
+
+The JSON block is what the dashboard renders, so put the substance there. Keep
+the markdown report **under 400 words** — it is a supporting detail view, not a
+duplicate of the analysis. Do not restate the strengths and gaps already listed
+in the JSON. The decision band is computed from the score by the application;
+do not state or invent one.
+
+For resume and cover letter tasks include only \`analysis.summary\` and
+\`analysis.gaps\` in the JSON block.
 `.trim();
 
 function jobBlock(context: TaskContext): string {
