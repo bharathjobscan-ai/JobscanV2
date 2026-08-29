@@ -1,10 +1,19 @@
 # JobScan V2 — Product Requirements Document
 
-**Current version:** 1.4 · **Last updated:** 2026-08-29 · **Owner:** Bharath Raghu
+**Current version:** 1.5 · **Last updated:** 2026-08-29 · **Owner:** Bharath Raghu
 
 ---
 
 ## Document control
+
+**Version 1.5 — 2026-08-29 — Skill decoupled from document generation**
+
+- The CVG skill no longer carries file-generation or typography instructions;
+  those live in `lib/documents/`. Content constraints stay with the model — the
+  strict one-page target in particular, which governs how much it writes and
+  cannot be compensated for by the renderer.
+- SimG (Pass 2) split into `prompts/cvg/SIMG.md` so it is not sent on every
+  generation call. Automatic invocation remains JSV2S1058 (Phase 2).
 
 **Version 1.4 — 2026-08-29 — Document deliverable format**
 

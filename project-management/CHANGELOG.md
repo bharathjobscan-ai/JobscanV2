@@ -8,6 +8,53 @@ version of the PRD always corresponds to a known state of the backlog.
 
 ---
 
+## v1.5 — 2026-08-29 — CVG skill decoupled from document generation
+
+Now that layout lives in `lib/documents/`, the skill no longer carries file or
+typography instructions.
+
+### Removed from `prompts/cvg/SKILL.md`
+
+- The `/mnt/skills/public/docx/SKILL.md` and `present_files` instructions —
+  neither exists in the worker, so Claude was being told to reach for tooling
+  that isn't there.
+- Font sizes, margins and filename conventions — all applied deterministically
+  by the renderer.
+- "Do not output Markdown as the final deliverable" and "always choose DOCX",
+  which contradicted the pipeline.
+- The reference to an attached `Bharath_Raghu_CV_v4_Final.pdf`, repointed at the
+  master resume supplied in the prompt.
+
+### Deliberately kept
+
+- **Strict 1-pager (A4).** This is a content-volume constraint, not a layout
+  one. The renderer compresses only to 9pt; deciding *which bullets to cut* is
+  the model's judgement and needs the one-page target.
+- Condense-before-overflow discipline, standard section headers, single-column
+  and no-tables — the last two stop markdown tables the parser would mangle.
+
+### Split out
+
+- `prompts/cvg/SIMG.md` — the Pass 2 adversarial evaluation, ~420 tokens that
+  could never fire in this pipeline (it only runs on explicit request) and was
+  being sent on every call. Preserved for JSV2S1058 in Phase 2, and usable
+  manually today by running it after GenG with the JD and generated documents.
+
+### Code
+
+- `DELIVERY_OVERRIDE` in `lib/ai/prompts.ts` shrinks from ~190 to ~40 tokens.
+  With the skill no longer instructing file creation, all it needs to state is
+  the heading convention the parser expects.
+
+### Measured effect
+
+Skill 4,181 → 3,733 tokens; override 190 → 40. **~598 input tokens saved per
+call, ~1,200 per application.** At Opus 5 input rates that is about $0.006 per
+application, roughly $0.36/month at 60 applications — negligible. The real
+gains are correctness (no calls to absent tooling) and clarity of instruction.
+
+---
+
 ## v1.4 — 2026-08-29 — .docx deliverable
 
 ### Decision: documents are rendered, not stored

@@ -43,36 +43,18 @@ async function readRequired(relativePath: string): Promise<string> {
 }
 
 /**
- * Overrides the CVG skill's delivery mechanism.
+ * Heading convention the .docx renderer parses (lib/documents/parse.ts).
  *
- * That skill targets Claude.ai, where a docx skill exists at /mnt/skills and
- * files are handed back through a present_files tool. Neither exists here. Its
- * *intent* is preserved exactly: DOCX remains the canonical deliverable and
- * markdown the drafting stage — we simply generate the DOCX in application code
- * (lib/documents/docx.ts) from your draft, applying the same A4, single-column,
- * font-size and margin constraints the skill specifies.
- *
- * Doing it this way makes every document byte-identical in style and costs
- * roughly a third of the output tokens of asking for formatted markup.
+ * The CVG skill itself no longer carries file-generation or typography
+ * instructions — those moved into lib/documents/docx.ts, so they are applied
+ * identically every run instead of being re-derived by the model. All that is
+ * left to state here is the markdown shape the parser expects.
  */
 const DELIVERY_OVERRIDE = `
-## Delivery mechanism for this run (overrides the skill's file-output steps)
+## Markdown structure
 
-You are running inside the JobScan application, not Claude.ai. There is no
-docx skill at /mnt/skills and no present_files tool. **Do not attempt to create
-or attach files.**
-
-Return the document as **markdown** in this response. The application renders
-the final .docx itself, applying your formatting constraints exactly: strict
-one-page A4, single column, Calibri, body 10-11pt, bullets 9.5-10pt, margins
-0.6in, no tables, no columns, no text boxes, no header or footer.
-
-So: keep every content, structure and calibration rule from the method above —
-section order, bullet count, keyword handling, one-page discipline — and let the
-application handle file generation. Use \`#\` for the name, \`##\` for section
-headers (Profile, Experience, Education, Core Competencies), \`###\` for role
-and company lines, and \`-\` for bullets, so the renderer maps your structure
-correctly.
+So the renderer maps your output correctly, use \`#\` for the name, \`##\` for
+section headers, \`###\` for role and company lines, and \`-\` for bullets.
 `.trim();
 
 const OUTPUT_CONTRACT = `
@@ -153,7 +135,7 @@ export async function buildPrompt(context: TaskContext): Promise<string> {
     "",
     jobBlock(context),
     "",
-    // Only the CV/CL skill tries to produce files; scoring returns a report.
+    // Only CV/CL output is parsed into a .docx; a score report stays markdown.
     context.taskType === "score" ? "" : DELIVERY_OVERRIDE,
     "",
     OUTPUT_CONTRACT,
