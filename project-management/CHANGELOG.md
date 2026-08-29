@@ -8,6 +8,40 @@ version of the PRD always corresponds to a known state of the backlog.
 
 ---
 
+## v1.3 — 2026-08-29 — Backlog additions, docx pipeline removed
+
+### Backlog
+
+- **Added JSV2S1125** (Phase 4) — define instructions to generate a formatted,
+  consolidated requirement document on request. Combines the base PRD with
+  artifacts from docs, design, architecture, images and markdown, plus the
+  changelog. Covers tech arrangements, module architecture, principles, feature
+  logic, diagrams, data-flow diagrams, trade-offs, decisions, risks, test cases
+  and a user-flow walkthrough. Ad-hoc, not a build step. No tracker subtasks —
+  the item has not been picked up.
+
+### Removed
+
+- **The .docx generation pipeline.** `project-management/build/`, the `pm:docs`
+  script and `scripts/build-pm-docs.mjs` are gone. The markdown already carries
+  the same information, and a consolidated document is now JSV2S1125 territory.
+
+### Documentation
+
+- `project-management/README.md` — states the two levels explicitly: the backlog
+  holds product items you define; the tracker holds `-T##` subtasks created only
+  once an item is picked up.
+- Fixed a misplaced tracker file that an earlier command had nested under
+  `backlog/project-management/tracker/`.
+
+### Decisions
+
+- **Pass G is not auto-invoked.** Today it runs only on your confirmation, so the
+  MVP treats resume and cover letter generation as a single call without it.
+  Making it mandatory is JSV2S1058 in Phase 2.
+
+---
+
 ## v1.2 — 2026-08-29 — Open decisions closed, token accounting added
 
 ### Decisions

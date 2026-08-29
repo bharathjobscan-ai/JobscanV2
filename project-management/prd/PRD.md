@@ -1,10 +1,20 @@
 # JobScan V2 — Product Requirements Document
 
-**Current version:** 1.2 · **Last updated:** 2026-08-29 · **Owner:** Bharath Raghu
+**Current version:** 1.3 · **Last updated:** 2026-08-29 · **Owner:** Bharath Raghu
 
 ---
 
 ## Document control
+
+**Version 1.3 — 2026-08-29 — Pass G scope clarified**
+
+- Pass G (adversarial validation of CV optimiser output) is **not** auto-invoked
+  in the MVP. It runs today only on explicit confirmation, so resume and cover
+  letter generation is a single call. Making it mandatory requires updating the
+  CVG skill and is tracked as JSV2S1058 in Phase 2. This lowers the measured
+  per-package token cost relative to the v1.1 estimate.
+- Added JSV2S1125 (Phase 4): consolidated requirement document generation on
+  request.
 
 **Version 1.2 — 2026-08-29 — Open decisions closed**
 
@@ -224,6 +234,11 @@ about $1.52 daily, $10.64 weekly, $45.60 monthly.
 
 - **Job scoring** — Claude Sonnet 5, effort high
 - **Resume and cover letter** — Claude Opus 5, effort high
+
+**Pass G (v1.3).** The adversarial validation pass is not auto-invoked. It runs
+on explicit confirmation today, so each of the resume and cover letter tasks is
+a single call. Making it mandatory is JSV2S1058 (Phase 2) and will add roughly
+one further call's worth of tokens per package.
 
 Set per task via environment configuration, not hardcoded, so the split can be
 changed without a code change. Claude Code takes its effort level from its own

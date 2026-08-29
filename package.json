@@ -17,7 +17,6 @@
     "worker": "node workers/ai/run.mjs",
     "worker:once": "node workers/ai/run.mjs --once",
     "test:integration": "vitest run --config vitest.integration.config.mts",
-    "pm:docs": "node scripts/build-pm-docs.mjs",
     "ai:report": "node scripts/ai-usage-report.mjs"
   },
   "dependencies": {
