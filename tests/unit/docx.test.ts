@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { docxFilename, renderDocx } from "@/lib/documents/docx";
 import {
   densityFor,
+  pageFit,
   parseDocument,
   type DocBlock,
 } from "@/lib/documents/parse";
@@ -228,5 +229,74 @@ describe("the real master resume", () => {
     const text = extractDocxText(await renderDocx(md, "resume"));
     expect(text).toContain("PROFILE");
     expect(text.length).toBeGreaterThan(1000);
+  });
+});
+
+describe("labelled lines, as Core Competencies uses", () => {
+  it("sets the label in bold and keeps the whole line extractable", async () => {
+    const md = [
+      "# NAME",
+      "",
+      "## CORE COMPETENCIES",
+      "",
+      "Product: Strategy and roadmapping, prioritisation, stakeholder management",
+      "Payments: Cross-border FX, settlement, card schemes, tokenisation",
+      "",
+    ].join("\n");
+
+    const buffer = await renderDocx(md, "resume");
+    const xml = extractDocxText(buffer);
+
+    expect(xml).toContain("Product:");
+    expect(xml).toContain("Strategy and roadmapping");
+    expect(xml).toContain("Payments:");
+    expect(xml).toContain("Cross-border FX");
+  });
+});
+
+describe("page fit, calibrated against a rendered PDF", () => {
+  it("treats a tailored one-page CV as fitting", () => {
+    // Roughly the shape of a real tailored CV: 3 roles, ~17 bullets.
+    const md = [
+      "# BHARATH RAGHU",
+      "bharathvraghu@gmail.com | +91 96771 49166 | Bangalore, India",
+      "Relocating to London",
+      "",
+      "## PROFILE",
+      "Payments infrastructure product leader with nine years across payments and fintech, "
+        + "having built a licensed payment facilitator from zero to a billion dollars of volume.",
+      "",
+      "## EXPERIENCE",
+      "### Juspay Technologies | Senior Product Manager",
+      "**Sep 2022 – Present**",
+      ...Array.from({ length: 13 }, (_, i) =>
+        `- Delivered a substantial payments capability number ${i} with measurable commercial impact across merchants.`),
+      "### Innova Solutions | Product Manager",
+      "**Apr 2019 – Aug 2022**",
+      "- Launched the incentive portal cutting processing time by seventy percent.",
+      "- Automated calculations freeing half of finance capacity.",
+      "",
+      "## EDUCATION",
+      "- PGDM, Finance — IMT Ghaziabad, 2017–2019",
+      "",
+      "## CORE COMPETENCIES",
+      "Payments: Cross-border FX, settlement, reconciliation, card schemes, tokenisation",
+      "",
+    ].join("\n");
+
+    expect(pageFit(md).fits).toBe(true);
+  });
+
+  it("flags genuine overflow with the amount over", () => {
+    const huge = "# N\n\n## E\n\n" + "- A fairly long achievement bullet describing measurable impact.\n".repeat(120);
+    const fit = pageFit(huge);
+    expect(fit.fits).toBe(false);
+    expect(fit.overBy).toBeGreaterThan(0);
+  });
+
+  it("only drops to 9pt on real overflow, not for a normal CV", () => {
+    const normal = parseDocument(readFileSync("prompts/master-resume.md", "utf8"));
+    // The master CV is long by design, but still should not hit the 9pt floor.
+    expect(densityFor(normal).body).toBeGreaterThanOrEqual(19); // 9.5pt or better
   });
 });

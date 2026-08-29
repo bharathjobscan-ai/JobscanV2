@@ -33,6 +33,14 @@ const ACCENT = "1F3864";
 
 export type DocxKind = "resume" | "cover_letter";
 
+/**
+ * Split a "Label: value" line, as Core Competencies uses.
+ *
+ * The reference CVs set the label bold so the categories are scannable; the
+ * whole line in one weight reads as a wall of text.
+ */
+const LABELLED = /^([A-Z][A-Za-z0-9 &/,'-]{1,44}):\s+(.*)$/;
+
 function headerBlock(text: string, d: Density, italic = false): Paragraph {
   return new Paragraph({
     alignment: AlignmentType.CENTER,
@@ -163,17 +171,29 @@ function buildParagraphs(doc: ParsedDocument, kind: DocxKind): Paragraph[] {
         );
         break;
 
-      case "paragraph":
+      case "paragraph": {
+        const labelled = block.text.match(LABELLED);
+        const children = labelled
+          ? [
+              new TextRun({
+                text: `${labelled[1]}: `,
+                bold: true,
+                size: d.body,
+                font: FONT,
+              }),
+              new TextRun({ text: labelled[2], size: d.body, font: FONT }),
+            ]
+          : [new TextRun({ text: block.text, size: d.body, font: FONT })];
+
         out.push(
           new Paragraph({
             spacing: { after: d.bulletSpacing + 10, line: d.lineSpacing },
             alignment: AlignmentType.LEFT,
-            children: [
-              new TextRun({ text: block.text, size: d.body, font: FONT }),
-            ],
+            children,
           }),
         );
         break;
+      }
 
       case "rule":
         // Separators are already expressed through section heading borders.

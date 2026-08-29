@@ -150,8 +150,10 @@ export function parseDocument(markdown: string): ParsedDocument {
 
   flush();
 
-  // Roughly 105 characters fit a line at 9.5pt across A4 with 0.5in margins.
-  const CHARS_PER_LINE = 105;
+  // Calibrated against a rendered PDF: at 9-9.5pt Calibri across A4 with 0.5in
+  // margins a full line carries about 132 characters. An earlier estimate of
+  // 105 over-counted by a quarter and made short CVs look like overflows.
+  const CHARS_PER_LINE = 132;
   const estimatedLines = blocks.reduce((total, block) => {
     if (block.kind === "rule") return total;
     if (block.kind === "section") return total + 1.6; // heading + rule + gap
@@ -163,8 +165,15 @@ export function parseDocument(markdown: string): ParsedDocument {
   return { name, blocks, bulletCount, totalChars, estimatedLines };
 }
 
-/** Usable rendered lines on one A4 page at these margins. */
-export const LINES_PER_PAGE = 52;
+/**
+ * Usable capacity of one A4 page, in the units this estimator counts.
+ *
+ * Calibrated against a rendered PDF: a CV this estimator scored at 61 filled
+ * roughly 80% of the page, putting the ceiling near 72. The number is not a
+ * literal line count — it is this estimator's scale, which is what matters
+ * since the same function drives both the density choice and the fit badge.
+ */
+export const LINES_PER_PAGE = 72;
 
 /**
  * Whether the content will hold a single page, and by how much it misses.
@@ -209,20 +218,26 @@ export type Density = {
 export function densityFor(doc: ParsedDocument): Density {
   const lines = doc.estimatedLines;
 
-  if (lines > 56) {
+  // 9pt is the skill's floor and only earns its place on a genuine overflow.
+  if (lines > LINES_PER_PAGE) {
     return {
-      body: 18, bullet: 18, name: 26, section: 19,
-      lineSpacing: 200, bulletSpacing: 8, sectionBefore: 70,
+      body: 18, bullet: 18, name: 27, section: 19,
+      lineSpacing: 215, bulletSpacing: 14, sectionBefore: 90,
     };
   }
-  if (lines > 46) {
+
+  // 9.5pt is the working default: it reads better than 9pt and still holds a
+  // page for a typical CV, with spacing opened up to fill it rather than
+  // leaving a fifth of the sheet blank.
+  if (lines > 52) {
     return {
-      body: 19, bullet: 19, name: 28, section: 20,
-      lineSpacing: 210, bulletSpacing: 14, sectionBefore: 90,
+      body: 19, bullet: 19, name: 29, section: 20,
+      lineSpacing: 250, bulletSpacing: 40, sectionBefore: 150,
     };
   }
+
   return {
     body: 20, bullet: 20, name: 30, section: 21,
-    lineSpacing: 230, bulletSpacing: 20, sectionBefore: 120,
+    lineSpacing: 264, bulletSpacing: 60, sectionBefore: 180,
   };
 }
