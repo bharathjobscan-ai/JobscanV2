@@ -78,14 +78,20 @@ Respond with a fenced \`json\` block, then the document body as markdown.
 
 Then the readable report or document in markdown.
 
-The JSON block is what the dashboard renders, so put the substance there. Keep
-the markdown report **under 400 words** — it is a supporting detail view, not a
-duplicate of the analysis. Do not restate the strengths and gaps already listed
-in the JSON. The decision band is computed from the score by the application;
-do not state or invent one.
+\`analysis.breakdown\` must itemise every pillar and sub-component with its
+points, in the form used by the method above.
 
-For resume and cover letter tasks include only \`analysis.summary\` and
-\`analysis.gaps\` in the JSON block.
+The decision band is computed from the score by the application; do not state or
+invent one.
+
+**Score reports:** the markdown must show the full working — a table of every
+pillar and sub-component with points awarded and maximum, the weighted
+calculation, and any hard override or exception applied (and why). Use markdown
+tables; they render as tables. Do not restate the strengths and gaps already in
+the JSON — show the arithmetic instead.
+
+**Resume and cover letter:** keep the markdown to the document itself, and
+include only \`analysis.summary\` and \`analysis.gaps\` in the JSON block.
 `.trim();
 
 function jobBlock(context: TaskContext): string {

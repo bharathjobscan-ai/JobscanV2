@@ -201,9 +201,52 @@ export default async function ApplicationDetailPage({
                   ) : null}
                 </div>
 
+                {/* Pillar-by-pillar working, so the number is auditable. */}
+                {application.jobScoreAnalysis?.breakdown &&
+                Object.keys(application.jobScoreAnalysis.breakdown).length > 0 ? (
+                  <div className="border-t border-line pt-3">
+                    <h3 className="mb-1.5 text-xs font-semibold text-muted">
+                      Score breakdown
+                    </h3>
+                    <dl className="flex flex-col gap-1.5">
+                      {Object.entries(application.jobScoreAnalysis.breakdown).map(
+                        ([key, value]) => (
+                          <div
+                            key={key}
+                            className="grid grid-cols-[9rem_1fr] gap-2 text-xs"
+                          >
+                            <dt className="font-medium capitalize text-muted">
+                              {key.replace(/([a-z])([A-Z])/g, "$1 $2")}
+                            </dt>
+                            <dd className="tabular-nums">{String(value)}</dd>
+                          </div>
+                        ),
+                      )}
+                    </dl>
+                  </div>
+                ) : null}
+
+                {application.jobScoreAnalysis?.visaSignals?.length ? (
+                  <div className="border-t border-line pt-3">
+                    <h3 className="mb-1.5 text-xs font-semibold text-muted">
+                      Visa signals
+                    </h3>
+                    <ul className="flex flex-col gap-1 text-xs">
+                      {application.jobScoreAnalysis.visaSignals.map((signal, i) => (
+                        <li
+                          key={i}
+                          className="relative pl-4 before:absolute before:left-0 before:top-[0.5em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-info"
+                        >
+                          {signal}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
                 {scoreReport?.contentMd ? (
-                  <details className="border-t border-line pt-3">
-                    <summary className="cursor-pointer text-xs text-muted">
+                  <details className="border-t border-line pt-3" open>
+                    <summary className="cursor-pointer text-xs font-medium text-muted">
                       Full score analysis
                     </summary>
                     <div className="mt-3">
