@@ -21,6 +21,7 @@ import { Markdown } from "@/components/ui/markdown";
 import { getTaskStates, settleAiJobs } from "@/features/ai/tasks";
 import { getApplicationDetail } from "@/features/applications/queries";
 import { DOCUMENT_LABELS, STATUS_LABELS } from "@/lib/config/constants";
+import { pageFit } from "@/lib/documents/parse";
 
 function formatDate(value: Date | string | null): string {
   if (!value) return "—";
@@ -258,6 +259,23 @@ export default async function ApplicationDetailPage({
                   meta={doc ? `v${doc.version} · ${doc.model ?? doc.generatedBy}` : undefined}
                   action={
                     <div className="flex items-center gap-2">
+                      {doc && docType === "resume" && doc.contentMd
+                        ? (() => {
+                            const fit = pageFit(doc.contentMd);
+                            return fit.fits ? (
+                              <Badge tone="positive" title={`~${fit.estimatedLines} of ${52} lines`}>
+                                Fits one page
+                              </Badge>
+                            ) : (
+                              <Badge
+                                tone="negative"
+                                title={`~${fit.estimatedLines} lines against ~52 on an A4 page. The renderer is already at its 9pt floor, so the content needs cutting — regenerate.`}
+                              >
+                                Over by ~{fit.overBy} lines
+                              </Badge>
+                            );
+                          })()
+                        : null}
                       {doc ? (
                         <a
                           href={`/api/documents/${doc.id}`}

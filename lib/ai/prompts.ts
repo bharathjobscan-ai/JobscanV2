@@ -110,6 +110,21 @@ cannot carry: the entity you resolved, what each search returned, how you
 weighed conflicting evidence, and the application strategy. Keep it under 400
 words.
 
+**Length budget for the CV — this is a hard constraint, not a guideline.**
+
+"One page" is not something you can eyeball in markdown, so use these counts.
+A4 at the applied typography holds about 52 rendered lines, and the header,
+section headings and role lines consume roughly 13 of them. That leaves:
+
+- **Profile: 90 words maximum.**
+- **18 bullets maximum across the entire CV**, all roles combined.
+- **Each bullet: 200 characters maximum** — roughly two rendered lines.
+
+Count them before you finish. If you are over, **cut the lowest-relevance
+bullets entirely** — do not compress wording to fit more in, and never carry
+content onto a second page. A CV that overflows is a failed deliverable
+regardless of how good the content is.
+
 **Resume and cover letter:** the markdown must be **the document and nothing
 else** — no commentary, no output summary, no preamble. It is rendered straight
 into a .docx.

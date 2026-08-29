@@ -163,6 +163,29 @@ export function parseDocument(markdown: string): ParsedDocument {
   return { name, blocks, bulletCount, totalChars, estimatedLines };
 }
 
+/** Usable rendered lines on one A4 page at these margins. */
+export const LINES_PER_PAGE = 52;
+
+/**
+ * Whether the content will hold a single page, and by how much it misses.
+ *
+ * The renderer bottoms out at 9pt, so beyond this the content itself is too
+ * long — the model has to cut, which is why the prompt carries a hard bullet
+ * budget.
+ */
+export function pageFit(markdown: string): {
+  estimatedLines: number;
+  fits: boolean;
+  overBy: number;
+} {
+  const { estimatedLines } = parseDocument(markdown);
+  return {
+    estimatedLines: Math.round(estimatedLines),
+    fits: estimatedLines <= LINES_PER_PAGE,
+    overBy: Math.max(0, Math.round(estimatedLines - LINES_PER_PAGE)),
+  };
+}
+
 export type Density = {
   body: number;
   bullet: number;
