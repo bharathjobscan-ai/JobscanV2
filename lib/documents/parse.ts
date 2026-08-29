@@ -46,12 +46,26 @@ export function parseDocument(markdown: string): ParsedDocument {
 
   const flush = () => {
     if (buffer.length === 0) return;
-    const text = clean(buffer.join(" "));
+    const lines = [...buffer];
     buffer = [];
+
+    if (!seenSection) {
+      // Header lines are distinct facts — contact details on one line, work
+      // authorisation on the next. Joining them produces a run-on that reads
+      // badly and parses worse. Keep one block per line.
+      for (const line of lines) {
+        const text = clean(line);
+        if (!text) continue;
+        totalChars += text.length;
+        blocks.push({ kind: "contact", text });
+      }
+      return;
+    }
+
+    const text = clean(lines.join(" "));
     if (!text) return;
     totalChars += text.length;
-    // Lines before the first section heading are contact/meta detail.
-    blocks.push({ kind: seenSection ? "paragraph" : "contact", text });
+    blocks.push({ kind: "paragraph", text });
   };
 
   for (const raw of lines) {
