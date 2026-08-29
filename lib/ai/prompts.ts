@@ -71,15 +71,30 @@ Respond with a fenced \`json\` block, then the document body as markdown.
     "strengths": ["..."],
     "gaps": ["..."],
     "visaSignals": ["..."],
-    "breakdown": { "dimension": "score or note" }
+    "breakdown": [
+      { "pillar": "Visa Intelligence", "component": "Intent Signals",
+        "awarded": 0, "max": 20,
+        "reason": "why these points were withheld or earned" }
+    ],
+    "finalCalculation": "(A x 0.50) + (B x 0.30) + (C x 0.20) = N",
+    "exceptions": ["any hard override applied, and why"]
   }
 }
 \`\`\`
 
 Then the readable report or document in markdown.
 
-\`analysis.breakdown\` must itemise every pillar and sub-component with its
-points, in the form used by the method above.
+\`analysis.breakdown\` must contain **one entry per scored sub-component**, not
+one per pillar. Use the method's own rubric: every named component with its own
+maximum gets its own line — Structural Eligibility, Behavioral Signals and
+Intent Signals under Visa Intelligence; Domain, Functional PM and Seniority
+under Resume Match; Location, Role Alignment, Experience Fit, Reachability and
+Posting Age under Job Relevance.
+
+Where a component is itself additive from named signals, add a line for each of
+those too, so a withheld point is traceable to the rule that withheld it. Give
+every line a \`reason\` — for anything scoring below its maximum, say precisely
+what was missing and which rule applied.
 
 The decision band is computed from the score by the application; do not state or
 invent one.

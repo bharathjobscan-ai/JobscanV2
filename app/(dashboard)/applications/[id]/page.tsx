@@ -14,6 +14,7 @@ import {
   ReferralForm,
   StatusForm,
 } from "@/components/applications/workspace-forms";
+import { ScoreBreakdown } from "@/components/applications/score-breakdown";
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui/base";
 import { Markdown } from "@/components/ui/markdown";
 import { getTaskStates, settleAiJobs } from "@/features/ai/tasks";
@@ -202,27 +203,9 @@ export default async function ApplicationDetailPage({
                 </div>
 
                 {/* Pillar-by-pillar working, so the number is auditable. */}
-                {application.jobScoreAnalysis?.breakdown &&
-                Object.keys(application.jobScoreAnalysis.breakdown).length > 0 ? (
+                {application.jobScoreAnalysis ? (
                   <div className="border-t border-line pt-3">
-                    <h3 className="mb-1.5 text-xs font-semibold text-muted">
-                      Score breakdown
-                    </h3>
-                    <dl className="flex flex-col gap-1.5">
-                      {Object.entries(application.jobScoreAnalysis.breakdown).map(
-                        ([key, value]) => (
-                          <div
-                            key={key}
-                            className="grid grid-cols-[9rem_1fr] gap-2 text-xs"
-                          >
-                            <dt className="font-medium capitalize text-muted">
-                              {key.replace(/([a-z])([A-Z])/g, "$1 $2")}
-                            </dt>
-                            <dd className="tabular-nums">{String(value)}</dd>
-                          </div>
-                        ),
-                      )}
-                    </dl>
+                    <ScoreBreakdown analysis={application.jobScoreAnalysis} />
                   </div>
                 ) : null}
 

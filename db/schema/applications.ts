@@ -15,13 +15,35 @@ import type {
 } from "@/lib/config/constants";
 import { rawJobs } from "./raw-jobs";
 
+/**
+ * One scored sub-component, e.g. Intent Signals 0/20 within Visa Intelligence.
+ *
+ * ScoreG's rubric is hierarchical — three pillars, each with named
+ * sub-components carrying their own maxima — so the breakdown is stored as
+ * line items rather than a flat map. That is what makes a lost point
+ * traceable to the rule that removed it.
+ */
+export type ScoreLineItem = {
+  pillar: string;
+  component: string;
+  awarded: number;
+  max: number;
+  /** Why points were withheld, or how they were earned. */
+  reason?: string;
+};
+
 /** Structure of `jobScoreAnalysis` (JSV2S1081). */
 export type JobScoreAnalysis = {
   summary?: string;
   strengths?: string[];
   gaps?: string[];
   visaSignals?: string[];
-  breakdown?: Record<string, number | string>;
+  /** Line items since 2026-08-29; older rows hold the flat map. */
+  breakdown?: ScoreLineItem[] | Record<string, number | string>;
+  /** Weighted arithmetic, e.g. "(30x0.50)+(94x0.30)+(77x0.20) = 58.6". */
+  finalCalculation?: string;
+  /** Hard overrides or exceptions applied, with the reason. */
+  exceptions?: string[];
 };
 
 /**

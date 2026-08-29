@@ -262,14 +262,35 @@ Input: Manual for now. If not provided, assume "unknown" and apply no modifier.
 
 ## WEB SEARCH PROTOCOL
 
-For every job scored, automatically perform these searches (do not ask for permission):
+For every job scored, automatically perform these searches (do not ask for permission).
+
+**Step 0 — Resolve the legal entity first. Do this before any other search.**
+
+The sponsor register lists *registered legal entities*, not trading names. Searching
+the brand name will miss the record. Establish the entity that actually employs in
+the target country:
+
+- Search "[Company] [Country] legal entity name" and "[Company] [Country] Limited
+  OR GmbH OR B.V. companies house".
+- Prefer the local operating subsidiary over the global parent: Visa → **Visa Europe
+  Limited** (UK), Google → **Google UK Limited**, Amazon → **Amazon EU SARL**.
+- State the resolved entity in the output. If you cannot resolve it, say so
+  explicitly and use the brand name, flagging the search as lower confidence.
+
+Then substitute **[Entity]** — the resolved legal name — into the searches below.
+
+**Disambiguation.** When the company name collides with a common word (Visa, Apple,
+Amazon, Oracle, Palantir), never search the bare name against visa terms — the
+results will be noise about the word, not the company. Anchor every query with the
+resolved entity plus a disambiguator such as the industry, headquarters city, or
+"the company".
 
 1. **Visa Blocker check:** Analyze JD text for Visa Blocker List phrases.
-2. **Sponsor registry:** Search "[Company] UK sponsor licence" or "[Company] IND recognised sponsor" depending on country.
-3. **Behavioral signals:** Search "[Company] visa sponsorship glassdoor reddit" and "[Company] Product Manager India hired linkedin"
-4. **Recency hire:** Search "[Company] [Role domain] hired from India 2025 2026"
-5. **Company careers:** Search "[Company] careers relocation support visa"
-6. **Community sentiment:** Search "[Company] visa sponsorship experience reddit blind"
+2. **Sponsor registry:** Search "[Entity] UK sponsor licence register" or "[Entity] IND recognised sponsor" depending on country. Also try the register listing directly, e.g. "[Entity] site:gov.uk register of licensed sponsors".
+3. **Behavioral signals:** Search "[Entity] visa sponsorship glassdoor reddit" and "[Entity] Product Manager India hired linkedin"
+4. **Recency hire:** Search "[Entity] [Role domain] hired from India 2025 2026"
+5. **Company careers:** Search "[Entity] careers relocation support visa"
+6. **Community sentiment:** Search "[Entity] visa sponsorship experience reddit blind"
 
 Report what you found (or didn't find) in the output summary. Be transparent about data quality.
 
