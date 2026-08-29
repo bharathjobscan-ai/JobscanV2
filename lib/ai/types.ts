@@ -13,7 +13,7 @@ export type TaskContext = {
   jobUrl: string;
   visaSponsorshipMentioned?: boolean | null;
   /** ScoreG's Posting Age Modifier (3E) needs this; omitting it forfeits the rule. */
-  postedAt?: string | null;
+  postedAt?: string | Date | null;
   employmentType?: string | null;
   seniority?: string | null;
   salaryRaw?: string | null;

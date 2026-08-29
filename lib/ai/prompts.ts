@@ -122,6 +122,12 @@ include only \`analysis.summary\` and \`analysis.gaps\` in the JSON block.
  * even though the value was sitting in the database.
  */
 function jobBlock(context: TaskContext): string {
+  // Drizzle may hand back a Date or a string depending on driver mode; the
+  // model should always see an unambiguous ISO date.
+  const postedAt = context.postedAt
+    ? new Date(context.postedAt).toISOString().slice(0, 10)
+    : null;
+
   const reachability = context.reachability
     ? (REACHABILITY_LABELS[context.reachability as ReachabilityLevel] ??
       context.reachability)
@@ -134,8 +140,8 @@ function jobBlock(context: TaskContext): string {
     context.location ? `Location: ${context.location}` : null,
     context.country ? `Country: ${context.country}` : null,
     `URL: ${context.jobUrl}`,
-    context.postedAt
-      ? `Posted on: ${context.postedAt} (today is ${new Date().toISOString().slice(0, 10)})`
+    postedAt
+      ? `Posted on: ${postedAt} (today is ${new Date().toISOString().slice(0, 10)})`
       : "Posted on: not provided",
     context.employmentType ? `Employment type: ${context.employmentType}` : null,
     context.seniority ? `Seniority: ${context.seniority}` : null,
