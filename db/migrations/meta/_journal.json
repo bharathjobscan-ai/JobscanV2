@@ -22,6 +22,13 @@
       "when": 1788012149849,
       "tag": "0002_ai_job_allowed_tools",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788015821407,
+      "tag": "0003_raw_job_reachability",
+      "breakpoints": true
     }
   ]
 }

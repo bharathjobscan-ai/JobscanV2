@@ -205,6 +205,7 @@ export async function ingestRows(
         visaSponsorshipMentioned: row.value.visa_sponsorship_mentioned ?? null,
         ingestionMethod: "manual_upload",
         inboundSourceDetail: row.value.inbound_source_detail ?? null,
+        reachability: row.value.reachability ?? null,
         notes: row.value.notes ?? null,
         rawPayload: row.raw,
         fingerprint: row.fingerprint,

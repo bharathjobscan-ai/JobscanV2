@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { JOB_SOURCES } from "@/lib/config/constants";
+import { JOB_SOURCES, REACHABILITY_LEVELS } from "@/lib/config/constants";
 
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 export const MAX_UPLOAD_ROWS = 500;
@@ -37,6 +37,8 @@ const HEADER_ALIASES: Record<string, string> = {
   visasponsorship: "visa_sponsorship_mentioned",
   sponsorship: "visa_sponsorship_mentioned",
   leadsource: "inbound_source_detail",
+  applyroute: "reachability",
+  contactroute: "reachability",
 };
 
 function canonicalKey(key: string): string {
@@ -75,6 +77,7 @@ const CANONICAL_FIELDS = new Set([
   "visa_sponsorship_mentioned",
   "source_job_id",
   "inbound_source_detail",
+  "reachability",
   "notes",
 ]);
 
@@ -181,6 +184,11 @@ export const UploadRowSchema = z.object({
   visa_sponsorship_mentioned: z.boolean().optional(),
   source_job_id: z.string().max(200).optional(),
   inbound_source_detail: z.string().max(300).optional(),
+  reachability: z
+    .enum(REACHABILITY_LEVELS, {
+      message: `reachability must be one of: ${REACHABILITY_LEVELS.join(", ")}`,
+    })
+    .optional(),
   notes: z.string().max(2000).optional(),
 });
 
@@ -235,6 +243,7 @@ export function parseUploadRow(input: Record<string, unknown>): RowParseResult {
     visa_sponsorship_mentioned: boolValue === INVALID ? undefined : boolValue,
     source_job_id: cleanText(row.source_job_id),
     inbound_source_detail: cleanText(row.inbound_source_detail),
+    reachability: cleanText(row.reachability)?.toLowerCase().replace(/[\s-]+/g, "_"),
     notes: cleanText(row.notes),
   };
 

@@ -50,6 +50,12 @@ export const rawJobs = pgTable(
 
     /** JSV2S1034 — referral, recruiter, external portal, networking lead. */
     inboundSourceDetail: text("inbound_source_detail"),
+
+    /**
+     * How a human can be reached about this role. Feeds ScoreG's Reachability
+     * component (Pillar 3D, 0-15), which is manual input by design.
+     */
+    reachability: text("reachability"),
     notes: text("notes"),
 
     /** The original uploaded row, verbatim, for reprocessing and debugging. */

@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { AiTaskType } from "@/lib/config/constants";
+import {
+  REACHABILITY_LABELS,
+  type AiTaskType,
+  type ReachabilityLevel,
+} from "@/lib/config/constants";
 import type { TaskContext } from "./types";
 
 /**
@@ -99,17 +103,30 @@ what was missing and which rule applied.
 The decision band is computed from the score by the application; do not state or
 invent one.
 
-**Score reports:** the markdown must show the full working — a table of every
-pillar and sub-component with points awarded and maximum, the weighted
-calculation, and any hard override or exception applied (and why). Use markdown
-tables; they render as tables. Do not restate the strengths and gaps already in
-the JSON — show the arithmetic instead.
+**Score reports:** the application renders the breakdown table, the weighted
+calculation and the overrides from the JSON above, so **do not repeat any of
+them in the markdown**. Use the markdown only for what the structured fields
+cannot carry: the entity you resolved, what each search returned, how you
+weighed conflicting evidence, and the application strategy. Keep it under 400
+words.
 
 **Resume and cover letter:** keep the markdown to the document itself, and
 include only \`analysis.summary\` and \`analysis.gaps\` in the JSON block.
 `.trim();
 
+/**
+ * Everything captured at upload that a scoring rule depends on.
+ *
+ * Omissions here are silent scoring failures: leaving out the posting date made
+ * ScoreG report "no posting date provided" and forfeit its Posting Age Modifier
+ * even though the value was sitting in the database.
+ */
 function jobBlock(context: TaskContext): string {
+  const reachability = context.reachability
+    ? (REACHABILITY_LABELS[context.reachability as ReachabilityLevel] ??
+      context.reachability)
+    : null;
+
   return [
     "## Job",
     `Title: ${context.title}`,
@@ -117,6 +134,14 @@ function jobBlock(context: TaskContext): string {
     context.location ? `Location: ${context.location}` : null,
     context.country ? `Country: ${context.country}` : null,
     `URL: ${context.jobUrl}`,
+    context.postedAt
+      ? `Posted on: ${context.postedAt} (today is ${new Date().toISOString().slice(0, 10)})`
+      : "Posted on: not provided",
+    context.employmentType ? `Employment type: ${context.employmentType}` : null,
+    context.seniority ? `Seniority: ${context.seniority}` : null,
+    context.salaryRaw ? `Salary: ${context.salaryRaw}` : null,
+    reachability ? `Reachability: ${reachability}` : "Reachability: not provided",
+    context.inboundSourceDetail ? `Lead source: ${context.inboundSourceDetail}` : null,
     context.visaSponsorshipMentioned !== null &&
     context.visaSponsorshipMentioned !== undefined
       ? `Sponsorship mentioned in posting: ${context.visaSponsorshipMentioned}`

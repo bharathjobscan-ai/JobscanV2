@@ -92,6 +92,12 @@ export async function enqueueTask(
     description: row.job.description!,
     jobUrl: row.job.jobUrl,
     visaSponsorshipMentioned: row.job.visaSponsorshipMentioned,
+    postedAt: row.job.postedAt,
+    employmentType: row.job.employmentType,
+    seniority: row.job.seniority,
+    salaryRaw: row.job.salaryRaw,
+    reachability: row.job.reachability,
+    inboundSourceDetail: row.job.inboundSourceDetail,
   };
 
   const model = modelFor(taskType);

@@ -1,6 +1,6 @@
 import { UploadForm } from "@/components/ingestion/upload-form";
 import { Card, CardHeader } from "@/components/ui/base";
-import { JOB_SOURCES } from "@/lib/config/constants";
+import { JOB_SOURCES, REACHABILITY_LABELS, REACHABILITY_LEVELS } from "@/lib/config/constants";
 import { MAX_UPLOAD_ROWS } from "@/features/ingestion/schema";
 
 export default function UploadPage() {
@@ -52,7 +52,7 @@ export default function UploadPage() {
               <p className="text-muted">
                 location, country, external_apply_url, posted_at, employment_type,
                 seniority, salary_raw, visa_sponsorship_mentioned, source_job_id,
-                inbound_source_detail, notes
+                inbound_source_detail, reachability, notes
               </p>
             </div>
 
@@ -66,6 +66,26 @@ export default function UploadPage() {
                 <li>Booleans: true/false, yes/no, y/n, 1/0.</li>
                 <li>A bad row is rejected on its own; the rest still import.</li>
                 <li>Max {MAX_UPLOAD_ROWS} rows and 5 MB per upload.</li>
+                <li>
+                  <code className="font-mono">posted_at</code> drives the posting-age
+                  score — supply it, or that rule is forfeited.
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <h3 className="mb-1 font-semibold">Reachability</h3>
+              <p className="mb-1 text-muted">
+                How you can reach a human about this role. Scoring uses it
+                directly — leaving it blank forfeits up to 15 points.
+              </p>
+              <ul className="list-disc pl-4 text-muted">
+                {REACHABILITY_LEVELS.map((level) => (
+                  <li key={level}>
+                    <code className="font-mono">{level}</code> —{" "}
+                    {REACHABILITY_LABELS[level]}
+                  </li>
+                ))}
               </ul>
             </div>
 

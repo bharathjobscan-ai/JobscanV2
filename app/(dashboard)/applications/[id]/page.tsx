@@ -202,38 +202,43 @@ export default async function ApplicationDetailPage({
                   ) : null}
                 </div>
 
-                {/* Pillar-by-pillar working, so the number is auditable. */}
-                {application.jobScoreAnalysis ? (
-                  <div className="border-t border-line pt-3">
-                    <ScoreBreakdown analysis={application.jobScoreAnalysis} />
-                  </div>
-                ) : null}
-
-                {application.jobScoreAnalysis?.visaSignals?.length ? (
-                  <div className="border-t border-line pt-3">
-                    <h3 className="mb-1.5 text-xs font-semibold text-muted">
-                      Visa signals
-                    </h3>
-                    <ul className="flex flex-col gap-1 text-xs">
-                      {application.jobScoreAnalysis.visaSignals.map((signal, i) => (
-                        <li
-                          key={i}
-                          className="relative pl-4 before:absolute before:left-0 before:top-[0.5em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-info"
-                        >
-                          {signal}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                {scoreReport?.contentMd ? (
-                  <details className="border-t border-line pt-3" open>
-                    <summary className="cursor-pointer text-xs font-medium text-muted">
+                {/* Detail lives behind the disclosure so the card stays a summary. */}
+                {application.jobScoreAnalysis?.breakdown ||
+                application.jobScoreAnalysis?.visaSignals?.length ||
+                scoreReport?.contentMd ? (
+                  <details className="border-t border-line pt-3">
+                    <summary className="cursor-pointer text-xs font-medium text-muted hover:text-foreground">
                       Full score analysis
                     </summary>
-                    <div className="mt-3">
-                      <Markdown content={scoreReport.contentMd} />
+
+                    <div className="mt-3 flex flex-col gap-4">
+                      {application.jobScoreAnalysis ? (
+                        <ScoreBreakdown analysis={application.jobScoreAnalysis} />
+                      ) : null}
+
+                      {application.jobScoreAnalysis?.visaSignals?.length ? (
+                        <div>
+                          <h3 className="mb-1.5 text-xs font-semibold text-muted">
+                            Visa signals
+                          </h3>
+                          <ul className="flex flex-col gap-1 text-xs">
+                            {application.jobScoreAnalysis.visaSignals.map((signal, i) => (
+                              <li
+                                key={i}
+                                className="relative pl-4 before:absolute before:left-0 before:top-[0.5em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-info"
+                              >
+                                {signal}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {scoreReport?.contentMd ? (
+                        <div className="border-t border-line pt-3">
+                          <Markdown content={scoreReport.contentMd} />
+                        </div>
+                      ) : null}
                     </div>
                   </details>
                 ) : null}

@@ -183,6 +183,26 @@ export const JOB_SOURCES = [
 
 export type JobSource = (typeof JOB_SOURCES)[number];
 
+/**
+ * ScoreG's Reachability scale (Pillar 3D, 0-15). Manual input by design —
+ * how you can actually reach a human about this role.
+ */
+export const REACHABILITY_LEVELS = [
+  "referral",
+  "recruiter_contact",
+  "careers_page",
+  "generic_portal",
+] as const;
+
+export type ReachabilityLevel = (typeof REACHABILITY_LEVELS)[number];
+
+export const REACHABILITY_LABELS: Record<ReachabilityLevel, string> = {
+  referral: "Referral available (15)",
+  recruiter_contact: "Recruiter/HM contactable on LinkedIn (10)",
+  careers_page: "Company careers page, direct apply (5)",
+  generic_portal: "Generic portal only — Workday/Taleo (2)",
+};
+
 export const INGESTION_METHODS = ["manual_upload", "api", "watcher"] as const;
 export type IngestionMethod = (typeof INGESTION_METHODS)[number];
 

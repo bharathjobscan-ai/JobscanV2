@@ -1,0 +1,1 @@
+ALTER TABLE "raw_jobs" ADD COLUMN "reachability" text;
