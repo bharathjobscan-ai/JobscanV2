@@ -195,6 +195,15 @@ export function pageFit(markdown: string): {
   };
 }
 
+/**
+ * Resume line spacing, in OOXML units where 240 is single.
+ *
+ * 216 is 0.9 — tighter than single, which is how a dense professional CV is
+ * typeset. Applied uniformly rather than varied by density band, so the page
+ * reads evenly no matter how much content it carries.
+ */
+export const RESUME_LINE_SPACING = 216;
+
 export type Density = {
   body: number;
   bullet: number;
@@ -222,7 +231,7 @@ export function densityFor(doc: ParsedDocument): Density {
   if (lines > LINES_PER_PAGE) {
     return {
       body: 18, bullet: 18, name: 27, section: 19,
-      lineSpacing: 215, bulletSpacing: 14, sectionBefore: 90,
+      lineSpacing: RESUME_LINE_SPACING, bulletSpacing: 14, sectionBefore: 90,
     };
   }
 
@@ -232,12 +241,12 @@ export function densityFor(doc: ParsedDocument): Density {
   if (lines > 52) {
     return {
       body: 19, bullet: 19, name: 29, section: 20,
-      lineSpacing: 250, bulletSpacing: 40, sectionBefore: 150,
+      lineSpacing: RESUME_LINE_SPACING, bulletSpacing: 40, sectionBefore: 150,
     };
   }
 
   return {
     body: 20, bullet: 20, name: 30, section: 21,
-    lineSpacing: 264, bulletSpacing: 60, sectionBefore: 180,
+    lineSpacing: RESUME_LINE_SPACING, bulletSpacing: 60, sectionBefore: 180,
   };
 }

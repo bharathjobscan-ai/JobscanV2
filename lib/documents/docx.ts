@@ -2,6 +2,7 @@ import {
   AlignmentType,
   BorderStyle,
   Document,
+  LineRuleType,
   Packer,
   Paragraph,
   TabStopType,
@@ -44,7 +45,7 @@ const LABELLED = /^([A-Z][A-Za-z0-9 &/,'-]{1,44}):\s+(.*)$/;
 function headerBlock(text: string, d: Density, italic = false): Paragraph {
   return new Paragraph({
     alignment: AlignmentType.CENTER,
-    spacing: { after: 20, line: d.lineSpacing },
+    spacing: { after: 20, line: d.lineSpacing, lineRule: LineRuleType.AUTO },
     children: [
       new TextRun({ text, size: d.bullet, font: FONT, italics: italic }),
     ],
@@ -163,7 +164,11 @@ function buildParagraphs(doc: ParsedDocument, kind: DocxKind): Paragraph[] {
         out.push(
           new Paragraph({
             bullet: { level: 0 },
-            spacing: { after: d.bulletSpacing, line: d.lineSpacing },
+            spacing: {
+              after: d.bulletSpacing,
+              line: d.lineSpacing,
+              lineRule: LineRuleType.AUTO,
+            },
             children: [
               new TextRun({ text: block.text, size: d.bullet, font: FONT }),
             ],
@@ -187,7 +192,11 @@ function buildParagraphs(doc: ParsedDocument, kind: DocxKind): Paragraph[] {
 
         out.push(
           new Paragraph({
-            spacing: { after: d.bulletSpacing + 10, line: d.lineSpacing },
+            spacing: {
+              after: d.bulletSpacing + 10,
+              line: d.lineSpacing,
+              lineRule: LineRuleType.AUTO,
+            },
             alignment: AlignmentType.LEFT,
             children,
           }),
