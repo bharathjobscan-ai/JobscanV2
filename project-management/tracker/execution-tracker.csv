@@ -44,8 +44,8 @@ JSV2S1098,JSV2S1098-T01,DB,Full history preserved,Completed,Append-only; documen
 -,E6-T04,AI,"Local worker: claim, claude -p, store",Completed,Written and typechecked; NOT yet run end to end
 -,E6-T05,Backend,settleAiJobs - the single write path,Completed,Worker performs no domain writes
 -,E6-T06,Frontend,Queued / running / failed chips,Completed,
--,E6-T07,Product,Export ScoreG + CVG + master resume to /prompts/,Blocked,NEEDS YOU - blocks real generation; mock unaffected
--,E6-T08,QA,Verify real Claude generation end to end,Blocked,Depends on E6-T07
+-,E6-T07,Product,Export ScoreG + CVG + master resume to /prompts/,Completed,"ScoreG, CVG and master resume exported; SimG split into cvg/SIMG.md"
+-,E6-T08,QA,Verify real Claude generation end to end,In Progress,Score and CV verified end to end against Claude Pro with measured token usage. Cover letter not yet run.
 -,E7-T01,Product,ADR-0001 to ADR-0004,Completed,
 -,E7-T02,Product,docs/architecture/overview.md,Completed,
 -,E7-T03,Product,docs/product/open-decisions.md (C1-C5),Completed,
@@ -55,3 +55,7 @@ JSV2S1098,JSV2S1098-T01,DB,Full history preserved,Completed,Append-only; documen
 -,E8-T01,QA,Integration suite against a live database,Completed,"15 assertions, all passing"
 -,E8-T02,Infra,Deploy to Vercel,Not Started,Ready to run; needs env vars set
 -,E8-T03,QA,Verify password gate on the deployed URL,Not Started,Depends on E8-T02
+JSV2S1079,JSV2S1079-T02,Backend,.docx renderer matching the CVG house style,Completed,"One-page A4, 9.5pt, 0.9 line spacing, centred header, accent section rules, dates flush right, bold competency labels. Calibrated against a rendered PDF."
+JSV2S1078,JSV2S1078-T03,Frontend,Show the CVG output summary instead of the document body,Completed,"JD match uplift, keyword coverage, gaps, gap-bridging and verdict; .docx is download-only."
+-,E8-T04,QA,Verify cover letter generation end to end,Not Started,Last unproven path
+-,E8-T05,AI,Anthropic API driver to verify metered cost,Not Started,Claude Code harness overhead is ~80% of cost; API path projected ~$0.05/score. User has $5 credit to validate.
