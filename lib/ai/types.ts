@@ -95,6 +95,44 @@ export interface AiProvider {
 }
 
 /**
+ * Coerce the analysis block into the shape the UI renders.
+ *
+ * Models occasionally put a nested object where a string belongs — Gemini
+ * returned the CV-style summary object under `analysis.summary`. React throws
+ * on an object child, so an unchecked value would crash the workspace. Anything
+ * that is not a string is flattened rather than trusted.
+ */
+function normaliseAnalysis(raw: Record<string, unknown>): JobScoreAnalysis {
+  const asString = (value: unknown): string | undefined => {
+    if (typeof value === "string") return value;
+    if (value === null || value === undefined) return undefined;
+    // A nested object here is a contract violation; keep it readable instead
+    // of discarding it, so the mistake is visible rather than silent.
+    if (typeof value === "object") {
+      const summary = (value as Record<string, unknown>).summary;
+      if (typeof summary === "string") return summary;
+      return undefined;
+    }
+    return String(value);
+  };
+
+  const asStrings = (value: unknown): string[] | undefined =>
+    Array.isArray(value)
+      ? value.map((v) => asString(v) ?? "").filter(Boolean)
+      : undefined;
+
+  return {
+    summary: asString(raw.summary),
+    strengths: asStrings(raw.strengths),
+    gaps: asStrings(raw.gaps),
+    visaSignals: asStrings(raw.visaSignals),
+    breakdown: raw.breakdown as JobScoreAnalysis["breakdown"],
+    finalCalculation: asString(raw.finalCalculation),
+    exceptions: asStrings(raw.exceptions),
+  };
+}
+
+/**
  * Split a Claude response into its JSON block and markdown body.
  *
  * Tolerant by design: if the model returns markdown with no JSON fence, the
@@ -124,7 +162,7 @@ export function parseTaskResponse(text: string): {
         typeof parsed.visaSignal === "string" ? parsed.visaSignal : undefined,
       analysis:
         typeof parsed.analysis === "object" && parsed.analysis !== null
-          ? (parsed.analysis as JobScoreAnalysis)
+          ? normaliseAnalysis(parsed.analysis as Record<string, unknown>)
           : undefined,
     };
   } catch {

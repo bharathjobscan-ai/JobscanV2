@@ -25,11 +25,18 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             className="ml-auto text-[11px] text-subtle"
             title={
               env.AI_PROVIDER === "mock"
-                ? "Fixture mode — no Claude usage is consumed"
-                : `Scoring: ${env.MODEL_SCORING} · CV/CL: ${env.MODEL_CV} — requires the local worker`
+                ? "Fixture mode — nothing is generated and nothing is charged"
+                : env.AI_PROVIDER === "gemini_api"
+                  ? `${env.MODEL_SCORING_GEMINI} · runs inline, no worker needed`
+                  : `Scoring: ${env.MODEL_SCORING} · CV/CL: ${env.MODEL_CV} — needs the local worker running`
             }
           >
-            AI: {env.AI_PROVIDER === "mock" ? "mock" : "local Claude Code"}
+            AI:{" "}
+            {env.AI_PROVIDER === "mock"
+              ? "mock"
+              : env.AI_PROVIDER === "gemini_api"
+                ? "Gemini API"
+                : "local Claude Code"}
           </span>
         </div>
       </header>

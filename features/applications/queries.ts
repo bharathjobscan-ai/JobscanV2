@@ -19,6 +19,47 @@ import {
 import { getEnv } from "@/lib/config/env";
 import { db } from "@/lib/db/client";
 import { isIncomplete } from "@/features/ingestion/schema";
+import type { JobScoreAnalysis } from "@/db/schema";
+
+/**
+ * Make a stored analysis safe to render.
+ *
+ * Rows written before the parser normalised its input can hold an object where
+ * a string belongs — Gemini once returned the CV summary object under
+ * `analysis.summary`, which React refuses to render and which took the whole
+ * workspace down with a 500. Reading is the last line of defence, so it
+ * coerces rather than trusting what was written.
+ */
+function safeAnalysis(
+  analysis: JobScoreAnalysis | null,
+): JobScoreAnalysis | null {
+  if (!analysis) return null;
+
+  const str = (value: unknown): string | undefined => {
+    if (typeof value === "string") return value;
+    if (value && typeof value === "object") {
+      const nested = (value as Record<string, unknown>).summary;
+      if (typeof nested === "string") return nested;
+      return undefined;
+    }
+    return undefined;
+  };
+
+  const strList = (value: unknown): string[] | undefined =>
+    Array.isArray(value)
+      ? value.map((v) => (typeof v === "string" ? v : str(v) ?? "")).filter(Boolean)
+      : undefined;
+
+  return {
+    ...analysis,
+    summary: str(analysis.summary),
+    strengths: strList(analysis.strengths),
+    gaps: strList(analysis.gaps),
+    visaSignals: strList(analysis.visaSignals),
+    finalCalculation: str(analysis.finalCalculation),
+    exceptions: strList(analysis.exceptions),
+  };
+}
 
 /**
  * C2 — `deemed_pending` is derived, never stored.
@@ -224,6 +265,7 @@ export async function getApplicationDetail(id: string) {
 
   return {
     ...row.application,
+    jobScoreAnalysis: safeAnalysis(row.application.jobScoreAnalysis),
     isPending: Boolean(row.isPending),
     job: row.job,
     isIncomplete: incomplete,

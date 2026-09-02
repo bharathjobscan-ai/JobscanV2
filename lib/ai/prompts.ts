@@ -71,7 +71,7 @@ Respond with a fenced \`json\` block, then the document body as markdown.
   "score": 0-100,
   "visaSignal": "short phrase describing sponsorship evidence",
   "analysis": {
-    "summary": "one paragraph",
+    "summary": "one paragraph of prose — a string, never an object",
     "strengths": ["..."],
     "gaps": ["..."],
     "visaSignals": ["..."],
