@@ -3,6 +3,7 @@ import { inflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 import { docxFilename, renderDocx } from "@/lib/documents/docx";
+import { extractLetterBody } from "@/lib/documents/letter";
 import {
   densityFor,
   pageFit,
@@ -298,5 +299,165 @@ describe("page fit, calibrated against a rendered PDF", () => {
     const normal = parseDocument(readFileSync("prompts/master-resume.md", "utf8"));
     // The master CV is long by design, but still should not hit the 9pt floor.
     expect(densityFor(normal).body).toBeGreaterThanOrEqual(19); // 9.5pt or better
+  });
+});
+
+describe("cover letter layout", () => {
+  const META = {
+    candidateName: "Bharath Raghu",
+    candidateContact: "bharathvraghu@gmail.com | +91 96771 49166 | Bangalore, India | LinkedIn",
+    company: "Delivery Hero SE",
+    role: "Product Manager",
+    location: "Berlin, Germany",
+    date: new Date("2026-04-29T00:00:00Z"),
+  };
+
+  /** What the contract asks for: prose only. */
+  const CLEAN = [
+    "At Juspay, I built a licensed Payment Facilitator from zero to $1B+ annualized TPV across 100+ enterprise merchants.",
+    "",
+    "Three threads of my experience map cleanly to this scope. First, multi-PSP orchestration across five card schemes.",
+    "",
+    "I am ready to relocate to Berlin. I am eligible for the EU Blue Card and require employer visa sponsorship.",
+  ].join("\n");
+
+  /** What a model may return anyway — every piece of scaffolding included. */
+  const SCAFFOLDED = [
+    "# BHARATH RAGHU",
+    "bharathvraghu@gmail.com | +91 96771 49166 | Bangalore, India | LinkedIn",
+    "",
+    "29 April 2026",
+    "",
+    "Hiring Team, Fintech Tribe",
+    "Delivery Hero SE",
+    "Berlin, Germany",
+    "",
+    "Dear Delivery Hero Fintech Team,",
+    "",
+    "At Juspay, I built a licensed Payment Facilitator from zero to $1B+ annualized TPV across 100+ enterprise merchants.",
+    "",
+    "Best regards,",
+    "Bharath Raghu",
+  ].join("\n");
+
+  it("generates the scaffolding the model no longer writes", async () => {
+    const text = extractDocxText(await renderDocx(CLEAN, "cover_letter", META));
+    expect(text).toContain("BHARATH RAGHU");
+    expect(text).toContain("bharathvraghu@gmail.com");
+    expect(text).toContain("29 April 2026");
+    expect(text).toContain("Hiring Team");
+    expect(text).toContain("Delivery Hero SE");
+    expect(text).toContain("Berlin, Germany");
+    expect(text).toContain("Dear Delivery Hero Hiring Team,");
+    expect(text).toContain("Best regards,");
+    expect(text).toContain("At Juspay, I built a licensed Payment Facilitator");
+  });
+
+  it("never duplicates scaffolding the model emitted anyway", async () => {
+    const text = extractDocxText(await renderDocx(SCAFFOLDED, "cover_letter", META));
+    const count = (needle: string) =>
+      text.split(needle).length - 1;
+
+    expect(count("Dear"), "salutation must appear once").toBe(1);
+    expect(count("Best regards"), "sign-off must appear once").toBe(1);
+    expect(count("29 April 2026"), "date must appear once").toBe(1);
+    expect(count("bharathvraghu@gmail.com"), "contact must appear once").toBe(1);
+    // The legal name appears once, in the address block; the salutation uses
+    // the trimmed trading name.
+    expect(count("Delivery Hero SE"), "legal name appears once").toBe(1);
+    expect(count("Dear Delivery Hero Hiring Team"), "salutation once").toBe(1);
+    // The prose still survives.
+    expect(text).toContain("At Juspay, I built a licensed Payment Facilitator");
+  });
+
+  it("keeps the body in order and drops nothing", () => {
+    const paragraphs = extractLetterBody(CLEAN, META);
+    expect(paragraphs).toHaveLength(3);
+    expect(paragraphs[0]).toMatch(/^At Juspay/);
+    expect(paragraphs[2]).toMatch(/EU Blue Card/);
+  });
+
+  it("does not apply the CV's one-page compression", async () => {
+    const long = Array.from({ length: 12 }, (_, i) =>
+      `Paragraph ${i} describing relevant payments experience at some length to fill the page.`,
+    ).join("\n\n");
+    const text = extractDocxText(await renderDocx(long, "cover_letter", META));
+    expect(text).toContain("Paragraph 11");
+  });
+});
+
+describe("salutation", () => {
+  it.each([
+    ["Delivery Hero SE", "Dear Delivery Hero Hiring Team,"],
+    ["Adyen N.V.", "Dear Adyen Hiring Team,"],
+    ["Visa Europe Limited", "Dear Visa Europe Hiring Team,"],
+    ["Stripe", "Dear Stripe Hiring Team,"],
+    ["Checkout.com", "Dear Checkout.com Hiring Team,"],
+  ])("drops the legal suffix from %s", async (company, expected) => {
+    const text = extractDocxText(
+      await renderDocx("A body paragraph long enough to be treated as prose by the parser.", "cover_letter", {
+        candidateName: "Bharath Raghu",
+        candidateContact: "a@b.com | +91 1 | X | LinkedIn",
+        company,
+        role: "PM",
+        date: new Date("2026-04-29T00:00:00Z"),
+      }),
+    );
+    expect(text).toContain(expected);
+    // The full legal name still appears in the address block.
+    expect(text).toContain(company);
+  });
+});
+
+describe("LinkedIn hyperlink", () => {
+  /** Hyperlinks live in a relationships part, not the document body. */
+  function relationships(buffer: Buffer): string {
+    const LOCAL = 0x04034b50;
+    for (let i = 0; i + 30 < buffer.length; i++) {
+      if (buffer.readUInt32LE(i) !== LOCAL) continue;
+      const method = buffer.readUInt16LE(i + 8);
+      const cs = buffer.readUInt32LE(i + 18);
+      const nl = buffer.readUInt16LE(i + 26);
+      const el = buffer.readUInt16LE(i + 28);
+      const name = buffer.subarray(i + 30, i + 30 + nl).toString("utf8");
+      if (!name.endsWith("document.xml.rels") || cs === 0) continue;
+      const data = buffer.subarray(i + 30 + nl + el, i + 30 + nl + el + cs);
+      return method === 0 ? data.toString("utf8") : inflateRawSync(data).toString("utf8");
+    }
+    return "";
+  }
+
+  const URL = "https://www.linkedin.com/in/bharathvraghu/";
+
+  it("links LinkedIn in the CV header", async () => {
+    const buffer = await renderDocx(SAMPLE.replace("Bangalore, India", "Bangalore, India | LinkedIn"), "resume");
+    expect(relationships(buffer)).toContain(URL);
+    // The visible word survives for an ATS reading plain text.
+    expect(extractDocxText(buffer)).toContain("LinkedIn");
+  });
+
+  it("links LinkedIn in the cover letter header", async () => {
+    const buffer = await renderDocx("A body paragraph long enough to count as prose for the parser.", "cover_letter", {
+      candidateName: "Bharath Raghu",
+      candidateContact: "bharathvraghu@gmail.com | +91 96771 49166 | Bangalore, India | LinkedIn",
+      company: "Adyen N.V.",
+      role: "PM",
+      date: new Date("2026-04-29T00:00:00Z"),
+    });
+    expect(relationships(buffer)).toContain(URL);
+    expect(extractDocxText(buffer)).toContain("LinkedIn");
+  });
+
+  it("leaves the rest of the contact line untouched", async () => {
+    const buffer = await renderDocx("A body paragraph long enough to count as prose for the parser.", "cover_letter", {
+      candidateName: "Bharath Raghu",
+      candidateContact: "bharathvraghu@gmail.com | +91 96771 49166 | Bangalore, India | LinkedIn",
+      company: "Adyen N.V.",
+      role: "PM",
+    });
+    const text = extractDocxText(buffer);
+    expect(text).toContain("bharathvraghu@gmail.com");
+    expect(text).toContain("+91 96771 49166");
+    expect(text).toContain("Bangalore, India");
   });
 });

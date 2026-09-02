@@ -9,6 +9,8 @@ import {
   TextRun,
 } from "docx";
 
+import { contactRuns } from "./contact";
+import { buildLetter, type LetterMeta } from "./letter";
 import { densityFor, parseDocument, type Density, type ParsedDocument } from "./parse";
 
 /**
@@ -46,9 +48,11 @@ function headerBlock(text: string, d: Density, italic = false): Paragraph {
   return new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: { after: 20, line: d.lineSpacing, lineRule: LineRuleType.AUTO },
-    children: [
-      new TextRun({ text, size: d.bullet, font: FONT, italics: italic }),
-    ],
+    // The contact line carries the profile link; the work-authorisation line
+    // below it is plain italic prose.
+    children: italic
+      ? [new TextRun({ text, size: d.bullet, font: FONT, italics: true })]
+      : contactRuns(text, d.bullet),
   });
 }
 
@@ -216,8 +220,16 @@ function buildParagraphs(doc: ParsedDocument, kind: DocxKind): Paragraph[] {
 export async function renderDocx(
   markdown: string,
   kind: DocxKind,
+  meta?: LetterMeta,
 ): Promise<Buffer> {
   const parsed = parseDocument(markdown);
+
+  // A cover letter has no `##` sections, so the CV parser would read the whole
+  // letter as header lines and centre it. It gets its own layout.
+  const children =
+    kind === "cover_letter" && meta
+      ? buildLetter(markdown, meta)
+      : buildParagraphs(parsed, kind);
 
   const document = new Document({
     creator: "JobScan",
@@ -239,7 +251,7 @@ export async function renderDocx(
         },
         // No headers or footers: the skill forbids them on the cover letter,
         // and ATS parsers frequently drop header/footer content entirely.
-        children: buildParagraphs(parsed, kind),
+        children,
       },
     ],
   });

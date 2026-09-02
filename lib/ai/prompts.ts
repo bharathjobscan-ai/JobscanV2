@@ -135,8 +135,13 @@ own .docx.
 # NAME
 ...the complete one-page CV in markdown...
 <<<COVER_LETTER>>>
-...the complete cover letter in markdown, 200-300 words...
+...body paragraphs only, 200-300 words...
 \`\`\`
+
+**The cover letter is body prose only.** Do not write the name, contact line,
+date, recipient block, salutation or sign-off — the application generates all
+of those, and anything you add there is discarded. Start at the opening hook
+and end at the last substantive sentence.
 
 The delimiters must appear on their own lines, spelled exactly as shown.
 
