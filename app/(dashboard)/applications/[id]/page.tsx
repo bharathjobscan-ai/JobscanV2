@@ -50,9 +50,12 @@ export default async function ApplicationDetailPage({
 }) {
   const { id } = await params;
 
-  await settleAiJobs(id);
-
-  const [application, tasks] = await Promise.all([
+  // Generation settles inline, so this is only a safety net for a run that
+  // died between recording and settling. Issued alongside the reads rather
+  // than before them: a sequential wave costs a full round trip, which is
+  // ~220ms with the database on another continent.
+  const [, application, tasks] = await Promise.all([
+    settleAiJobs(id),
     getApplicationDetail(id),
     getTaskStates(id),
   ]);
@@ -245,78 +248,80 @@ export default async function ApplicationDetailPage({
             )}
           </Card>
 
-          {/* Resume & Cover Letter (JSV2S1078, JSV2S1079) */}
-          {(["resume", "cover_letter"] as const).map((docType) => {
-            const doc = docType === "resume" ? resume : coverLetter;
-            return (
-              <Card key={docType}>
-                <CardHeader
-                  title={DOCUMENT_LABELS[docType]}
-                  meta={doc ? `v${doc.version} · ${doc.model ?? doc.generatedBy}` : undefined}
-                  action={
-                    <div className="flex items-center gap-2">
-                      {doc && docType === "resume" && doc.contentMd
-                        ? (() => {
-                            const fit = pageFit(doc.contentMd);
-                            return fit.fits ? (
-                              <Badge tone="positive" title={`~${fit.estimatedLines} of ${52} lines`}>
-                                Fits one page
-                              </Badge>
-                            ) : (
-                              <Badge
-                                tone="negative"
-                                title={`~${fit.estimatedLines} lines against ~52 on an A4 page. The renderer is already at its 9pt floor, so the content needs cutting — regenerate.`}
-                              >
-                                Over by ~{fit.overBy} lines
-                              </Badge>
-                            );
-                          })()
-                        : null}
-                      {doc ? (
-                        <a
-                          href={`/api/documents/${doc.id}`}
-                          className={`${buttonClass.secondary}`}
-                          title="One-page A4, single column, ATS-safe"
-                        >
-                          Download .docx
-                        </a>
-                      ) : null}
-                      {/* One CVG call writes both documents, so only the
-                          resume card carries the trigger. */}
-                      {docType === "resume" ? (
-                        <GenerateButton
-                          applicationId={application.id}
-                          taskType="tailor_cv"
-                          label="Generate CV + cover letter"
-                          disabled={application.isIncomplete || !!taskFor("tailor_cv")}
-                          disabledReason={blockedReason}
-                          regenerate={!!doc}
-                        />
-                      ) : null}
-                    </div>
-                  }
-                />
-                {!doc ? (
-                  <EmptyState
-                    title={`No ${DOCUMENT_LABELS[docType].toLowerCase()} yet`}
-                    hint="Generated on demand, tailored to this job."
+          {/* Resume docs (JSV2S1078, JSV2S1079) — one CVG call writes both,
+              and both carry the same analysis, so it is shown once. */}
+          <Card>
+            <CardHeader
+              title="Resume docs"
+              meta={resume ? `v${resume.version} · ${resume.model ?? resume.generatedBy}` : undefined}
+              action={
+                <div className="flex items-center gap-2">
+                  {resume?.contentMd
+                    ? (() => {
+                        const fit = pageFit(resume.contentMd);
+                        return fit.fits ? (
+                          <Badge tone="positive" title={`~${fit.estimatedLines} lines`}>
+                            Fits one page
+                          </Badge>
+                        ) : (
+                          <Badge
+                            tone="negative"
+                            title={`~${fit.estimatedLines} lines against ~72 on an A4 page — regenerate to cut content`}
+                          >
+                            Over by ~{fit.overBy}
+                          </Badge>
+                        );
+                      })()
+                    : null}
+                  <GenerateButton
+                    applicationId={application.id}
+                    taskType="tailor_cv"
+                    label="Generate CV + CL"
+                    disabled={application.isIncomplete || !!taskFor("tailor_cv")}
+                    disabledReason={blockedReason}
+                    regenerate={!!resume}
                   />
-                ) : doc.summary ? (
-                  /* The .docx is the deliverable — show what changed, not the text. */
-                  <GenerationSummary summary={doc.summary} />
+                </div>
+              }
+            />
+
+            {!resume && !coverLetter ? (
+              <EmptyState
+                title="No documents yet"
+                hint="One pass writes the tailored CV and its cover letter together."
+              />
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+                  {resume ? (
+                    <a href={`/api/documents/${resume.id}`} className={buttonClass.primary}>
+                      Download CV
+                    </a>
+                  ) : null}
+                  {coverLetter ? (
+                    <a
+                      href={`/api/documents/${coverLetter.id}`}
+                      className={buttonClass.primary}
+                    >
+                      Download Cover Letter
+                    </a>
+                  ) : null}
+                  <span className="ml-auto text-[11px] text-subtle">
+                    .docx · one-page A4 · ATS-safe
+                  </span>
+                </div>
+
+                {/* The summary describes the pair, so it appears once. */}
+                {resume?.summary ? (
+                  <GenerationSummary summary={resume.summary} />
                 ) : (
-                  <details className="p-4">
-                    <summary className="cursor-pointer text-xs text-muted">
-                      No summary captured — view the draft
-                    </summary>
-                    <div className="mt-3">
-                      <Markdown content={doc.contentMd ?? ""} />
-                    </div>
-                  </details>
+                  <p className="px-4 py-3 text-xs text-muted">
+                    No summary captured — regenerate to see the match uplift and gaps.
+                  </p>
                 )}
-              </Card>
-            );
-          })}
+              </>
+            )}
+          </Card>
 
           {/* Timeline (JSV2S1084 + JSV2S1097) */}
           <Card>

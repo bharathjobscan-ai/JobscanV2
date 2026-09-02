@@ -7,7 +7,6 @@ import {
   StatusBadge,
 } from "@/components/applications/badges";
 import { Badge, Card, EmptyState, LinkButton } from "@/components/ui/base";
-import { settleAiJobs } from "@/features/ai/tasks";
 import {
   countByView,
   countIncomplete,
@@ -38,9 +37,6 @@ export default async function ApplicationsPage({
       ? params.view
       : "all"
   ) as ApplicationView;
-
-  // Promote anything the local worker finished since the last page load.
-  await settleAiJobs();
 
   const [items, counts, incomplete] = await Promise.all([
     listApplications(view),
