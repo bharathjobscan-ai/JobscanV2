@@ -7,53 +7,87 @@ import {
   applications,
   rawJobs,
 } from "@/db/schema";
+import { AnthropicProvider } from "@/lib/ai/anthropic";
 import { GeminiProvider } from "@/lib/ai/gemini";
 import { MockProvider } from "@/lib/ai/mock";
-import { buildPrompt } from "@/lib/ai/prompts";
-import { parseTaskResponse, type TaskContext } from "@/lib/ai/types";
+import { buildPrompt, flattenPrompt } from "@/lib/ai/prompts";
+import { parseTaskResponse, type AiProvider, type TaskContext } from "@/lib/ai/types";
 import {
   AI_TASK_DOCUMENT,
   AI_TASK_LABELS,
   DOCUMENT_LABELS,
   matchCategoryFor,
   type AiTaskType,
+  type DocumentType,
 } from "@/lib/config/constants";
+
+/**
+ * Split a CVG response into its two documents.
+ *
+ * The contract asks for `<<<CV>>>` and `<<<COVER_LETTER>>>` on their own lines.
+ * If a model ignores the delimiters the whole response becomes the resume
+ * rather than being lost — a missing cover letter is recoverable, a discarded
+ * CV is not.
+ */
+function splitDocuments(
+  markdown: string,
+): { docType: DocumentType; markdown: string }[] {
+  const cv = markdown.match(/<<<CV>>>\s*\n([\s\S]*?)(?=\n<<<COVER_LETTER>>>|$)/);
+  const letter = markdown.match(/<<<COVER_LETTER>>>\s*\n([\s\S]*)$/);
+
+  if (!cv && !letter) {
+    return [{ docType: "resume", markdown: markdown.trim() }];
+  }
+
+  const parts: { docType: DocumentType; markdown: string }[] = [];
+  const cvText = cv?.[1]?.trim();
+  const letterText = letter?.[1]?.trim();
+
+  if (cvText) parts.push({ docType: "resume", markdown: cvText });
+  if (letterText) parts.push({ docType: "cover_letter", markdown: letterText });
+  return parts;
+}
 import { getEnv } from "@/lib/config/env";
 import { db } from "@/lib/db/client";
 import { isIncomplete } from "@/features/ingestion/schema";
 
 export class TaskBlocked extends Error {}
 
-function modelFor(taskType: AiTaskType): string {
+/**
+ * Which provider runs a task.
+ *
+ * Routing is per task rather than global because the two differ on the axes
+ * that matter: Gemini's Google Search grounding resolved a UK sponsor-register
+ * entry that three Claude Code runs could not, and Claude leads on long-form
+ * document generation. Measured, not assumed.
+ */
+function providerFor(taskType: AiTaskType): AiProvider {
   const env = getEnv();
-  if (env.AI_PROVIDER === "gemini_api") {
+  if (env.AI_PROVIDER === "mock") return new MockProvider();
+
+  const choice = taskType === "score" ? env.PROVIDER_SCORING : env.PROVIDER_CV;
+  return choice === "gemini_api" ? new GeminiProvider() : new AnthropicProvider();
+}
+
+function modelFor(taskType: AiTaskType, provider: string): string {
+  const env = getEnv();
+  if (provider === "gemini_api") {
     return taskType === "score" ? env.MODEL_SCORING_GEMINI : env.MODEL_CV_GEMINI;
   }
   return taskType === "score" ? env.MODEL_SCORING : env.MODEL_CV;
 }
 
 /**
- * Only scoring gets tools. ScoreG verifies UK sponsor-register status and
- * hiring signals live; without WebSearch its visa pillar is capped and it says
- * so in the gaps. CV and cover letter work from the JD and master resume, so
- * granting them nothing keeps the cached context — and the cost — smaller.
- */
-function allowedToolsFor(taskType: AiTaskType): string | null {
-  return taskType === "score" ? "WebSearch WebFetch" : null;
-}
-
-/**
- * Queue an AI task for an application.
+ * Run an AI task and record it.
  *
- * With AI_PROVIDER=mock the fixture runs inline and the row is marked succeeded
- * immediately, so development has no waiting. With `claude_local` the row is
- * left `queued` for the worker on the Mac to claim — the app on Vercel cannot
- * spawn Claude Code itself (D3 + D4).
+ * Every provider runs inline: mock needs nothing, and both live providers are
+ * plain HTTPS calls. Nothing is queued for a worker any more, so the caller
+ * gets a finished result rather than a promise to poll.
  */
 export async function enqueueTask(
   applicationId: string,
   taskType: AiTaskType,
-): Promise<{ id: string; status: "queued" | "succeeded" }> {
+): Promise<{ id: string; status: "succeeded" }> {
   const env = getEnv();
 
   const [row] = await db
@@ -70,21 +104,6 @@ export async function enqueueTask(
       "This job has no usable description. Add the job description before generating material.",
     );
   }
-
-  // Don't stack duplicate work for the same task.
-  const [inFlight] = await db
-    .select({ id: aiJobs.id })
-    .from(aiJobs)
-    .where(
-      and(
-        eq(aiJobs.applicationId, applicationId),
-        eq(aiJobs.taskType, taskType),
-        sql`${aiJobs.status} in ('queued','running')`,
-      ),
-    )
-    .limit(1);
-
-  if (inFlight) return { id: inFlight.id, status: "queued" };
 
   const context: TaskContext = {
     applicationId,
@@ -104,71 +123,49 @@ export async function enqueueTask(
     inboundSourceDetail: row.job.inboundSourceDetail,
   };
 
-  const model = modelFor(taskType);
+  const provider = providerFor(taskType);
+  const model = modelFor(taskType, provider.name);
+  const isMock = provider.name === "mock";
 
-  // Mock and Gemini both run inline: one needs nothing, the other is a plain
-  // HTTPS call. Only claude_local needs the worker, because Vercel cannot spawn
-  // Claude Code.
-  if (env.AI_PROVIDER === "mock" || env.AI_PROVIDER === "gemini_api") {
-    const isMock = env.AI_PROVIDER === "mock";
-    const prompt = isMock ? "" : await buildPrompt(context);
-    const provider = isMock ? new MockProvider() : new GeminiProvider();
+  const prompt = isMock ? null : await buildPrompt(context);
+  const startedAt = new Date();
 
-    const startedAt = new Date();
-    const result = await provider.run(context, prompt, model);
-
-    const [created] = await db
-      .insert(aiJobs)
-      .values({
-        applicationId,
-        taskType,
-        status: "succeeded",
-        provider: provider.name,
-        model,
-        effort: env.AI_EFFORT,
-        allowedTools: !isMock && taskType === "score" ? "GoogleSearch" : null,
-        prompt: prompt || null,
-        result: { markdown: result.markdown, payload: result.payload },
-        usage: result.usage
-          ? {
-              inputTokens: result.usage.inputTokens,
-              // Reasoning tokens bill as output; fold them in so the cost
-              // report compares providers on the same basis.
-              outputTokens:
-                result.usage.outputTokens + (result.usage.thinkingTokens ?? 0),
-              cacheReadTokens: result.usage.cacheReadTokens,
-              cacheCreationTokens: result.usage.cacheCreationTokens,
-              durationMs: Date.now() - startedAt.getTime(),
-            }
-          : null,
-        startedAt: sql`${startedAt.toISOString()}`,
-        finishedAt: sql`now()`,
-      })
-      .returning({ id: aiJobs.id });
-
-    await settleAiJobs(applicationId);
-    return { id: created.id, status: "succeeded" };
-  }
-
-  // Prompt is frozen at enqueue time so the worker stays domain-free and a
-  // replay reproduces the identical request.
-  const prompt = await buildPrompt(context);
+  const result = await provider.run(context, prompt ?? "", model);
 
   const [created] = await db
     .insert(aiJobs)
     .values({
       applicationId,
       taskType,
-      status: "queued",
-      provider: "claude_local",
+      status: "succeeded",
+      provider: provider.name,
       model,
       effort: env.AI_EFFORT,
-      allowedTools: allowedToolsFor(taskType),
-      prompt,
+      allowedTools:
+        provider.name === "gemini_api" && taskType === "score"
+          ? "GoogleSearch"
+          : null,
+      prompt: prompt ? flattenPrompt(prompt) : null,
+      result: { markdown: result.markdown, payload: result.payload },
+      usage: result.usage
+        ? {
+            inputTokens: result.usage.inputTokens,
+            // Reasoning tokens bill as output; fold them in so providers
+            // compare on the same basis.
+            outputTokens:
+              result.usage.outputTokens + (result.usage.thinkingTokens ?? 0),
+            cacheReadTokens: result.usage.cacheReadTokens,
+            cacheCreationTokens: result.usage.cacheCreationTokens,
+            durationMs: Date.now() - startedAt.getTime(),
+          }
+        : null,
+      startedAt: sql`${startedAt.toISOString()}`,
+      finishedAt: sql`now()`,
     })
     .returning({ id: aiJobs.id });
 
-  return { id: created.id, status: "queued" };
+  await settleAiJobs(applicationId);
+  return { id: created.id, status: "succeeded" };
 }
 
 /**
@@ -223,33 +220,54 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
       continue;
     }
 
-    const docType = AI_TASK_DOCUMENT[job.taskType];
+    // One CVG call returns both documents, delimited. Split them so each is
+    // stored, versioned and downloadable on its own.
+    const parts: { docType: DocumentType; markdown: string }[] =
+      job.taskType === "tailor_cv"
+        ? splitDocuments(parsed.markdown)
+        : [{ docType: AI_TASK_DOCUMENT[job.taskType], markdown: parsed.markdown }];
 
     await db.transaction(async (tx) => {
-      const [previous] = await tx
-        .select({ version: applicationDocuments.version })
-        .from(applicationDocuments)
-        .where(
-          and(
-            eq(applicationDocuments.applicationId, job.applicationId),
-            eq(applicationDocuments.docType, docType),
-          ),
-        )
-        .orderBy(desc(applicationDocuments.version))
-        .limit(1);
+      for (const part of parts) {
+        const docType = part.docType;
+        const [previous] = await tx
+          .select({ version: applicationDocuments.version })
+          .from(applicationDocuments)
+          .where(
+            and(
+              eq(applicationDocuments.applicationId, job.applicationId),
+              eq(applicationDocuments.docType, docType),
+            ),
+          )
+          .orderBy(desc(applicationDocuments.version))
+          .limit(1);
 
-      const version = (previous?.version ?? 0) + 1;
+        const version = (previous?.version ?? 0) + 1;
 
-      await tx.insert(applicationDocuments).values({
-        applicationId: job.applicationId,
-        docType,
-        version,
-        contentMd: parsed.markdown,
-        summary: parsed.payload.summary ?? null,
-        generatedBy: job.provider,
-        model: job.model,
-        generatedAt: job.finishedAt ?? sql`now()`,
-      });
+        await tx.insert(applicationDocuments).values({
+          applicationId: job.applicationId,
+          docType,
+          version,
+          contentMd: part.markdown,
+          // The generation summary describes the pair, so both carry it.
+          summary: parsed.payload.summary ?? null,
+          generatedBy: job.provider,
+          model: job.model,
+          generatedAt: job.finishedAt ?? sql`now()`,
+        });
+
+        await tx.insert(applicationEvents).values({
+          applicationId: job.applicationId,
+          eventType: "document_generated",
+          summary: `${DOCUMENT_LABELS[docType]} generated (v${version}) via ${job.provider}`,
+          metadata: {
+            taskType: job.taskType,
+            model: job.model,
+            version,
+            score: parsed.payload.score ?? null,
+          },
+        });
+      }
 
       if (job.taskType === "score" && parsed.payload.score !== undefined) {
         await tx
@@ -273,18 +291,6 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
           .set({ lastActivityAt: sql`now()`, updatedAt: sql`now()` })
           .where(eq(applications.id, job.applicationId));
       }
-
-      await tx.insert(applicationEvents).values({
-        applicationId: job.applicationId,
-        eventType: "document_generated",
-        summary: `${DOCUMENT_LABELS[docType]} generated (v${version}) via ${job.provider}`,
-        metadata: {
-          taskType: job.taskType,
-          model: job.model,
-          version,
-          score: parsed.payload.score ?? null,
-        },
-      });
 
       await tx
         .update(aiJobs)

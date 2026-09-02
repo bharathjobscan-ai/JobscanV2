@@ -26,17 +26,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             title={
               env.AI_PROVIDER === "mock"
                 ? "Fixture mode — nothing is generated and nothing is charged"
-                : env.AI_PROVIDER === "gemini_api"
-                  ? `${env.MODEL_SCORING_GEMINI} · runs inline, no worker needed`
-                  : `Scoring: ${env.MODEL_SCORING} · CV/CL: ${env.MODEL_CV} — needs the local worker running`
+                : `Scoring: ${env.PROVIDER_SCORING === "gemini_api" ? env.MODEL_SCORING_GEMINI : env.MODEL_SCORING} · ` +
+                  `CV/CL: ${env.PROVIDER_CV === "gemini_api" ? env.MODEL_CV_GEMINI : env.MODEL_CV}`
             }
           >
             AI:{" "}
             {env.AI_PROVIDER === "mock"
               ? "mock"
-              : env.AI_PROVIDER === "gemini_api"
-                ? "Gemini API"
-                : "local Claude Code"}
+              : `${env.PROVIDER_SCORING === "gemini_api" ? "Gemini" : "Claude"} score · ${
+                  env.PROVIDER_CV === "gemini_api" ? "Gemini" : "Claude"
+                } docs`}
           </span>
         </div>
       </header>

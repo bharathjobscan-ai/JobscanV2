@@ -91,7 +91,15 @@ export type TaskResult = {
  */
 export interface AiProvider {
   readonly name: string;
-  run(context: TaskContext, prompt: string, model: string): Promise<TaskResult>;
+  /**
+   * `prompt` is split into a cacheable system half and a per-job user half.
+   * Providers without prompt caching flatten it; Anthropic caches the prefix.
+   */
+  run(
+    context: TaskContext,
+    prompt: string | { system: string; user: string },
+    model: string,
+  ): Promise<TaskResult>;
 }
 
 /**

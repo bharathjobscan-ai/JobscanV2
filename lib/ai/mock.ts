@@ -14,7 +14,7 @@ export class MockProvider implements AiProvider {
 
   async run(
     context: TaskContext,
-    _prompt: string,
+    _prompt: string | { system: string; user: string },
     model: string,
   ): Promise<TaskResult> {
     const seed = parseInt(

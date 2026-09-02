@@ -14,14 +14,25 @@ const EnvSchema = z.object({
   /** Password gate for the deployed app (D3). Optional in local development. */
   APP_PASSWORD: z.string().min(1).optional(),
 
-  /** D4. `mock` needs no Claude Code; `claude_local` requires the worker running. */
-  AI_PROVIDER: z.enum(["mock", "claude_local", "gemini_api"]).default("mock"),
+  /**
+   * Master switch. `mock` forces fixtures everywhere; `live` routes per task.
+   *
+   * The local Claude Code worker is gone: both live providers are plain HTTPS
+   * calls, so nothing needs a machine to be switched on and everything works
+   * from Vercel.
+   */
+  AI_PROVIDER: z.enum(["mock", "live"]).default("mock"),
 
-  /** Required for AI_PROVIDER=gemini_api. */
+  /** Per-task routing, measured rather than assumed — see docs/decisions/0005. */
+  PROVIDER_SCORING: z.enum(["gemini_api", "anthropic_api"]).default("gemini_api"),
+  PROVIDER_CV: z.enum(["gemini_api", "anthropic_api"]).default("anthropic_api"),
+
   GEMINI_API_KEY: z.string().min(1).optional(),
-  /** Gemini model for scoring; discover names with `npm run ai:models`. */
-  MODEL_SCORING_GEMINI: z.string().default("gemini-2.5-pro"),
-  MODEL_CV_GEMINI: z.string().default("gemini-2.5-pro"),
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+
+  /** Discover Gemini names with `npm run ai:models`. */
+  MODEL_SCORING_GEMINI: z.string().default("gemini-3.1-pro-preview"),
+  MODEL_CV_GEMINI: z.string().default("gemini-3.1-pro-preview"),
 
   /** D5 — per-task models, deliberately configurable rather than hardcoded. */
   MODEL_SCORING: z.string().default("claude-sonnet-5"),

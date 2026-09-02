@@ -125,9 +125,20 @@ bullets entirely** — do not compress wording to fit more in, and never carry
 content onto a second page. A CV that overflows is a failed deliverable
 regardless of how good the content is.
 
-**Resume and cover letter:** the markdown must be **the document and nothing
-else** — no commentary, no output summary, no preamble. It is rendered straight
-into a .docx.
+**Resume and cover letter:** produce **both documents in this one response**,
+separated by the exact delimiters below, in this order and nothing else — no
+commentary, no output summary, no preamble. Each is rendered straight into its
+own .docx.
+
+\`\`\`
+<<<CV>>>
+# NAME
+...the complete one-page CV in markdown...
+<<<COVER_LETTER>>>
+...the complete cover letter in markdown, 200-300 words...
+\`\`\`
+
+The delimiters must appear on their own lines, spelled exactly as shown.
 
 Put the output summary in the JSON instead, as \`summary\`, using the
 method's own Output Summary items:
@@ -199,24 +210,32 @@ function jobBlock(context: TaskContext): string {
 const TASK_INSTRUCTION: Record<AiTaskType, string> = {
   score:
     "Score this job for the candidate using the ScoreG method above. Weigh visa sponsorship likelihood, domain relevance and experience fit.",
+  // One call produces both documents: the CVG method writes them together, and
+  // splitting it into two calls paid for the same skill and master resume twice
+  // while letting the letter drift from the CV it is supposed to accompany.
   tailor_cv:
-    "Produce a tailored one-page resume for this job using the CV optimiser method above. Apply the ATS format check and call out domain gaps.",
+    "Produce BOTH the tailored one-page resume AND the cover letter for this job, using the CV optimiser method above. Apply the ATS format check and call out domain gaps.",
   cover_letter:
     "Produce a tailored cover letter for this job using the method above. Keep it to one page and specific to this company and role.",
 };
 
 /**
- * Assemble the full prompt at enqueue time.
+ * The prompt, split so the stable half can be cached.
  *
- * Frozen into the ai_jobs row so the worker needs no domain knowledge, and so
- * replaying a failed job reproduces the identical request.
+ * `system` is identical for every job of a given task type — the skill, the
+ * master resume, the output contract. `user` carries only what changes. That
+ * split is what makes prompt caching worth anything: on Anthropic the stable
+ * prefix bills at a tenth of input rate after the first call, and it is
+ * substantial (the CVG skill and master resume are ~5k tokens together).
  */
-export async function buildPrompt(context: TaskContext): Promise<string> {
+export type BuiltPrompt = { system: string; user: string };
+
+export async function buildPrompt(context: TaskContext): Promise<BuiltPrompt> {
   const skill = await readRequired(SKILL_FILES[context.taskType]);
   const masterResume = await readRequired("master-resume.md");
   const profile = await readOptional("candidate-profile.md");
 
-  return [
+  const system = [
     "You are executing a saved JobScan workflow. Follow the method exactly.",
     "",
     "# Method",
@@ -226,10 +245,6 @@ export async function buildPrompt(context: TaskContext): Promise<string> {
     masterResume,
     profile ? `\n# Candidate profile\n${profile}` : "",
     "",
-    `# Task\n${TASK_INSTRUCTION[context.taskType]}`,
-    "",
-    jobBlock(context),
-    "",
     // Only CV/CL output is parsed into a .docx; a score report stays markdown.
     context.taskType === "score" ? "" : DELIVERY_OVERRIDE,
     "",
@@ -237,6 +252,19 @@ export async function buildPrompt(context: TaskContext): Promise<string> {
   ]
     .filter(Boolean)
     .join("\n");
+
+  const user = [
+    `# Task\n${TASK_INSTRUCTION[context.taskType]}`,
+    "",
+    jobBlock(context),
+  ].join("\n");
+
+  return { system, user };
+}
+
+/** One string, for providers that take a single prompt. */
+export function flattenPrompt(prompt: BuiltPrompt): string {
+  return `${prompt.system}\n\n${prompt.user}`;
 }
 
 /** Whether the real provider can run at all, for a clear UI message. */

@@ -14,14 +14,13 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "worker": "node workers/ai/run.mjs",
-    "worker:once": "node workers/ai/run.mjs --once",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "ai:report": "node scripts/ai-usage-report.mjs",
     "ai:models": "vitest run --config vitest.integration.config.mts tests/unit/gemini-models.itest.ts",
     "ai:bench": "vitest run --config vitest.integration.config.mts tests/integration/gemini-benchmark.itest.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.123.0",
     "@google/genai": "^2.20.0",
     "date-fns": "^4.4.0",
     "docx": "^9.7.1",

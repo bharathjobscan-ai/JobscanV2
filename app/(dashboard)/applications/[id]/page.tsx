@@ -110,10 +110,7 @@ export default async function ApplicationDetailPage({
               {task.error ? (
                 <span className="text-negative">{task.error}</span>
               ) : task.status !== "failed" ? (
-                <span className="text-muted">
-                  waiting for the local worker — run{" "}
-                  <code className="font-mono">npm run worker</code>
-                </span>
+                <span className="text-muted">running…</span>
               ) : null}
             </span>
           ))}
@@ -251,7 +248,6 @@ export default async function ApplicationDetailPage({
           {/* Resume & Cover Letter (JSV2S1078, JSV2S1079) */}
           {(["resume", "cover_letter"] as const).map((docType) => {
             const doc = docType === "resume" ? resume : coverLetter;
-            const taskType = docType === "resume" ? "tailor_cv" : "cover_letter";
             return (
               <Card key={docType}>
                 <CardHeader
@@ -285,14 +281,18 @@ export default async function ApplicationDetailPage({
                           Download .docx
                         </a>
                       ) : null}
-                      <GenerateButton
-                        applicationId={application.id}
-                        taskType={taskType}
-                        label={`Generate ${docType === "resume" ? "resume" : "letter"}`}
-                        disabled={application.isIncomplete || !!taskFor(taskType)}
-                        disabledReason={blockedReason}
-                        regenerate={!!doc}
-                      />
+                      {/* One CVG call writes both documents, so only the
+                          resume card carries the trigger. */}
+                      {docType === "resume" ? (
+                        <GenerateButton
+                          applicationId={application.id}
+                          taskType="tailor_cv"
+                          label="Generate CV + cover letter"
+                          disabled={application.isIncomplete || !!taskFor("tailor_cv")}
+                          disabledReason={blockedReason}
+                          regenerate={!!doc}
+                        />
+                      ) : null}
                     </div>
                   }
                 />

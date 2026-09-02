@@ -21,7 +21,7 @@ export class GeminiProvider implements AiProvider {
 
   async run(
     context: TaskContext,
-    prompt: string,
+    prompt: string | { system: string; user: string },
     model: string,
   ): Promise<TaskResult> {
     const env = getEnv();
@@ -37,9 +37,14 @@ export class GeminiProvider implements AiProvider {
     // master resume alone, and granting tools there only adds latency.
     const tools = context.taskType === "score" ? [{ googleSearch: {} }] : undefined;
 
+    // Gemini has no equivalent cache breakpoint here, so the split halves are
+    // simply concatenated.
+    const contents =
+      typeof prompt === "string" ? prompt : `${prompt.system}\n\n${prompt.user}`;
+
     const response = await ai.models.generateContent({
       model,
-      contents: prompt,
+      contents,
       config: tools ? { tools } : {},
     });
 
