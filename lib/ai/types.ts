@@ -63,11 +63,22 @@ export type TaskPayload = {
   summary?: GenerationSummary;
 };
 
+/** Token counts, normalised across providers so the benchmark compares like with like. */
+export type TaskUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  /** Reasoning tokens where the provider reports them separately. */
+  thinkingTokens?: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+};
+
 export type TaskResult = {
   payload: TaskPayload;
   markdown: string;
   model: string;
   provider: string;
+  usage?: TaskUsage;
 };
 
 /**

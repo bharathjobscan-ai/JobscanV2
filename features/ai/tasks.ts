@@ -7,6 +7,7 @@ import {
   applications,
   rawJobs,
 } from "@/db/schema";
+import { GeminiProvider } from "@/lib/ai/gemini";
 import { MockProvider } from "@/lib/ai/mock";
 import { buildPrompt } from "@/lib/ai/prompts";
 import { parseTaskResponse, type TaskContext } from "@/lib/ai/types";
@@ -25,6 +26,9 @@ export class TaskBlocked extends Error {}
 
 function modelFor(taskType: AiTaskType): string {
   const env = getEnv();
+  if (env.AI_PROVIDER === "gemini_api") {
+    return taskType === "score" ? env.MODEL_SCORING_GEMINI : env.MODEL_CV_GEMINI;
+  }
   return taskType === "score" ? env.MODEL_SCORING : env.MODEL_CV;
 }
 
@@ -102,19 +106,42 @@ export async function enqueueTask(
 
   const model = modelFor(taskType);
 
-  if (env.AI_PROVIDER === "mock") {
-    const result = await new MockProvider().run(context, "", model);
+  // Mock and Gemini both run inline: one needs nothing, the other is a plain
+  // HTTPS call. Only claude_local needs the worker, because Vercel cannot spawn
+  // Claude Code.
+  if (env.AI_PROVIDER === "mock" || env.AI_PROVIDER === "gemini_api") {
+    const isMock = env.AI_PROVIDER === "mock";
+    const prompt = isMock ? "" : await buildPrompt(context);
+    const provider = isMock ? new MockProvider() : new GeminiProvider();
+
+    const startedAt = new Date();
+    const result = await provider.run(context, prompt, model);
+
     const [created] = await db
       .insert(aiJobs)
       .values({
         applicationId,
         taskType,
         status: "succeeded",
-        provider: "mock",
+        provider: provider.name,
         model,
         effort: env.AI_EFFORT,
+        allowedTools: !isMock && taskType === "score" ? "GoogleSearch" : null,
+        prompt: prompt || null,
         result: { markdown: result.markdown, payload: result.payload },
-        startedAt: sql`now()`,
+        usage: result.usage
+          ? {
+              inputTokens: result.usage.inputTokens,
+              // Reasoning tokens bill as output; fold them in so the cost
+              // report compares providers on the same basis.
+              outputTokens:
+                result.usage.outputTokens + (result.usage.thinkingTokens ?? 0),
+              cacheReadTokens: result.usage.cacheReadTokens,
+              cacheCreationTokens: result.usage.cacheCreationTokens,
+              durationMs: Date.now() - startedAt.getTime(),
+            }
+          : null,
+        startedAt: sql`${startedAt.toISOString()}`,
         finishedAt: sql`now()`,
       })
       .returning({ id: aiJobs.id });

@@ -9,7 +9,7 @@ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } },
   test: {
     environment: "node",
-    include: ["tests/integration/**/*.itest.ts"],
+    include: ["tests/integration/**/*.itest.ts", "tests/unit/*.itest.ts"],
     fileParallelism: false,
     testTimeout: 60_000,
     hookTimeout: 60_000,

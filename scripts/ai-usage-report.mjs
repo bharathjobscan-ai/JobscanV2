@@ -19,7 +19,7 @@ try {
   /* already exported */
 }
 
-const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
+const url = process.env.DATABASE_URL ?? process.env.DIRECT_URL;
 if (!url) {
   console.error("DIRECT_URL or DATABASE_URL must be set.");
   process.exit(1);

@@ -15,7 +15,13 @@ const EnvSchema = z.object({
   APP_PASSWORD: z.string().min(1).optional(),
 
   /** D4. `mock` needs no Claude Code; `claude_local` requires the worker running. */
-  AI_PROVIDER: z.enum(["mock", "claude_local"]).default("mock"),
+  AI_PROVIDER: z.enum(["mock", "claude_local", "gemini_api"]).default("mock"),
+
+  /** Required for AI_PROVIDER=gemini_api. */
+  GEMINI_API_KEY: z.string().min(1).optional(),
+  /** Gemini model for scoring; discover names with `npm run ai:models`. */
+  MODEL_SCORING_GEMINI: z.string().default("gemini-2.5-pro"),
+  MODEL_CV_GEMINI: z.string().default("gemini-2.5-pro"),
 
   /** D5 — per-task models, deliberately configurable rather than hardcoded. */
   MODEL_SCORING: z.string().default("claude-sonnet-5"),
