@@ -12,19 +12,23 @@ import { describe, expect, it } from "vitest";
 
 process.loadEnvFile(".env.local");
 
-const MODEL = process.env.BENCH_MODEL ?? "gemini-3.1-pro-preview";
+const TASK = (process.env.BENCH_TASK ?? "score") as "score" | "tailor_cv";
+const MODEL = process.env.BENCH_MODEL;
 
-// Force the Gemini path for this run only; the app's own config is untouched.
-process.env.AI_PROVIDER = "gemini_api";
-process.env.MODEL_SCORING_GEMINI = MODEL;
+// Run against whatever the app is configured to use, unless a model is named.
+process.env.AI_PROVIDER = "live";
+if (MODEL) {
+  if (TASK === "score") process.env.MODEL_SCORING_GEMINI = MODEL;
+  else process.env.MODEL_CV = MODEL;
+}
 
 const { eq, desc } = await import("drizzle-orm");
 const { db } = await import("@/lib/db/client");
 const { aiJobs, applications, rawJobs } = await import("@/db/schema");
 const { enqueueTask } = await import("@/features/ai/tasks");
 
-describe(`gemini benchmark — ${MODEL}`, () => {
-  it("scores the same job and reports usage", async () => {
+describe(`benchmark — ${TASK}`, () => {
+  it("runs the task and reports usage", async () => {
     const [target] = await db
       .select({
         id: applications.id,
@@ -40,7 +44,7 @@ describe(`gemini benchmark — ${MODEL}`, () => {
     expect(target, "no application to score — upload a job first").toBeDefined();
 
     const started = Date.now();
-    const result = await enqueueTask(target.id, "score");
+    const result = await enqueueTask(target.id, TASK);
     const elapsed = Date.now() - started;
 
     expect(result.status).toBe("succeeded");
@@ -50,6 +54,16 @@ describe(`gemini benchmark — ${MODEL}`, () => {
       .from(aiJobs)
       .where(eq(aiJobs.id, result.id))
       .limit(1);
+
+    const { applicationDocuments } = await import("@/db/schema");
+    const docs = await db
+      .select({
+        docType: applicationDocuments.docType,
+        version: applicationDocuments.version,
+        chars: applicationDocuments.contentMd,
+      })
+      .from(applicationDocuments)
+      .where(eq(applicationDocuments.applicationId, target.id));
 
     const [scored] = await db
       .select({
@@ -79,6 +93,8 @@ describe(`gemini benchmark — ${MODEL}`, () => {
         `score:      ${scored.score}  band: ${scored.band}`,
         `breakdown:  ${breakdown} line items`,
         `visa:       ${(scored.visa ?? "").slice(0, 120)}`,
+        `provider:   ${job.provider} / ${job.model}`,
+        `documents:  ${docs.map((d) => `${d.docType} v${d.version} (${(d.chars ?? "").length}c)`).join(", ") || "none"}`,
         "",
       ].join("\n"),
     );
