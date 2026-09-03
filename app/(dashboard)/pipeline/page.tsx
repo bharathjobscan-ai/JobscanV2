@@ -2,12 +2,7 @@ import Link from "next/link";
 
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui/base";
 import { getBudgetStatus } from "@/features/ai/budget-queries";
-import {
-  countAwaitingScore,
-  countOrphanedPasses,
-  countPiles,
-  listRuns,
-} from "@/features/pipeline/dashboard-queries";
+import { getPipelineSummary, listRuns } from "@/features/pipeline/dashboard-queries";
 import { INGESTION_RUN_LABELS, type IngestionRunStatus } from "@/lib/config/constants";
 import { formatUsd } from "@/lib/ai/pricing";
 
@@ -77,13 +72,15 @@ function Pile({
  * screened-out job has no application and is invisible to the other board.
  */
 export default async function PipelinePage() {
-  const [piles, runs, awaiting, orphaned, budget] = await Promise.all([
-    countPiles(),
+  // Three round trips, not seven. On a one-connection serverless pool each
+  // query is sequential, so fan-out is latency and connection pressure.
+  const [piles, runs, budget] = await Promise.all([
+    getPipelineSummary(),
     listRuns(20),
-    countAwaitingScore(),
-    countOrphanedPasses(),
     getBudgetStatus(),
   ]);
+  const awaiting = piles.awaitingScore;
+  const orphaned = piles.orphanedPasses;
 
   const total = piles.pass + piles.review + piles.reject + piles.unevaluated;
 

@@ -24,9 +24,11 @@ function startOfMonth(now: Date): Date {
   return d;
 }
 
-async function runsSince(since: Date): Promise<PricedRun[]> {
+async function runsSince(
+  since: Date,
+): Promise<(PricedRun & { finishedAt: Date | null })[]> {
   return db
-    .select({ model: aiJobs.model, usage: aiJobs.usage })
+    .select({ model: aiJobs.model, usage: aiJobs.usage, finishedAt: aiJobs.finishedAt })
     .from(aiJobs)
     .where(
       and(
@@ -38,10 +40,11 @@ async function runsSince(since: Date): Promise<PricedRun[]> {
 }
 
 export async function getBudgetStatus(now = new Date()): Promise<BudgetStatus> {
-  const [today, month] = await Promise.all([
-    runsSince(startOfDay(now)),
-    runsSince(startOfMonth(now)),
-  ]);
+  // One query, not two: the day's runs are a subset of the month's, so fetching
+  // the month and partitioning in memory costs one round trip instead of two.
+  const dayStart = startOfDay(now);
+  const month = await runsSince(startOfMonth(now));
+  const today = month.filter((r) => r.finishedAt !== null && r.finishedAt >= dayStart);
   return budgetStatus(today, month);
 }
 

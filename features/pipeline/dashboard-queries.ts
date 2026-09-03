@@ -15,31 +15,48 @@ import type { IngestionRunStatus, PrequalDecision } from "@/lib/config/constants
 
 export type PileCounts = Record<PrequalDecision | "unevaluated", number>;
 
+export type PipelineSummary = PileCounts & {
+  withApplication: number;
+  /** Qualified but unscored — what the next run will do. */
+  awaitingScore: number;
+  /** Qualified with no application. Should always be zero. */
+  orphanedPasses: number;
+};
+
 /**
- * The piles, after pre-qualification.
+ * Every headline number in one round trip.
  *
- * `pass` is counted separately from "has an application" because they can
- * legitimately diverge: a job promoted by hand from review has an application
- * without a `pass` verdict, and that difference is worth being able to see.
+ * Previously five separate queries. On a serverless pool of one connection that
+ * is five sequential round trips to a database on another continent for a page
+ * that shows six numbers — and it was a meaningful part of why the app froze
+ * under navigation. Counting is cheap; connecting is not.
  */
-export async function countPiles(): Promise<PileCounts & { withApplication: number }> {
+export async function getPipelineSummary(): Promise<PipelineSummary> {
   const [row] = await db
     .select({
       pass: sql<number>`count(*) filter (where ${rawJobs.prequalification} = 'pass')::int`,
       review: sql<number>`count(*) filter (where ${rawJobs.prequalification} = 'review')::int`,
       reject: sql<number>`count(*) filter (where ${rawJobs.prequalification} = 'reject')::int`,
       unevaluated: sql<number>`count(*) filter (where ${rawJobs.prequalification} is null)::int`,
+      withApplication: sql<number>`count(${applications.id})::int`,
+      awaitingScore: sql<number>`count(*) filter (
+        where ${rawJobs.prequalification} = 'pass' and ${applications.jobScore} is null
+      )::int`,
+      orphanedPasses: sql<number>`count(*) filter (
+        where ${rawJobs.prequalification} = 'pass' and ${applications.id} is null
+      )::int`,
     })
-    .from(rawJobs);
-
-  const [apps] = await db.select({ n: sql<number>`count(*)::int` }).from(applications);
+    .from(rawJobs)
+    .leftJoin(applications, eq(applications.rawJobId, rawJobs.id));
 
   return {
     pass: row?.pass ?? 0,
     review: row?.review ?? 0,
     reject: row?.reject ?? 0,
     unevaluated: row?.unevaluated ?? 0,
-    withApplication: apps?.n ?? 0,
+    withApplication: row?.withApplication ?? 0,
+    awaitingScore: row?.awaitingScore ?? 0,
+    orphanedPasses: row?.orphanedPasses ?? 0,
   };
 }
 
@@ -78,26 +95,4 @@ export async function listRuns(limit = 30): Promise<RunRow[]> {
     .from(ingestionRuns)
     .orderBy(desc(ingestionRuns.startedAt))
     .limit(limit);
-}
-
-/** Qualified jobs that have not been scored yet — what the next run will do. */
-export async function countAwaitingScore(): Promise<number> {
-  const [row] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(applications)
-    .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
-    .where(
-      sql`${applications.jobScore} is null and ${rawJobs.prequalification} = 'pass'`,
-    );
-  return row?.n ?? 0;
-}
-
-/** Jobs that qualified but never became an application — should be zero. */
-export async function countOrphanedPasses(): Promise<number> {
-  const [row] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(rawJobs)
-    .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
-    .where(sql`${rawJobs.prequalification} = 'pass' and ${applications.id} is null`);
-  return row?.n ?? 0;
 }
