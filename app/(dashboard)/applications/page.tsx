@@ -6,6 +6,7 @@ import {
   ScoreBadge,
   StatusBadge,
 } from "@/components/applications/badges";
+import { PreferredCityBadge } from "@/components/applications/prequal-badges";
 import { Badge, Card, EmptyState, LinkButton } from "@/components/ui/base";
 import {
   countByView,
@@ -130,7 +131,8 @@ export default async function ApplicationsPage({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <MatchBadge category={item.matchCategory} />
+                    <PreferredCityBadge city={item.preferredCity} />
+                  <MatchBadge category={item.matchCategory} />
                     <ReferralBadge status={item.referralStatus} />
                     <StatusBadge status={item.status} isPending={item.isPending} />
                     <span className="w-8 text-right">

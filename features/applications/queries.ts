@@ -93,6 +93,20 @@ const hasResume = exists(
     ),
 );
 
+/**
+ * Pull the preferred city out of a stored pre-qualification verdict.
+ *
+ * Defensive because the column is jsonb written by an earlier version of the
+ * engine: an older or hand-edited row must render, not crash the list.
+ */
+function preferredCityOf(detail: unknown): string | null {
+  if (!detail || typeof detail !== "object") return null;
+  const location = (detail as { location?: unknown }).location;
+  if (!location || typeof location !== "object") return null;
+  const city = (location as { preferredCity?: unknown }).preferredCity;
+  return typeof city === "string" ? city : null;
+}
+
 export type ApplicationListItem = {
   id: string;
   title: string;
@@ -100,6 +114,8 @@ export type ApplicationListItem = {
   location: string | null;
   country: string | null;
   source: string;
+  /** JSV2S1138 — set when the job sits in a city on the preferred list. */
+  preferredCity: string | null;
   jobUrl: string;
   status: ApplicationStatus;
   isPending: boolean;
@@ -157,6 +173,7 @@ export async function listApplications(
       location: rawJobs.location,
       country: rawJobs.country,
       source: rawJobs.source,
+      prequalificationDetail: rawJobs.prequalificationDetail,
       jobUrl: rawJobs.jobUrl,
       description: rawJobs.description,
       isPending: pendingPredicate(),
@@ -176,6 +193,10 @@ export async function listApplications(
       location: row.location,
       country: row.country,
       source: row.source,
+      // Read from the stored verdict rather than recomputed: the value shown
+      // must be the one the gate actually decided on, not what today's config
+      // would say.
+      preferredCity: preferredCityOf(row.prequalificationDetail),
       jobUrl: row.jobUrl,
       status: row.status,
       isPending: Boolean(row.isPending),
