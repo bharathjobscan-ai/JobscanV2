@@ -1,0 +1,50 @@
+# JSV2S1049 — run the checks that need no database on every push and PR.
+#
+# Deliberately excludes `npm run test:integration`: it writes to the live
+# Supabase project, and there is exactly one. A CI run that mutates the only
+# database you have is worse than no CI run.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      # `lib/db/client.ts` builds a postgres client at import time, so the schema
+      # in lib/config/env.ts must validate. `postgres()` is lazy and never dials,
+      # so a placeholder is enough — and guarantees CI cannot reach real data.
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+      AI_PROVIDER: mock
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

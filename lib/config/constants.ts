@@ -207,6 +207,117 @@ export const INGESTION_METHODS = ["manual_upload", "api", "watcher"] as const;
 export type IngestionMethod = (typeof INGESTION_METHODS)[number];
 
 // ---------------------------------------------------------------------------
+// Ingestion runs (JSV2S1010–1015)
+// ---------------------------------------------------------------------------
+
+/** What started a run. Scheduled runs are JSV2S1016; manual is today. */
+export const INGESTION_TRIGGERS = ["manual_upload", "scheduled", "backfill"] as const;
+export type IngestionTrigger = (typeof INGESTION_TRIGGERS)[number];
+
+/**
+ * `partial` is the important one (JSV2S1013): a run where some rows or some
+ * sources failed and the rest still landed. Collapsing that into `failed` would
+ * hide successful work; collapsing it into `succeeded` would hide the failures.
+ */
+export const INGESTION_RUN_STATUSES = [
+  "running",
+  "succeeded",
+  "partial",
+  "failed",
+] as const;
+export type IngestionRunStatus = (typeof INGESTION_RUN_STATUSES)[number];
+
+export const INGESTION_RUN_LABELS: Record<IngestionRunStatus, string> = {
+  running: "Running",
+  succeeded: "Succeeded",
+  partial: "Partial — some rows failed",
+  failed: "Failed",
+};
+
+/** Pipeline stages, so a log line or a failure says where it happened. */
+export const INGESTION_STAGES = [
+  "fetch",
+  "map",
+  "validate",
+  "dedupe",
+  "prequalify",
+  "persist",
+] as const;
+export type IngestionStage = (typeof INGESTION_STAGES)[number];
+
+// ---------------------------------------------------------------------------
+// Pre-qualification (JSV2S1037, 1038, 1054, 1055, 1056)
+// ---------------------------------------------------------------------------
+
+/**
+ * The pre-qualification axis — conflict C3, resolved 2026-09-04.
+ *
+ * C3 recorded three competing vocabularies for what everyone read as one axis.
+ * It was always **two**: this one answers "is this job worth spending money
+ * on?" before any AI runs, and `MATCH_CATEGORIES` answers "how good is it?"
+ * after ScoreG has run. They are not alternatives and never were.
+ *
+ * The PRD's Perfect/Dicey/Rejection Pool and JSV2S1052's Absolute/Relative/No
+ * Match are both superseded.
+ */
+export const PREQUALIFICATION_DECISIONS = ["pass", "review", "reject"] as const;
+export type PrequalDecision = (typeof PREQUALIFICATION_DECISIONS)[number];
+
+export const PREQUALIFICATION_LABELS: Record<PrequalDecision, string> = {
+  pass: "Qualified",
+  review: "Needs review",
+  reject: "Screened out",
+};
+
+/**
+ * Per-filter verdict. `unknown` is load-bearing: a posting that simply does not
+ * state its location must not be rejected for it, so an absent signal is
+ * distinct from a contradicting one.
+ */
+export const FILTER_STATUSES = ["pass", "fail", "unknown"] as const;
+export type FilterStatus = (typeof FILTER_STATUSES)[number];
+
+export const PREQUAL_FILTERS = ["role", "domain", "experience", "location"] as const;
+export type PrequalFilter = (typeof PREQUAL_FILTERS)[number];
+
+export const PREQUAL_FILTER_LABELS: Record<PrequalFilter, string> = {
+  role: "Role",
+  domain: "Domain",
+  experience: "Experience",
+  location: "Location",
+};
+
+/**
+ * Roll individual filter verdicts into one decision.
+ *
+ * Any FAIL rejects; all PASS qualifies; anything else needs a human. Keeping
+ * this next to the vocabulary rather than inside the engine means the UI can
+ * explain a decision without importing the engine.
+ */
+export function prequalDecisionFor(
+  statuses: readonly FilterStatus[],
+): PrequalDecision {
+  if (statuses.includes("fail")) return "reject";
+  return statuses.every((s) => s === "pass") ? "pass" : "review";
+}
+
+/**
+ * JSV2S1040 — how an observed job relates to what is already stored.
+ *
+ * `duplicate` means seen again unchanged; `updated` means the posting itself
+ * changed; `reposted` means the employer listed it afresh. The last two are
+ * only distinguishable with repeat observation, which is why first/last seen
+ * timestamps shipped in Phase 1 (JSV2S1041).
+ */
+export const JOB_LIFECYCLE_STATES = [
+  "new",
+  "duplicate",
+  "updated",
+  "reposted",
+] as const;
+export type JobLifecycleState = (typeof JOB_LIFECYCLE_STATES)[number];
+
+// ---------------------------------------------------------------------------
 // Attempts (JSV2S1094–1096)
 // ---------------------------------------------------------------------------
 

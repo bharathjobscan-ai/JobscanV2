@@ -14,10 +14,12 @@ import {
   ReferralForm,
   StatusForm,
 } from "@/components/applications/workspace-forms";
+import { AiCostCard } from "@/components/applications/ai-cost";
 import { GenerationSummary } from "@/components/applications/generation-summary";
 import { ScoreBreakdown } from "@/components/applications/score-breakdown";
 import { Badge, buttonClass, Card, CardHeader, EmptyState } from "@/components/ui/base";
 import { Markdown } from "@/components/ui/markdown";
+import { getApplicationCost } from "@/features/ai/queries";
 import { getTaskStates, settleAiJobs } from "@/features/ai/tasks";
 import { getApplicationDetail } from "@/features/applications/queries";
 import { DOCUMENT_LABELS, STATUS_LABELS } from "@/lib/config/constants";
@@ -54,10 +56,11 @@ export default async function ApplicationDetailPage({
   // died between recording and settling. Issued alongside the reads rather
   // than before them: a sequential wave costs a full round trip, which is
   // ~220ms with the database on another continent.
-  const [, application, tasks] = await Promise.all([
+  const [, application, tasks, cost] = await Promise.all([
     settleAiJobs(id),
     getApplicationDetail(id),
     getTaskStates(id),
+    getApplicationCost(id),
   ]);
 
   if (!application) notFound();
@@ -480,6 +483,8 @@ export default async function ApplicationDetailPage({
               </ul>
             )}
           </Card>
+
+          <AiCostCard cost={cost} />
         </aside>
       </div>
     </div>
