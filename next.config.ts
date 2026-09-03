@@ -1,6 +1,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    /**
+     * Server Actions default to a 1 MB body, which the upload form silently hit
+     * — `MAX_UPLOAD_BYTES` said 5 MB and never ran, because Next rejected the
+     * request first. A single city's Apify export is already 1.2 MB.
+     *
+     * 4 MB, not more: Vercel caps a serverless request body at 4.5 MB and that
+     * is a platform limit we cannot raise. Anything larger has to arrive by
+     * fetching rather than uploading (JSV2S1017).
+     */
+    serverActions: { bodySizeLimit: "4mb" },
+  },
   /**
    * Ship the files we read at runtime.
    *

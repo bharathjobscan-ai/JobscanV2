@@ -65,7 +65,11 @@ export default function UploadPage() {
                 </li>
                 <li>Booleans: true/false, yes/no, y/n, 1/0.</li>
                 <li>A bad row is rejected on its own; the rest still import.</li>
-                <li>Max {MAX_UPLOAD_ROWS} rows and 5 MB per upload.</li>
+                <li>
+                  Max {MAX_UPLOAD_ROWS} rows and 4 MB per upload — about 340
+                  rows of a LinkedIn export. Larger backfills need to be split
+                  by city; the 4 MB ceiling is Vercel&rsquo;s, not ours.
+                </li>
                 <li>
                   <code className="font-mono">posted_at</code> drives the posting-age
                   score — supply it, or that rule is forfeited.

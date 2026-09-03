@@ -2,7 +2,18 @@ import { z } from "zod";
 
 import { JOB_SOURCES, REACHABILITY_LEVELS } from "@/lib/config/constants";
 
-export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
+/**
+ * Must not exceed `serverActions.bodySizeLimit` in next.config.ts, which in turn
+ * cannot exceed Vercel's 4.5 MB request-body cap. When these disagree the
+ * larger one is a lie: Next rejects the request before this check ever runs,
+ * and the user gets a 500 instead of the readable error below.
+ */
+export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // 4 MB
+/**
+ * A real Apify export runs ~12 KB per row, so 4 MB is reached at roughly 340
+ * rows — bytes bind before this does. Kept as a guard against a pathological
+ * file of tiny rows.
+ */
 export const MAX_UPLOAD_ROWS = 500;
 
 /**
