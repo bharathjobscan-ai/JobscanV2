@@ -47,18 +47,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # Must ship npm 11: package-lock.json is written by npm 11 locally,
-          # and npm 10 rejects how it records esbuild's optional platform
-          # packages ("Missing: @esbuild/win32-x64 from lock file"). Node 22
-          # ships npm 10 and fails `npm ci` on exactly that.
           node-version: 24
           cache: npm
-
-      # Belt and braces: the requirement is npm 11, not a Node version that
-      # happens to bundle it. Asserting it here means a future runner image
-      # change cannot silently reintroduce the failure.
-      - name: Ensure npm 11
-        run: npm --version | grep -q '^11\.' || npm install -g npm@11
 
       - run: npm ci
 

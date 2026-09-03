@@ -59,6 +59,11 @@ GitHub Actions cron (Phase 1.5).
   `npm run ai:bench` bills a real scoring call. The benchmark was inside the
   integration glob until 2026-09-04, so the suite silently spent money. Both
   paid files are now excluded from the default run and must be named explicitly.
+- **`package-lock.json` must install under npm 10 and npm 11.** npm 11 records
+  esbuild's optional platform packages in a way npm 10 rejects outright, which
+  broke both GitHub Actions and the Vercel build. Regenerate with
+  `npx npm@10 install --package-lock-only` after adding a dependency, and never
+  commit a lock only npm 11 can read — Vercel's Node version is not ours to pin.
 - **Keep the documentation in sync in the same change.** A behaviour change that
   contradicts the PRD, an ADR, `AGENTS.md`, `TASKBOARD.md` or a schema comment
   is not finished until those are updated or explicitly superseded. Supersede
