@@ -30,6 +30,15 @@ const EnvSchema = z.object({
   GEMINI_API_KEY: z.string().min(1).optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
 
+  /**
+   * Apify token for the LinkedIn actor (JSV2S1006, JSV2S1019).
+   *
+   * Optional so mock mode and the unit suite need no credential. The adapter
+   * reports `isConfigured() === false` without it, which a scheduled run treats
+   * as a clean skip rather than a crash at 3am.
+   */
+  APIFY_TOKEN: z.string().min(1).optional(),
+
   /** Discover Gemini names with `npm run ai:models`. */
   MODEL_SCORING_GEMINI: z.string().default("gemini-3.1-pro-preview"),
   MODEL_CV_GEMINI: z.string().default("gemini-3.1-pro-preview"),

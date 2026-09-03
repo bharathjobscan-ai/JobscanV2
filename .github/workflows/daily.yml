@@ -1,0 +1,70 @@
+# JSV2S1016 — the nightly pipeline.
+#
+# Runs on Actions rather than Vercel: a scoring pass over tens of jobs will not
+# fit in a serverless function timeout. Actions also renders the digest on the
+# run page (JSV2S1043) and emails on failure by itself, which is the whole
+# notification requirement with no mail provider.
+name: Daily pipeline
+
+on:
+  schedule:
+    # 06:00 IST — after LinkedIn's overnight postings, before the working day.
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Select and report, but spend nothing"
+        type: boolean
+        default: false
+
+# Never let two runs overlap: both would select the same unscored jobs, and
+# `enqueueTask` would bill twice for one job.
+concurrency:
+  group: daily-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      # JSV2S1006 — every credential comes from GitHub Secrets, never a file.
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      AI_PROVIDER: live
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # `daily-run.ts` reads .env.local, which does not exist in CI. Writing the
+      # secrets to it keeps one code path for local and scheduled runs.
+      - name: Materialise environment
+        run: |
+          {
+            echo "DATABASE_URL=$DATABASE_URL"
+            echo "DIRECT_URL=$DIRECT_URL"
+            echo "APIFY_TOKEN=$APIFY_TOKEN"
+            echo "GEMINI_API_KEY=$GEMINI_API_KEY"
+            echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
+            echo "AI_PROVIDER=$AI_PROVIDER"
+          } > .env.local
+
+      - name: Run pipeline
+        run: npm run pipeline:daily ${{ inputs.dry_run && '-- --dry' || '' }}
+
+      # The env file holds live credentials; do not leave it on the runner even
+      # though the workspace is discarded.
+      - name: Shred environment
+        if: always()
+        run: rm -f .env.local

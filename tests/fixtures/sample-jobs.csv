@@ -1,11 +1,35 @@
 title,company,source,job_url,description,location,country,posted_at,visa_sponsorship_mentioned,source_job_id
-Senior Product Manager,Revolut,linkedin,https://www.linkedin.com/jobs/view/4001,"We are looking for a Senior Product Manager to own our payments platform roadmap. You will work with engineering, design and compliance to ship features across Europe. Visa sponsorship is available for exceptional candidates.","London, United Kingdom",United Kingdom,2026-08-20,true,4001
-Product Manager - Payments,Adyen,linkedin,https://www.linkedin.com/jobs/view/4002,"Own the merchant payments experience end to end. You will define the roadmap, run discovery with merchants and partner closely with engineering to deliver at scale across our European markets.","Amsterdam, Netherlands",Netherlands,2026-08-21,true,4002
-Senior Product Manager,Stripe,career_site,https://stripe.com/jobs/listing/spm-4003,"Lead product for our billing platform. This role covers strategy, discovery and delivery for a core revenue surface used by thousands of businesses worldwide.","Dublin, Ireland",Ireland,2026-08-18,false,4003
-Group Product Manager,Wise,reed,https://www.reed.co.uk/jobs/4004,"Lead a group of product managers across our international transfers domain. You will set direction, coach PMs and be accountable for outcomes across several squads.","London, United Kingdom",United Kingdom,2026-08-22,true,4004
-Product Manager,Klarna,adzuna,https://www.adzuna.co.uk/jobs/4005,"Drive the checkout experience for our European merchants. You will own discovery, experimentation and delivery for a high-traffic surface.","Stockholm, Sweden",Sweden,2026-08-19,false,4005
-Principal Product Manager,Airwallex,visasponsor,https://visasponsor.jobs/listing/4006,"Own our global treasury product line. You will define multi-year strategy and work across engineering, risk and partnerships to deliver it.","Dublin, Ireland",Ireland,2026-08-23,true,4006
-Product Manager - Growth,Monzo,referral,https://monzo.com/careers/4007,,"London, United Kingdom",United Kingdom,2026-08-24,,4007
-Senior Product Manager,Revolut,linkedin,https://www.linkedin.com/jobs/view/4001,"Duplicate of row 1 — same source and source job id, so this should be detected rather than inserted again.","London, United Kingdom",United Kingdom,2026-08-20,true,4001
-,Checkout.com,linkedin,https://www.linkedin.com/jobs/view/4009,"This row is missing a title, so it must be rejected without stopping the batch.","London, United Kingdom",United Kingdom,2026-08-20,true,4009
-Product Manager,Mollie,monster,not-a-valid-url,"This row has an unknown source and an unparseable URL, and a European date format that must not be guessed.","Amsterdam, Netherlands",Netherlands,25/08/2026,maybe,4010
+"Senior Product Manager, Payments Platform",Northgate Payments QA,linkedin,https://fixture.jobscan.invalid/jobs/4001,"Responsibilities
+Own the payment orchestration and settlement roadmap across Europe.
+
+Requirements
+7-10 years of experience in product management. Visa sponsorship is available for exceptional candidates.","London, United Kingdom",United Kingdom,2026-08-20,true,fixture-4001
+Product Manager - Payments,Vandermeer Acquiring QA,linkedin,https://fixture.jobscan.invalid/jobs/4002,"Responsibilities
+Own the merchant acquiring and payment gateway experience end to end.
+
+Requirements
+8+ years of experience delivering payment integrations at scale.","Amsterdam, Netherlands",Netherlands,2026-08-21,true,fixture-4002
+"Senior Product Manager, Billing and Settlement",Larkspur Billing QA,career_site,https://fixture.jobscan.invalid/jobs/4003,"Responsibilities
+Lead product for our settlement and reconciliation platform.
+
+Requirements
+Experience with payment processing and chargebacks.","Dublin, Ireland",Ireland,2026-08-18,false,fixture-4003
+"Lead Product Manager, Cross-Border Payments",Fernwood Transfers QA,reed,https://fixture.jobscan.invalid/jobs/4004,"Responsibilities
+Own cross-border payments and multi-currency payouts.
+
+Requirements
+7+ years of experience in payments product management.","London, United Kingdom",United Kingdom,2026-08-22,true,fixture-4004
+"Product Manager, Payment Checkout",Ashgrove Checkout QA,adzuna,https://fixture.jobscan.invalid/jobs/4005,"Responsibilities
+Drive the payment checkout and card acquiring experience for European merchants.
+
+Requirements
+6+ years of experience in payments.","Stockholm, Sweden",Sweden,2026-08-19,false,fixture-4005
+"Principal Product Manager, Treasury and Payouts",Bellhaven Treasury QA,visasponsor,https://fixture.jobscan.invalid/jobs/4006,"Responsibilities
+Own global payouts, FX and settlement infrastructure.
+
+Requirements
+9+ years of experience across payment integrations.","Dublin, Ireland",Ireland,2026-08-23,true,fixture-4006
+Product Manager - Payments Growth,Calderwood Bank QA,referral,https://fixture.jobscan.invalid/jobs/4007,,"London, United Kingdom",United Kingdom,2026-08-24,,fixture-4007
+"Senior Product Manager, Payments Platform",Northgate Payments QA,linkedin,https://fixture.jobscan.invalid/jobs/4001,"Duplicate of row 1 — same source and source job id, so this should be detected rather than inserted again.","London, United Kingdom",United Kingdom,2026-08-20,true,fixture-4001
+,Deepwater Cards QA,linkedin,https://fixture.jobscan.invalid/jobs/4009,"This row is missing a title, so it must be rejected without stopping the batch.","London, United Kingdom",United Kingdom,2026-08-20,true,fixture-4009
+Product Manager,Ravensbourne Pay QA,monster,not-a-valid-url,"This row has an unknown source and an unparseable URL, and a European date format that must not be guessed.","Amsterdam, Netherlands",Netherlands,25/08/2026,maybe,fixture-4010

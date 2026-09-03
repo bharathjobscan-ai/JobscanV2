@@ -1,10 +1,14 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { countAwaitingReview } from "@/features/prequalification/queries";
 import { getEnv } from "@/lib/config/env";
 
-export default function DashboardLayout({ children }: { children: ReactNode }) {
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const env = getEnv();
+  // Jobs held back by the gate are invisible on every other page, so the count
+  // lives in the nav — an unwatched review queue is the same as no gate.
+  const awaiting = await countAwaitingReview().catch(() => 0);
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -16,6 +20,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <nav className="flex items-center gap-4 text-xs">
             <Link href="/applications" className="text-muted hover:text-foreground">
               Applications
+            </Link>
+            <Link href="/pipeline" className="text-muted hover:text-foreground">
+              Pipeline
+            </Link>
+            <Link href="/review" className="text-muted hover:text-foreground">
+              Review{awaiting > 0 ? ` (${awaiting})` : ""}
             </Link>
             <Link href="/upload" className="text-muted hover:text-foreground">
               Upload

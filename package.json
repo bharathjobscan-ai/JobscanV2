@@ -16,8 +16,11 @@
     "db:studio": "drizzle-kit studio",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "ai:report": "node scripts/ai-usage-report.mjs",
-    "ai:models": "vitest run --config vitest.integration.config.mts tests/unit/gemini-models.itest.ts",
-    "ai:bench": "vitest run --config vitest.integration.config.mts tests/integration/gemini-benchmark.itest.ts"
+    "prequalify:backfill": "vitest run --config vitest.run.config.mts tests/ops/prequalify-backfill.ts",
+    "ai:models": "vitest run --config vitest.run.config.mts tests/unit/gemini-models.itest.ts",
+    "ai:bench": "vitest run --config vitest.run.config.mts tests/integration/gemini-benchmark.itest.ts",
+    "pipeline:daily": "tsx scripts/daily-run.mts",
+    "prequalify:calibrate": "vitest run --config vitest.run.config.mts tests/ops/prequal-calibration.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
@@ -43,6 +46,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5",
     "vitest": "^4.1.11"
   }

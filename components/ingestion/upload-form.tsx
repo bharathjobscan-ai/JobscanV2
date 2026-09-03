@@ -58,6 +58,11 @@ export function UploadForm() {
             <Badge tone={result.rejected > 0 ? "negative" : "neutral"}>
               {result.rejected} rejected
             </Badge>
+            {result.screenedOut > 0 ? (
+              <Badge tone="warning" title="Kept as jobs, but no application created — see Review">
+                {result.screenedOut} screened out
+              </Badge>
+            ) : null}
             {result.incomplete > 0 ? (
               <Badge tone="warning">{result.incomplete} missing description</Badge>
             ) : null}
@@ -74,7 +79,9 @@ export function UploadForm() {
                         ? "positive"
                         : row.status === "duplicate"
                           ? "neutral"
-                          : "negative"
+                          : row.status === "screened_out"
+                            ? "warning"
+                            : "negative"
                     }
                   >
                     {row.status}
