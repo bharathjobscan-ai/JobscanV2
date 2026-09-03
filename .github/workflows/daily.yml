@@ -28,6 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # The credentials are stored as *environment* secrets under Production, not
+    # repository secrets. A job that does not declare the environment cannot see
+    # them, and every one below would resolve to an empty string.
+    environment: Production
+
     env:
       # JSV2S1006 — every credential comes from GitHub Secrets, never a file.
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
