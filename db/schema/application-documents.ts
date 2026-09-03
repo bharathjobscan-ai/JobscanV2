@@ -51,7 +51,7 @@ export const applicationDocuments = pgTable(
     /** Null in Phase 1 — reserved for Supabase Storage. */
     storagePath: text("storage_path"),
 
-    /** `mock` or `claude_local`. */
+    /** `mock`, `gemini_api` or `anthropic_api`. */
     generatedBy: text("generated_by"),
     model: text("model"),
 

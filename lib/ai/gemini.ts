@@ -6,10 +6,9 @@ import { parseTaskResponse, type AiProvider, type TaskContext, type TaskResult }
 /**
  * Gemini API driver.
  *
- * Unlike `claude_local`, this needs no worker: it is a plain HTTPS call with an
- * API key, so it runs inline in the request and works from Vercel. That is the
- * substantive difference between the two paths — the local worker exists only
- * because Vercel cannot spawn Claude Code.
+ * A plain HTTPS call with an API key, so it runs inline in the request and
+ * works from Vercel — which is what let ADR-0005 retire the local worker and
+ * unblock deployment.
  *
  * Google Search grounding is enabled for scoring. ScoreG verifies sponsor
  * registry status and hiring signals live, and grounding is the closest

@@ -1,10 +1,57 @@
 # JobScan V2 — Product Requirements Document
 
-**Current version:** 1.5 · **Last updated:** 2026-08-29 · **Owner:** Bharath Raghu
+**Current version:** 1.7 · **Last updated:** 2026-09-04 · **Owner:** Bharath Raghu
 
 ---
 
 ## Document control
+
+**Version 1.7 — 2026-09-04 — Deterministic pre-qualification; C3 closed**
+
+- **A deterministic pre-qualification gate now sits between `raw_jobs` and
+  `applications`** (§9.3, [ADR-0006](../../docs/decisions/0006-prequalification-gate.md)).
+  Four rule-based filters — role, domain, experience, location — each returning
+  PASS, FAIL or UNKNOWN. Any FAIL rejects, all PASS qualifies, anything else
+  goes to a review queue. No AI, no network, fully reproducible.
+- **D1 is amended, not replaced.** Manual uploads are evaluated but never gated;
+  scheduled ingestion creates an application only on PASS. The gate exists to
+  stop an unattended run billing a scoring call for every job it finds.
+- **C3 is resolved, and the page of open conflicts is now empty** (§11). There
+  were always two axes rather than three vocabularies for one: pre-qualification
+  (`pass`/`review`/`reject`) and post-score (`MATCH_CATEGORIES`). The PRD's own
+  Perfect/Dicey/Rejection Pool wording is superseded.
+- **Four defects in the source requirement were corrected before building.**
+  `Visa` was a Tier-1 payments keyword in a product that searches for visa
+  sponsorship; Portugal was missing while Lisbon was a preferred city; the
+  documented "Fraud & Risk → PASS" case could not pass; and an Associate PM role
+  passed both role and experience because `acceptable_min` was declared and
+  never used.
+- Added JSV2S1138 (preferred cities). Phase 1.5 is now 38 stories: 17 Review,
+  13 Ready, 8 Blocked.
+
+**Version 1.6 — 2026-09-03 — Provider APIs replace the worker; Phase 1.5 scoped**
+
+- **AI execution migrated from a local Claude Code worker to direct provider
+  APIs** (§9.4, [ADR-0005](../../docs/decisions/0005-provider-apis.md),
+  superseding ADR-0002). There is no queue, no worker and no polling; generation
+  is synchronous. This unblocked Vercel deployment, which the worker design had
+  made unreachable.
+- **Execution is routed per task, measured rather than assumed** (§9.5). Gemini
+  with Google Search grounding scores; Claude writes documents. Gemini resolved a
+  UK sponsor-register entry that three Claude Code runs could not; Claude's prompt
+  caching makes the repeated skill prefix nearly free on the document path.
+- **Cost became real** (§9.7). The v1.1–v1.5 figures were projections of what a
+  metered API *would* cost. They are now the bill: ~$0.07–0.09 per grounded score.
+- **Phase 1.5 defined** (§12): scheduled LinkedIn ingestion, cleansing,
+  pre-qualification, automated scoring, digest mailer, mandatory SimG and
+  per-application cost visibility. 37 stories; 25 ready, 12 awaiting a decision.
+  Document generation stays manual by decision.
+- **"Zero-cost" restated honestly** (§2). It means no paid *infrastructure*.
+  Metered AI calls and a Phase 1.5 Apify actor are accepted and tracked.
+- Added JSV2S1136 (pipeline orchestration) and JSV2S1137 (AI spend ceiling).
+- Fixed a prompt defect: one shared output contract was instructing the scoring
+  model to also produce a CV and cover letter. Score and document contracts are
+  now separate (§9.8).
 
 **Version 1.5 — 2026-08-29 — Skill decoupled from document generation**
 
@@ -87,6 +134,12 @@ letters and application tracking.
 3. **Privacy-first** — all data belongs to the user.
 4. **Iteration over perfection** — each module can evolve independently.
 
+**Clarification added in v1.6.** "Low-cost" means **no paid infrastructure** — no
+containers, queue services, Redis or paid hosting. It does not mean zero spend:
+metered AI calls (§9.4) and, from Phase 1.5, an Apify actor are accepted
+deliberately and tracked per run. Stated here because earlier versions read as
+zero-cost absolutely, and that is no longer true.
+
 ## 3. Available subscriptions
 
 - Google AI Pro
@@ -95,6 +148,11 @@ letters and application tracking.
 
 **Clarification added in v1.1:** Claude Pro does **not** include Anthropic API
 access. They are separate products with separate billing. See §9.4.
+
+**Updated in v1.6.** Neither subscription drives the product any more. Execution
+runs on **separately billed API keys** — `GEMINI_API_KEY` and
+`ANTHROPIC_API_KEY` — not on the Pro plans. The subscriptions remain useful for
+authoring prompts and for development; they are not part of the runtime.
 
 ## 4. Journey so far
 
@@ -216,55 +274,73 @@ Pending dashboard view and the future Ghost Rate one shared definition.
 
 ### 9.3 Job to application creation
 
-**MVP:** every valid uploaded row becomes an application at `Ready to Apply`
-immediately, because MVP uploads are pre-filtered outside the system.
+**Amended in v1.7 — see [ADR-0006](../../docs/decisions/0006-prequalification-gate.md).**
 
-**Phase 2:** jobs that pass pre-qualification become applications, with job
-score, CV and cover letter generated by default. Jobs that fail remain as raw
-jobs with no application.
+Creation is now conditional on the ingestion trigger:
 
-### 9.4 AI execution mechanism
+| Trigger | Behaviour |
+|---|---|
+| Manual upload | Verdict recorded, application **always** created |
+| Scheduled | Verdict recorded, application created **only on PASS** |
 
-Claude Pro does not include Anthropic API access. Four mechanisms were assessed:
-a local Claude Code worker, the metered Anthropic API, an MCP server driven from
-Claude Code, and a manual copy-paste bridge.
+A file uploaded by hand is a deliberate act, and silently discarding rows from
+it would be surprising. Unattended ingestion is where the volume and the cost
+are, so that is where the gate bites.
 
-**Decision:** a local Claude Code worker for the MVP, behind a provider
-interface, with a fixture-based mock driver as the default.
+A screened-out job keeps its `raw_jobs` row with the full verdict and waits in
+the review queue, where one click promotes it. Nothing is deleted, and the gate
+is overridable by design — it is a cost control, not an authority.
 
-The application enqueues work in an `ai_jobs` table. A worker on the user's Mac
-claims rows and runs Claude Code headless against the Pro subscription. Vercel
-cannot spawn Claude Code, so generation is asynchronous.
+### 9.4 AI execution mechanism (rewritten in v1.6)
 
-The worker performs no domain writes. It stores a raw result; the application
-promotes that into documents, scores and timeline events. This keeps the write
-path in one place.
+**Decision: call the Gemini and Anthropic APIs directly and synchronously,
+routed per task, behind the existing `AiProvider` interface.** A fixture-based
+`mock` driver remains the default, so the whole app builds and tests with no
+spend. See [ADR-0005](../../docs/decisions/0005-provider-apis.md).
 
-**Accepted risks:** the Pro subscription's usage allowance is the binding
-constraint, and it is shared with the Claude Code sessions used to develop this
-product. Driving a subscription CLI as an unattended application backend is a
-grey area in the consumer terms; accepted knowingly for personal single-user use.
-Nothing generates while the Mac is off. The provider interface means moving to a
-metered API driver is one additional file.
+**What this replaced.** v1.1–v1.5 specified a local Claude Code worker driving
+the Claude Pro subscription, with an `ai_jobs` queue between app and worker
+because Vercel cannot spawn Claude Code. That design was retired on 2026-09-02
+for four reasons, in order of severity:
 
-**Indicative cost if the metered API were used** (not paid today), at Opus 5
-$5/$25 per MTok and Sonnet 5 $2/$10: approximately $0.05 per job score and $0.50
-per CV and cover letter package. At 10 scores and 2 packages per day that is
-about $1.52 daily, $10.64 weekly, $45.60 monthly.
+1. **It blocked deployment.** The asynchronous machinery existed solely to work
+   around Vercel's inability to run Claude Code — meaning the hosting decision in
+   §9.6 could not actually be executed.
+2. **Nothing generated while the Mac was off.** Named as an accepted risk in
+   v1.1; in practice it makes the tool untrustworthy.
+3. **Scoring quality was capped.** Gemini's Google Search grounding resolved a UK
+   sponsor-register entry that three consecutive Claude Code runs could not.
+4. **The consumer-terms grey area never resolved,** and does not survive a
+   scheduled daily run.
 
-### 9.5 Model selection
+**There is now no queue, no worker and no polling.** `ai_jobs` survived, but its
+purpose changed: it is the **run ledger**, one row per call carrying the prompt,
+model, raw result and measured token usage. `settleAiJobs` remains the single
+write path from AI output to documents, score and events.
 
-- **Job scoring** — Claude Sonnet 5, effort high
-- **Resume and cover letter** — Claude Opus 5, effort high
+**Claude Pro still does not include Anthropic API access.** That fact is
+unchanged; what changed is that the API is now paid for rather than routed around.
 
-**Pass G (v1.3).** The adversarial validation pass is not auto-invoked. It runs
-on explicit confirmation today, so each of the resume and cover letter tasks is
-a single call. Making it mandatory is JSV2S1058 (Phase 2) and will add roughly
-one further call's worth of tokens per package.
+### 9.5 Model selection (rewritten in v1.6)
 
-Set per task via environment configuration, not hardcoded, so the split can be
-changed without a code change. Claude Code takes its effort level from its own
-settings file rather than a per-invocation flag.
+Routing is **per task**, because the providers were measured to differ on the
+axes that matter — not assumed to:
+
+| Task | Provider | Model | Why |
+|---|---|---|---|
+| Job scoring | Gemini | `gemini-3.1-pro-preview` | Google Search grounding resolves sponsorship evidence, which is 50% of the score |
+| Resume + cover letter | Anthropic | `claude-opus-5` | Long-form quality; prompt caching makes the ~5k-token skill prefix nearly free after the first call |
+
+Both sides stay configurable per task (`PROVIDER_SCORING`, `PROVIDER_CV`,
+`MODEL_*`), so re-routing is an environment change, not a code change.
+`npm run ai:bench` compares providers on the same job, so this stays
+evidence-based as models change.
+
+**Pass G.** Still not auto-invoked; resume and cover letter are produced by a
+single call. Making it mandatory is JSV2S1058, moved into **Phase 1.5**. Its own
+decision rule caps rewrites at one, so the cost is bounded at two extra calls per
+package. Because Phase 1.5 keeps document generation manual, this does not
+compound with the scheduled run.
 
 ### 9.6 Hosting and access control
 
@@ -296,16 +372,25 @@ canonical deliverable, markdown the drafting stage.
 Persisting the produced file to Supabase Storage, after a review-and-accept
 step, is JSV2S1126 in Phase 2.
 
-### 9.7 Token accounting (added in v1.2)
+### 9.7 Token accounting (added in v1.2, rewritten in v1.6)
 
-Token usage is **measured, not estimated**. The worker captures the counts
-Claude Code reports for each run and stores them against the job, so cost per
-job comes from real data. `npm run ai:report` summarises measured runs, averages
-per task, and projects the cadences above.
+Token usage is **measured, not estimated**. Each provider reports its own counts
+and they are normalised onto one basis — reasoning tokens folded into output, so
+providers compare like with like — then stored on the run in `ai_jobs.usage`.
+`npm run ai:report` summarises runs, averages per task and projects cadences.
 
-On the Pro subscription nothing is charged. The figures answer what the work
-would cost on the metered API, and indicate how hard each run draws on the
-subscription allowance.
+**These are now billed figures, not projections.** Under v1.5 nothing was
+charged and the numbers answered "what would this cost on a metered API". Since
+§9.4 changed, they are the bill. Measured: roughly **$0.07–0.09 per grounded
+score**, with Google Search grounding the dominant line item.
+
+The binding constraint moved with it. It was Pro quota, shared with development
+sessions; it is now money, scaling with volume. Phase 1.5 puts volume on a
+schedule, which is why JSV2S1132 (per-application cost, in the workspace) is
+sequenced *before* automation, and why JSV2S1137 proposes a spend ceiling.
+
+JSV2S1127 (local UK sponsor register) is partly a cost measure: a deterministic
+lookup removes search grounding from the visa pillar.
 
 ---
 
@@ -325,7 +410,10 @@ AI work queue were both required by P0 backlog items.
    activity timeline; two tables would mean two versions of the same truth.
 5. **application_documents** — versioned resumes, cover letters and score reports.
    Content is markdown held in the database, so no file storage is needed yet.
-6. **ai_jobs** — the work queue for the local worker.
+6. **ai_jobs** — the run ledger: one row per AI call, holding the prompt, the
+   model, the raw result and measured token usage. It was the worker's queue
+   until v1.6; the table outlived its original purpose and now carries cost
+   attribution and reproducibility.
 
 **Why the events table ships before analytics:** every Application Analytics
 metric — funnel conversion, ghost rate, time analysis — is computed from status
@@ -368,16 +456,52 @@ library.
 
 ---
 
-## 12. Phase boundaries (added in v1.1)
+## 12. Phase boundaries (added in v1.1, revised in v1.6)
 
 **Phase 1 — delivered.** Manual ingestion and application management. Upload,
 validation, deduplication, the application dashboard and workspace, job score
 display, resume and cover letter storage and download, status lifecycle,
 referral tracking, application attempts and the activity timeline.
 
-**Phase 2.** Outreach generation and history on the Application board, invoked
-on request (C4). Automated fetching, source adapters, LinkedIn via Apify, other
-job boards, career-site watchers, the scheduler, pre-qualification filters and
-the daily digest. Also the scoring and CV-optimiser refinements.
+**Phase 1.5 — scoped 2026-09-03, not started.** Closes the loop at the front of
+the funnel: jobs arrive on a schedule instead of by hand, and the ones worth
+attention are scored automatically. **37 stories — 25 ready, 12 awaiting a
+decision.** Seven workstreams:
 
-**Phase 3.** Application analytics and interview preparation.
+| # | Workstream | Stories |
+|---|---|---|
+| W1 | LinkedIn ingestion on a GitHub Actions cron, via Apify | 15 |
+| W2 | Data cleansing and lifecycle classification | 2 |
+| W3 | Pre-qualification into piles | 5 |
+| W4 | Automated scoring + score quality | 6 |
+| W5 | Daily digest mailer | 4 |
+| W6 | Mandatory SimG (Pass G) | 3 |
+| W7 | Per-application AI cost visibility | 2 |
+
+Three boundaries drawn deliberately:
+
+- **Scoring is automated; document generation is not.** A daily run scores what
+  pre-qualifies; CV and cover letter stay a button press. This bounds unattended
+  spend and keeps the expensive path under human judgement.
+- **Execution is GitHub Actions, not Vercel.** A scored batch will not fit in a
+  Vercel function timeout. Vercel stays a read and UI surface.
+- **Pre-qualification sits between `raw_jobs` and `applications`,** which changes
+  the D1 rule in §9.3. Without it the first scheduled run creates hundreds of
+  unwanted application records.
+
+Explicitly **out** of Phase 1.5: the multi-source adapter framework (one source
+does not justify a registry and mapping configuration), other job boards,
+career-site watchers, and Application Analytics.
+
+**Phase 2.** Outreach generation and history on the Application board, invoked
+on request (C4). Additional sources — Reed, Adzuna, Jooble, VisaSponsor.jobs —
+career-site watchers, and the source adapter framework once a second source makes
+it worth building. CV recommendation review before download (JSV2S1126).
+
+**Phase 3.** Application analytics, infrastructure usage tracking, and interview
+preparation. Analytics stays here deliberately: shortlist rate, conversion and
+ghost rate are ratios over outcomes, and outcomes accrue over months.
+`application_events` has captured the raw material since Phase 1, so waiting
+costs nothing.
+
+**Phase 4.** Consolidated requirement-document generation (JSV2S1125).

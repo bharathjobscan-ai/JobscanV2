@@ -4,9 +4,9 @@
  *
  *   npm run ai:report
  *
- * On the Pro subscription no money changes hands. These figures answer "what
- * would this cost on the metered API", and act as a proxy for how hard each run
- * draws on the subscription allowance.
+ * These are billed figures, not projections: since ADR-0005 the Gemini and
+ * Anthropic APIs are called directly, so measured tokens times the rates in
+ * lib/ai/pricing.ts is what the work actually cost.
  */
 import process from "node:process";
 import postgres from "postgres";
@@ -45,7 +45,7 @@ const rows = await sql`
 
 if (rows.length === 0) {
   console.log("\nNo measured runs yet.\n");
-  console.log("Usage is recorded only for real Claude runs (AI_PROVIDER=claude_local).");
+  console.log("Usage is recorded only for real provider runs (AI_PROVIDER=live).");
   console.log("Mock runs consume nothing and are not counted.\n");
   await sql.end();
   process.exit(0);

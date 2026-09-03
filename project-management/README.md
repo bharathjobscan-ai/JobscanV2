@@ -8,7 +8,7 @@ only (JSV2S1125, Phase 4).
 project-management/
   CHANGELOG.md                     version history for everything here
   prd/PRD.md                       the living PRD
-  backlog/product-backlog.csv      product items, JSV2S1001-1125
+  backlog/product-backlog.csv      product items, JSV2S1001-1137
   tracker/execution-tracker.csv    execution subtasks for picked-up items
 ```
 
@@ -64,8 +64,9 @@ corresponds to a known backlog state.
 | Phase | Scope |
 |---|---|
 | Phase 1 | Manual ingestion + application management — delivered |
-| Phase 2 | Outreach, automated ingestion, scoring and CV-optimiser refinements |
-| Phase 3 | Application analytics, interview preparation |
+| Phase 1.5 | Scheduled LinkedIn ingestion, pre-qualification, automated scoring, digest, SimG, AI cost visibility — scoped 2026-09-03, 37 stories |
+| Phase 2 | Outreach, remaining sources and the adapter framework, CV recommendation review |
+| Phase 3 | Application analytics, infrastructure usage, interview preparation |
 | Phase 4 | Consolidated requirement document generation (JSV2S1125) |
 
 ## Relationship to the rest of the repository

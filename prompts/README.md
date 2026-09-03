@@ -2,9 +2,9 @@
 
 Source-controlled copies of the Claude capabilities that already exist as
 projects in Claude.ai. They are **plain markdown, not executable Claude Skills**
-— the worker pastes them into a `claude -p` invocation as context.
+— `buildPrompt` in `lib/ai/prompts.ts` loads them into the system prompt.
 
-## Required before `AI_PROVIDER=claude_local` will run
+## Required before `AI_PROVIDER=live` will run
 
 | Path | Source | Used by |
 |---|---|---|

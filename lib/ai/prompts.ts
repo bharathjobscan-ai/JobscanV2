@@ -61,10 +61,18 @@ So the renderer maps your output correctly, use \`#\` for the name, \`##\` for
 section headers, \`###\` for role and company lines, and \`-\` for bullets.
 `.trim();
 
-const OUTPUT_CONTRACT = `
+/**
+ * The score half of the output contract.
+ *
+ * Kept apart from the CV half deliberately: a single shared contract told the
+ * scoring model to emit \`<<<CV>>>\` and a cover letter too, and Gemini duly
+ * did, burying a whole resume inside a score report. The two tasks return
+ * different shapes and must be asked for separately.
+ */
+const SCORE_CONTRACT = `
 ## Output contract
 
-Respond with a fenced \`json\` block, then the document body as markdown.
+Respond with a fenced \`json\` block, then the readable report as markdown.
 
 \`\`\`json
 {
@@ -86,8 +94,6 @@ Respond with a fenced \`json\` block, then the document body as markdown.
 }
 \`\`\`
 
-Then the readable report or document in markdown.
-
 \`analysis.breakdown\` must contain **one entry per scored sub-component**, not
 one per pillar. Use the method's own rubric: every named component with its own
 maximum gets its own line — Structural Eligibility, Behavioral Signals and
@@ -103,12 +109,44 @@ what was missing and which rule applied.
 The decision band is computed from the score by the application; do not state or
 invent one.
 
-**Score reports:** the application renders the breakdown table, the weighted
-calculation and the overrides from the JSON above, so **do not repeat any of
-them in the markdown**. Use the markdown only for what the structured fields
-cannot carry: the entity you resolved, what each search returned, how you
-weighed conflicting evidence, and the application strategy. Keep it under 400
-words.
+The application renders the breakdown table, the weighted calculation and the
+overrides from the JSON above, so **do not repeat any of them in the markdown**.
+Use the markdown only for what the structured fields cannot carry: the entity
+you resolved, what each search returned, how you weighed conflicting evidence,
+and the application strategy. Keep it under 400 words.
+
+**This is a scoring task only.** Do not write a resume, a cover letter, or any
+part or draft of either, and emit no document delimiters. Those documents are
+produced by a separate task with its own contract.
+`.trim();
+
+/** The CV/cover-letter half. Never sent on a scoring run — see SCORE_CONTRACT. */
+const DOCUMENT_CONTRACT = `
+## Output contract
+
+Respond with a fenced \`json\` block, then the documents as markdown.
+
+Put the output summary in the JSON, using the method's own Output Summary items
+— not in the markdown:
+
+\`\`\`json
+{
+  "summary": {
+    "emailSubject": "...",
+    "companyCategory": "the category chosen, and why",
+    "emphasis": "the emphasis style applied",
+    "matchBefore": 0, "matchAfter": 0,
+    "keywords": {
+      "mustHaveFound": 0, "mustHaveTotal": 0,
+      "goodToHaveFound": 0, "goodToHaveTotal": 0,
+      "missing": ["keywords not present"]
+    },
+    "gaps": ["missing experience areas, with specifics"],
+    "gapBridging": ["what to learn or prepare before interview"],
+    "verdict": "Pass | Borderline | Reject, with brief reasoning"
+  }
+}
+\`\`\`
 
 **Length budget for the CV — this is a hard constraint, not a guideline.**
 
@@ -144,26 +182,6 @@ of those, and anything you add there is discarded. Start at the opening hook
 and end at the last substantive sentence.
 
 The delimiters must appear on their own lines, spelled exactly as shown.
-
-Put the output summary in the JSON instead, as \`summary\`, using the
-method's own Output Summary items:
-
-\`\`\`json
-"summary": {
-  "emailSubject": "...",
-  "companyCategory": "the category chosen, and why",
-  "emphasis": "the emphasis style applied",
-  "matchBefore": 0, "matchAfter": 0,
-  "keywords": {
-    "mustHaveFound": 0, "mustHaveTotal": 0,
-    "goodToHaveFound": 0, "goodToHaveTotal": 0,
-    "missing": ["keywords not present"]
-  },
-  "gaps": ["missing experience areas, with specifics"],
-  "gapBridging": ["what to learn or prepare before interview"],
-  "verdict": "Pass | Borderline | Reject, with brief reasoning"
-}
-\`\`\`
 `.trim();
 
 /**
@@ -239,6 +257,7 @@ export async function buildPrompt(context: TaskContext): Promise<BuiltPrompt> {
   const skill = await readRequired(SKILL_FILES[context.taskType]);
   const masterResume = await readRequired("master-resume.md");
   const profile = await readOptional("candidate-profile.md");
+  const isScore = context.taskType === "score";
 
   const system = [
     "You are executing a saved JobScan workflow. Follow the method exactly.",
@@ -251,9 +270,11 @@ export async function buildPrompt(context: TaskContext): Promise<BuiltPrompt> {
     profile ? `\n# Candidate profile\n${profile}` : "",
     "",
     // Only CV/CL output is parsed into a .docx; a score report stays markdown.
-    context.taskType === "score" ? "" : DELIVERY_OVERRIDE,
+    isScore ? "" : DELIVERY_OVERRIDE,
     "",
-    OUTPUT_CONTRACT,
+    // Task-specific: the shared contract used to ask every run for a CV, which
+    // is how a resume ended up inside a score report.
+    isScore ? SCORE_CONTRACT : DOCUMENT_CONTRACT,
   ]
     .filter(Boolean)
     .join("\n");

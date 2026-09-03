@@ -6,32 +6,63 @@ preference.
 ## Read first
 
 1. [docs/architecture/overview.md](docs/architecture/overview.md) — the shape and why
-2. [docs/decisions/](docs/decisions/) — ADR-0001…0004, the reasoning behind the model
-3. [docs/product/open-decisions.md](docs/product/open-decisions.md) — unresolved conflicts (C1–C5)
+2. [docs/decisions/](docs/decisions/) — ADR-0001…0006. **ADR-0002 is superseded
+   by ADR-0005**; read 0005 for how AI executes and 0006 for the ingestion gate.
+3. [docs/product/open-decisions.md](docs/product/open-decisions.md) — C1–C5, all resolved as of 2026-09-04
 4. [TASKBOARD.md](TASKBOARD.md) — status, traceable to backlog IDs
 
 ## Stack
 
 Next.js 16 (App Router) · TypeScript · Tailwind 4 · Supabase Postgres ·
-Drizzle ORM · Vercel · GitHub Actions (Phase 2).
+Drizzle ORM · Vercel · Gemini + Anthropic APIs (ADR-0005) ·
+GitHub Actions cron (Phase 1.5).
 
 ## Rules that are easy to break accidentally
 
-- **No new paid services, containers, Redis, or queues.** The `ai_jobs` table
-  plus a polling loop is the queue, deliberately.
+- **No new paid *infrastructure*** — no containers, Redis, queue services or
+  paid hosting. Metered AI calls (ADR-0005) and, in Phase 1.5, an Apify actor are
+  accepted deliberately and tracked; infrastructure is not.
+- **There is no queue and no worker.** Providers are called inline and
+  synchronously (ADR-0005). `ai_jobs` is a run ledger, not a work queue — its
+  `queued`/`running` statuses and `attempts` column are debris, not a mechanism.
 - **No supabase-js for data access.** Everything goes through Drizzle,
   server-side. Supabase keys must never reach the browser.
 - **Deterministic code for CRUD, validation, dedupe, filtering, file handling.**
   AI is for scoring, tailoring, cover letters, gap analysis — reasoning work.
 - **`deemed_pending` is derived, never stored.** Do not add it to
   `APPLICATION_STATUSES`. See ADR-0001.
-- **The worker performs no domain writes.** It stores a raw result;
-  `settleAiJobs` in `features/ai/tasks.ts` is the only write path from AI output
-  to documents/score/events. Do not duplicate that logic into the worker.
+- **`settleAiJobs` in `features/ai/tasks.ts` is the only write path** from AI
+  output to documents/score/events. Never write documents or scores from a
+  provider, a route, or a scheduled script — call it instead.
+- **Pre-qualification is deterministic and stays that way.** No AI, no network,
+  no embeddings in `features/prequalification/` — it is the step that decides
+  whether to spend money, so it cannot cost money or vary between runs
+  (ADR-0006). Rules live in `config/prequalification/`, never inline.
+- **D1 is conditional now.** A scheduled run creates an application only for a
+  PASS; manual uploads always create one. A `raw_jobs` row without an
+  application is normal, and is invisible to every query in
+  `features/applications/queries.ts` — those are rooted at `applications`.
+- **Task prompts are built per task type.** `SCORE_CONTRACT` and
+  `DOCUMENT_CONTRACT` in `lib/ai/prompts.ts` must stay separate: one shared
+  contract once told the scoring model to emit a CV, and it did.
 - **Prompt markdown under `/prompts` is not an executable Claude Skill,** and
-  Claude Pro does not grant API access. See ADR-0002.
+  Claude Pro does not grant API access — the API keys are separately billed.
+  See ADR-0002 and ADR-0005.
 - **Don't silently reconcile conflicting requirements** across the PRD, backlog
   and design documents. Record them in `docs/product/open-decisions.md`.
+- **Test fixtures must never name a real employer.** `tests/fixtures/sample-jobs.csv`
+  used real fintech names and the integration cleanup deletes by company name,
+  cascading through applications and documents. Running the suite destroyed a
+  live scored application on 2026-09-04. Fixture companies are suffixed `QA` and
+  sit on `https://fixture.jobscan.invalid/`; the cleanup requires both.
+- **`npm run test:integration` writes to the only database there is,** and
+  `npm run ai:bench` bills a real scoring call. The benchmark was inside the
+  integration glob until 2026-09-04, so the suite silently spent money. Both
+  paid files are now excluded from the default run and must be named explicitly.
+- **Keep the documentation in sync in the same change.** A behaviour change that
+  contradicts the PRD, an ADR, `AGENTS.md`, `TASKBOARD.md` or a schema comment
+  is not finished until those are updated or explicitly superseded. Supersede
+  ADRs; do not silently edit a decision that was really made.
 
 ## Conventions
 
@@ -48,12 +79,18 @@ Drizzle ORM · Vercel · GitHub Actions (Phase 2).
 
 ```bash
 npm run dev          # local app
-npm run worker       # local Claude Code worker (AI_PROVIDER=claude_local)
 npm run db:push      # apply schema
 npm test             # unit tests, no database needed
 npm run typecheck
 npm run build
+
+npm run ai:report    # measured token usage and real cost per run
+npm run ai:bench     # compare providers/models on the same job
+npm run test:integration  # needs a live database
 ```
+
+`AI_PROVIDER=mock` runs the whole app on fixtures with no spend. `live` calls
+the real APIs, routed per task by `PROVIDER_SCORING` / `PROVIDER_CV`.
 
 ## Traceability
 

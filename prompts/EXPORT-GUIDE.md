@@ -119,19 +119,15 @@ score on the dashboard. If that happens, tell me and I'll adapt the contract in
 
 ## Then run it
 
-```bash
-npm i -g @anthropic-ai/claude-code    # must be on PATH, or set CLAUDE_BIN
-```
-
-Set `AI_PROVIDER="claude_local"` in `.env.local`, then:
+Set `AI_PROVIDER="live"` in `.env.local` with `GEMINI_API_KEY` and/or
+`ANTHROPIC_API_KEY`, then:
 
 ```bash
-npm run dev            # terminal 1
-npm run worker         # terminal 2
+npm run dev
 ```
 
-Open an application, click **Generate score**. The chip moves
-`queued → running → succeeded`, and the result appears on the next page load.
+Open an application and click **Generate score**. The call runs inline, so the
+result is on screen when it returns — there is no worker to start (ADR-0005).
 
 ```bash
 npm run ai:report      # measured tokens and cost per job

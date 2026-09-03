@@ -12,14 +12,22 @@ import type { AiJobStatus, AiTaskType } from "@/lib/config/constants";
 import { applications } from "./applications";
 
 /**
- * AI_JOBS — the work queue for the local Claude Code worker (D4).
+ * AI_JOBS — the run ledger: one row per AI call (D4).
  *
- * Vercel cannot spawn Claude Code, so the app enqueues here and a worker on the
- * Mac (workers/ai/run.mjs) claims rows, runs `claude -p`, and writes results
- * back. A table plus a polling loop — no Redis, no queue service.
+ * Originally the work queue for a local Claude Code worker. That worker was
+ * retired in ADR-0005 — providers are now called inline and synchronously, and
+ * a row is inserted already at `succeeded`. What the table is *for* changed with
+ * it: it is now the record of what was asked, which model answered, and — via
+ * `usage` — what it cost. JSV2S1132 reads cost from here.
  *
- * The prompt is assembled and frozen at enqueue time so the worker needs no
- * knowledge of the domain, and so a replayed job reproduces the same request.
+ * The prompt is stored verbatim so a run is reproducible and auditable after the
+ * fact, which matters more now that the prompt text is the main lever on both
+ * output quality and token spend.
+ *
+ * DEBRIS: `status` still allows `queued`/`running`, `attempts` is never
+ * incremented, and `ai_jobs_status_queued_idx` indexes a state nothing writes.
+ * JSV2S1136 must revive these for the scheduled path or drop them. Their
+ * presence is not evidence that a queue exists.
  */
 export const aiJobs = pgTable(
   "ai_jobs",
@@ -76,10 +84,11 @@ export const aiJobs = pgTable(
     /**
      * When the app promoted this result into documents/score/events.
      *
-     * The worker only fetches and stores a raw result; every piece of domain
-     * logic stays in TypeScript in features/ai/tasks.ts. That is why the worker
-     * can be a small dependency-free script instead of a second copy of the
-     * write path.
+     * A provider only returns a raw result; every piece of domain logic stays in
+     * `settleAiJobs` (features/ai/tasks.ts), which is the single write path from
+     * AI output to domain objects. Separating the two keeps handling of a
+     * malformed response in one place, and makes settling idempotent and
+     * re-runnable — the property JSV2S1136 needs for a scheduled run.
      */
     settledAt: timestamp("settled_at", { withTimezone: true }),
   },

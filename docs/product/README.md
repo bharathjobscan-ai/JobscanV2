@@ -64,10 +64,12 @@ Upload CSV/XLSX/JSON
 |---|---|---|
 | JSV2S1007–1009, 1031–1034, 1036, 1039, 1041, 1047–1048 | RawJob schema, upload, validation, dedupe | Completed |
 | JSV2S1061, 1074–1088, 1094–1098 | Application management, gap display | Completed |
+| 37 stories across W1–W7 | Scheduled ingestion, pre-qualification, auto-scoring, digest, SimG, cost | **Phase 1.5** — 25 Ready, 12 Blocked |
 | JSV2S1089–1093 | Outreach | Phase 2 (C4) |
-| JSV2S1001–1006, 1010–1030, 1035–1049 | Ingestion platform + fetchers | Phase 2 |
-| JSV2S1050–1060, 1062–1063 | Intelligence and CV optimiser refinements | Phase 2 |
+| JSV2S1002–1005, 1018, 1023–1030, 1046 | Adapter framework, other sources, watchers | Phase 2 |
+| JSV2S1059, 1062–1063, 1126 | CV optimiser refinements and recommendation review | Phase 2 |
 | JSV2S1064–1073 | Preparation | Phase 3 |
 | JSV2S1099–1124 | Application Analytics | Phase 3 |
+| JSV2S1128–1129, 1133 | Infrastructure and data usage | Phase 3 |
 
 Live status: `project-management/backlog/product-backlog.csv`.

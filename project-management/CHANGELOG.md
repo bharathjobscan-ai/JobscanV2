@@ -8,6 +8,183 @@ version of the PRD always corresponds to a known state of the backlog.
 
 ---
 
+## v1.7 — 2026-09-04 — Deterministic pre-qualification gate
+
+### The gate
+
+Four rule-based filters between ingestion and application creation: role,
+domain, experience, location. Each returns PASS, FAIL or UNKNOWN; any FAIL
+rejects, all PASS qualifies, anything else waits in a review queue. No AI, no
+network, no embeddings — the same job and config always produce the same
+verdict.
+
+It exists as a **cost control**. Phase 1.5 auto-scores anything without a score,
+so without a gate the first scheduled LinkedIn run would bill a Gemini call for
+every job it found.
+
+### Corrections to the source requirement
+
+The requirement document was reviewed before implementation; four things in it
+would have misfired on a real feed:
+
+- **`Visa` was a Tier-1 payments keyword.** It means the card network there —
+  but this application exists to find visa *sponsorship*, so "we offer visa
+  sponsorship" would have scored a core-payments signal on a large share of the
+  jobs we deliberately search for. Now a restricted term requiring payments
+  corroboration and blocked near sponsorship wording.
+- **Portugal was missing** from the target countries while Lisboa was a
+  preferred city, so a Lisbon job would have been rejected outright. Estonia,
+  Lithuania, Luxembourg and Malta were also absent — most of the European EMI
+  licensing map.
+- **The documented case "Senior PM - Fraud & Risk → PASS" could not pass.**
+  Every fraud keyword was a two-word phrase the title does not contain.
+- **Over-qualification was invisible.** "Associate Product Manager" contains
+  "Product Manager", and a JD asking "2+ years" set a bar a 9-year candidate
+  clears, so junior roles passed both filters. `acceptable_min` had been
+  declared in the config and never used by any rule; it is now a floor.
+
+Also written from scratch: a **JD section splitter**. The requirement's whole
+domain-weighting design assumed `responsibilities`, `requirements` and
+`nice_to_have` were separate fields. They are not — `raw_jobs.description` is
+one blob — so every section weight was inert until something split it.
+
+### Scoring rule, previously undefined
+
+Each section contributes its weight **once**, multiplied by the best tier
+matched in it (Tier 1 × 1.0, Tier 2 × 0.6, Tier 3 × 0.3). Counting once stops a
+keyword-stuffed JD outscoring a genuinely on-domain one; tier multiplication is
+what makes the config's `priority` field do anything.
+
+### C3 closed — the conflicts page is empty
+
+There were always **two axes**, not three vocabularies for one, which is why it
+looked irreconcilable. Pre-qualification (`pass`/`review`/`reject`) answers "is
+this worth spending money on?"; `MATCH_CATEGORIES` answers "how good is it?"
+after ScoreG runs. The PRD's Perfect/Dicey/Rejection Pool and JSV2S1052's
+Absolute/Relative/No Match are both superseded.
+
+### Two landmines in the test suite, found the hard way
+
+Applying the migrations and running `npm run test:integration` on 2026-09-04
+**destroyed a live scored application and billed a real API call.** Both were
+pre-existing since the Phase 1 commit; neither was introduced by this work.
+
+- **`tests/fixtures/sample-jobs.csv` named real employers** — Revolut, Adyen,
+  Stripe, **Wise**, Klarna, Monzo, Airwallex, Checkout.com, Mollie — and
+  `cleanup()` deletes `raw_jobs` by company name in both `beforeAll` and
+  `afterAll`, cascading through applications, events, attempts and documents.
+  The file's own comment claimed the cleanup was "safe to run against a database
+  that already holds real applications". It was safe only if you never applied
+  to a company the fixture named. The scored Wise application was deleted.
+  Fixed: fixture companies are now fictional and suffixed `QA`, every fixture
+  URL is on `https://fixture.jobscan.invalid/`, and the cleanup requires both.
+- **`gemini-benchmark.itest.ts` sets `AI_PROVIDER=live` and bills a full
+  scoring run.** Its header says it is "deliberately not part of `npm test`" —
+  true, but nobody excluded it from `test:integration`, whose glob matched it.
+  Fixed: the paid files are excluded from the default run and execute only when
+  named, via `npm run ai:bench` and `npm run ai:models`.
+
+Also added `npm run prequalify:backfill`, which gives a verdict to jobs ingested
+before the gate existed. It never creates, deletes or alters an application:
+gating is a decision already made for a promoted job, but the verdict record is
+informational and drives the preferred-city highlight.
+
+### Also
+
+ADR-0006 records the gate and the D1 amendment. Migration `0006` adds four
+pre-qualification columns plus `content_hash` to `raw_jobs`, which finally wires
+JSV2S1040. Review queue at `/review` with promote, reject and a re-run for
+verdicts made under an older config. Preferred cities (JSV2S1138) highlighted
+across the list, queue and workspace. 51 new unit tests.
+
+**Phase 1.5: 38 stories — 17 Review, 13 Ready, 8 Blocked.**
+
+---
+
+## v1.6 — 2026-09-03 — Provider APIs replace the worker; Phase 1.5 scoped
+
+### Decision: direct provider APIs, routed per task
+
+The local Claude Code worker chosen in ADR-0002 was retired on 2026-09-02
+(commit `7b67664`). [ADR-0005](../docs/decisions/0005-provider-apis.md) records
+the replacement and supersedes ADR-0002.
+
+**Why it failed**, worst first: it blocked Vercel deployment entirely — the whole
+async design existed only because Vercel cannot spawn Claude Code, which made
+ADR-0004's hosting decision unreachable; nothing generated while the Mac was off;
+scoring quality was capped by what one model could establish; and the
+consumer-terms grey area does not survive a scheduled daily run.
+
+**What the APIs fixed.** Gemini's Google Search grounding resolved a UK
+sponsor-register entry three consecutive Claude Code runs could not. Anthropic's
+prompt caching makes the repeated ~5k-token skill prefix nearly free after the
+first call. Both report real token counts, so cost is measured rather than
+inferred from harness overhead. Generation is synchronous — the user gets a
+result instead of a queued row.
+
+**Removed:** `workers/ai/run.mjs`, `npm run worker`, the polling loop, the
+`claude_local` provider value.
+
+**Repurposed:** `ai_jobs` is now the **run ledger**, not a work queue — one row
+per call carrying prompt, model, raw result and measured usage. Its
+`queued`/`running` statuses, `attempts` column and `ai_jobs_status_queued_idx`
+are debris; JSV2S1136 must revive or remove them.
+
+**Unchanged:** `settleAiJobs` is still the single write path from AI output to
+documents, score and events.
+
+### Cost is now real money
+
+v1.1–v1.5 figures were projections of what a metered API *would* cost. They are
+the bill: ~$0.07–0.09 per grounded score, grounding being the dominant line.
+The binding constraint moved from Pro quota to spend, which scales with volume —
+and Phase 1.5 puts volume on a cron.
+
+"Zero-cost" restated in the PRD and `AGENTS.md`: it means **no paid
+infrastructure**. Metered AI calls and a Phase 1.5 Apify actor are accepted
+deliberately and tracked.
+
+### Phase 1.5 scoped
+
+37 stories marked `Phase 1.5` in the backlog — **25 `Ready`, 12 `Blocked`** on a
+decision. Seven workstreams: scheduled LinkedIn ingestion via Apify, cleansing,
+pre-qualification, automated scoring, digest mailer, mandatory SimG, and
+per-application cost visibility.
+
+Three boundaries: **scoring is automated, document generation is not**;
+execution is **GitHub Actions**, not Vercel; pre-qualification sits **between**
+`raw_jobs` and `applications`, changing the D1 rule.
+
+**Out, deliberately:** the multi-source adapter framework (one source does not
+justify a registry and mapping config), other job boards, career-site watchers,
+and Application Analytics — its metrics are ratios over outcomes that take months
+to accrue, and `application_events` has been capturing the input since Phase 1.
+
+Added **JSV2S1136** (pipeline orchestration — no existing story owned the
+automation) and **JSV2S1137** (spend ceiling — proposed, pending a decision).
+
+### Prompt defect fixed
+
+A single shared `OUTPUT_CONTRACT` was appended to every task, so the scoring
+prompt instructed the model to emit `<<<CV>>>` and a cover letter. Gemini
+complied and buried a full resume inside a score report. Split into
+`SCORE_CONTRACT` and `DOCUMENT_CONTRACT`, selected by task type; this also
+cleared a contradiction where `summary` was specified as both a string and an
+object in the same contract. Regression test in `tests/unit/prompts.test.ts`.
+
+### Documentation reconciled
+
+ADR-0002 marked superseded; ADR-0005 added. PRD §2, §3, §9.4, §9.5, §9.7, §10
+and §12 rewritten. `AGENTS.md` rules corrected — three described a worker that no
+longer exists — and a standing rule added that documentation is updated in the
+same change as the behaviour. `docs/architecture/overview.md` rewritten.
+`TASKBOARD.md` rebuilt against the tracker. Corrected in `open-decisions.md`:
+C3's "current state" (the code uses ScoreG bands, not the PRD trio) and C4's
+claim that two outreach event types were already reserved in `constants.ts` —
+they are not.
+
+---
+
 ## v1.5 — 2026-08-29 — CVG skill decoupled from document generation
 
 Now that layout lives in `lib/documents/`, the skill no longer carries file or

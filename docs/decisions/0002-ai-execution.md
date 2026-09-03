@@ -1,6 +1,18 @@
 # ADR-0002 — Executing ScoreG and CVG
 
-**Status:** Accepted · **Date:** 2026-08-29 · **Backlog:** JSV2S1080, JSV2S1078
+**Status:** ~~Accepted~~ **SUPERSEDED by [ADR-0005](0005-provider-apis.md)
+(2026-09-02)** · **Date:** 2026-08-29 · **Backlog:** JSV2S1080, JSV2S1078
+
+> **This decision is no longer in force.** The local Claude Code worker was
+> retired in `7b67664`; the app now calls the Gemini and Anthropic APIs directly
+> and synchronously, routed per task. `workers/ai/run.mjs`, `npm run worker` and
+> the `claude_local` provider no longer exist.
+>
+> Kept because the option analysis below is still the record of *why* the seam
+> exists — the `AiProvider` interface it introduced is what made the migration a
+> new file rather than a rewrite. Read [ADR-0005](0005-provider-apis.md) for
+> current behaviour. What remains true: **Claude Pro does not include Anthropic
+> API access.**
 
 ## Context
 

@@ -29,7 +29,7 @@ JSV2S1081,JSV2S1081-T01,Frontend,"Strengths, gaps, visa signals, full analysis",
 JSV2S1082,JSV2S1082-T01,DB,Status model (ADR-0001),Completed,Nine statuses; offer restored; deemed_pending excluded
 JSV2S1083,JSV2S1083-T01,Backend,Transactional status change,Completed,Application + attempt outcome + event in one transaction
 JSV2S1084,JSV2S1084-T01,DB,"application_events, append-only",Completed,Serves history and timeline; feeds Phase 3
-JSV2S1085,JSV2S1085-T01,Backend,Deemed-pending derivation,Completed,"DEEMED_PENDING_DAYS, default 21 - C1 open"
+JSV2S1085,JSV2S1085-T01,Backend,Deemed-pending derivation,Completed,"DEEMED_PENDING_DAYS, default 14 - C1 resolved 2026-08-29"
 JSV2S1086,JSV2S1086-T01,Frontend,Referral status,Completed,
 JSV2S1087,JSV2S1087-T01,Frontend,Referrer name + notes,Completed,
 JSV2S1088,JSV2S1088-T01,Backend,Referral events on the timeline,Completed,
@@ -40,17 +40,17 @@ JSV2S1097,JSV2S1097-T01,Frontend,Activity timeline + notes,Completed,
 JSV2S1098,JSV2S1098-T01,DB,Full history preserved,Completed,Append-only; documents versioned
 -,E6-T01,AI,AiProvider interface,Completed,Keeps the subscription path from being a one-way door
 -,E6-T02,AI,Mock driver + deterministic fixtures,Completed,Zero Claude usage
--,E6-T03,DB,ai_jobs queue,Completed,
--,E6-T04,AI,"Local worker: claim, claude -p, store",Completed,Written and typechecked; NOT yet run end to end
--,E6-T05,Backend,settleAiJobs - the single write path,Completed,Worker performs no domain writes
+-,E6-T03,DB,ai_jobs run ledger,Completed,"Built as a queue; repurposed as the run ledger by ADR-0005. queued/running statuses and attempts are now debris - see JSV2S1136."
+-,E6-T04,AI,"Local worker: claim, claude -p, store",Deferred,"RETIRED 2026-09-02 in commit 7b67664. Superseded by E8-T05 (direct provider APIs) per ADR-0005. workers/ai/run.mjs deleted."
+-,E6-T05,Backend,settleAiJobs - the single write path,Completed,"Still the only write path from AI output to documents/score/events, now that providers are called inline."
 -,E6-T06,Frontend,Queued / running / failed chips,Completed,
 -,E6-T07,Product,Export ScoreG + CVG + master resume to /prompts/,Completed,"ScoreG, CVG and master resume exported; SimG split into cvg/SIMG.md"
 -,E6-T08,QA,Verify real Claude generation end to end,In Progress,Score and CV verified end to end against Claude Pro with measured token usage. Cover letter not yet run.
--,E7-T01,Product,ADR-0001 to ADR-0004,Completed,
+-,E7-T01,Product,ADR-0001 to ADR-0005,Completed,"ADR-0005 added 2026-09-03; it supersedes ADR-0002."
 -,E7-T02,Product,docs/architecture/overview.md,Completed,
 -,E7-T03,Product,docs/product/open-decisions.md (C1-C5),Completed,
 -,E7-T04,Product,README with setup + verification,Completed,
--,E7-T05,Product,Add the four source documents to docs/product/,Blocked,NEEDS YOU
+-,E7-T05,Product,Add the four source documents to docs/product/,Completed,"All four present: prd-v1.0-original.md, product-backlog-original.md, Application Management.md, Application Analytics.md."
 -,E7-T06,Product,"Project management pack (PRD, backlog, tracker, changelog)",Completed,project-management/
 -,E8-T01,QA,Integration suite against a live database,Completed,"15 assertions, all passing"
 -,E8-T02,Infra,Deploy to Vercel,Not Started,Ready to run; needs env vars set
@@ -58,4 +58,4 @@ JSV2S1098,JSV2S1098-T01,DB,Full history preserved,Completed,Append-only; documen
 JSV2S1079,JSV2S1079-T02,Backend,.docx renderer matching the CVG house style,Completed,"One-page A4, 9.5pt, 0.9 line spacing, centred header, accent section rules, dates flush right, bold competency labels. Calibrated against a rendered PDF."
 JSV2S1078,JSV2S1078-T03,Frontend,Show the CVG output summary instead of the document body,Completed,"JD match uplift, keyword coverage, gaps, gap-bridging and verdict; .docx is download-only."
 -,E8-T04,QA,Verify cover letter generation end to end,Not Started,Last unproven path
--,E8-T05,AI,Anthropic API driver to verify metered cost,Not Started,Claude Code harness overhead is ~80% of cost; API path projected ~$0.05/score. User has $5 credit to validate.
+-,E8-T05,AI,Anthropic API driver to verify metered cost,Completed,"lib/ai/anthropic.ts with prompt caching, plus lib/ai/gemini.ts. Now the production path (ADR-0005), not a verification exercise."

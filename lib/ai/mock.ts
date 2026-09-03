@@ -39,7 +39,7 @@ export class MockProvider implements AiProvider {
     const score = 62 + (seed % 34); // 62–95
 
     const analysis = {
-      summary: `Mock analysis for ${context.title} at ${context.company}. Generated without calling Claude — enable AI_PROVIDER=claude_local for a real score.`,
+      summary: `Mock analysis for ${context.title} at ${context.company}. Generated without calling a model — set AI_PROVIDER=live for a real score.`,
       strengths: [
         "Product management experience aligns with the role's core scope",
         "Payments and fintech domain overlap",

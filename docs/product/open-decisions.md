@@ -5,6 +5,9 @@ and Application Analytics.md. Recorded rather than silently reconciled.
 
 Resolved items are in [docs/decisions/](../decisions/).
 
+**Status as of 2026-09-04: every conflict on this page is resolved.** C3 was
+the last one; see below.
+
 ---
 
 ## C1 · Waiting period before an application reads as Pending — RESOLVED
@@ -33,7 +36,7 @@ and analytics does not inherit forgotten updates.
 
 ---
 
-## C3 · Match-category vocabulary
+## C3 · Match-category vocabulary — RESOLVED
 
 **Conflict.** Three vocabularies for one axis:
 
@@ -46,12 +49,29 @@ and analytics does not inherit forgotten updates.
 Application Management.md refers to "Dicey Match" when describing referral
 signals, which sides with the PRD.
 
-**Current state.** `match_category` is a free-text column; the PRD trio is the
-UI vocabulary in `lib/config/constants.ts`.
+**Resolved 2026-09-04: there were always two axes, not three vocabularies for
+one.** That is why the conflict looked irreconcilable — the sources were
+describing different questions and using overlapping words for them.
 
-**Needs.** JSV2S1052, JSV2S1054 and JSV2S1055 are all still open backlog items.
-Freeze the vocabulary when ScoreG is finalised, then consider a check
-constraint.
+| Axis | Question | Vocabulary | Where |
+|---|---|---|---|
+| Pre-qualification | Is this worth spending money on? | `pass` · `review` · `reject` | `PREQUALIFICATION_DECISIONS`, ADR-0006 |
+| Post-score | How good is it? | `priority_apply` · `apply` · `referral_only` · `reject` | `MATCH_CATEGORIES`, derived by `matchCategoryFor()` |
+
+The first runs before any AI, deterministically, and decides whether a job
+becomes an application at all (JSV2S1055). The second is derived from ScoreG's
+numeric score afterwards (JSV2S1052). They are not alternatives and never were.
+
+**Superseded:** the PRD's *Perfect Match / Dicey Match / Rejection Pool* — never
+implemented, and the PRD user-flow section should no longer be read as
+authoritative on this. And JSV2S1052's *Absolute Match / Relative Match / No
+Match*, replaced by ScoreG's own bands, which are the ones the prompt actually
+produces and the UI already shows.
+
+**Closed by:** Bharath, 2026-09-04 — "the final status based on Job score can
+remain intact for now." A check constraint is now possible on both columns;
+deliberately not added yet, since the pre-qualification vocabulary should see
+real volume before it is frozen in the schema.
 
 ---
 
@@ -67,8 +87,14 @@ from Deferred to Phase 2 / Not Started.
 **Design note for when it is built.** Unlike referral — which is columns on
 `applications` because there is at most one per application — outreach needs its
 own table: JSV2S1090 asks for outreach history, so there are many messages per
-application. Timeline event types `outreach_generated` and `outreach_sent` are
-already reserved in `lib/config/constants.ts`.
+application.
+
+*Correction 2026-09-03:* an earlier version of this note claimed the timeline
+event types `outreach_generated` and `outreach_sent` were "already reserved in
+`lib/config/constants.ts`". They are not — `EVENT_TYPES` contains only
+`application_created`, `status_changed`, `document_generated`,
+`referral_updated`, `attempt_created` and `note_added`. They must be added when
+outreach is built.
 
 ---
 

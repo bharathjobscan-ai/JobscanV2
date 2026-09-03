@@ -82,12 +82,12 @@ export type TaskResult = {
 };
 
 /**
- * D4 — the seam between the app and whatever executes Claude.
+ * D4 — the seam between the app and whatever executes the model.
  *
- * Phase 1 ships `mock` (fixtures) and `claude_local` (the Mac worker running
- * `claude -p` against the Pro subscription). A metered Anthropic API driver is
- * one more implementation of this interface, which is what keeps the grey-area
- * subscription path from being a one-way door.
+ * Ships `mock` (fixtures), `gemini_api` and `anthropic_api`. This interface is
+ * what made ADR-0005 a new file rather than a rewrite: retiring the local
+ * Claude Code worker for direct provider APIs changed which implementation runs,
+ * not the code that calls it. Keep it that cheap to swap.
  */
 export interface AiProvider {
   readonly name: string;

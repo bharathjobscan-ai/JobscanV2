@@ -57,13 +57,9 @@ malformed and duplicate rows are handled.
 
 ## Real AI generation
 
-The app enqueues work; a worker on your Mac executes it against your Claude Pro
-subscription. Vercel cannot spawn Claude Code, which is why generation is
-asynchronous. Full reasoning and cost analysis: [ADR-0002](docs/decisions/0002-ai-execution.md).
-
-```bash
-npm i -g @anthropic-ai/claude-code   # must be on PATH, or set CLAUDE_BIN
-```
+Generation calls the provider APIs **inline and synchronously** — no worker, no
+queue, no polling. Reasoning: [ADR-0005](docs/decisions/0005-provider-apis.md),
+which supersedes ADR-0002.
 
 Export your existing capabilities into `prompts/` (see
 [prompts/README.md](prompts/README.md)):
@@ -72,22 +68,29 @@ Export your existing capabilities into `prompts/` (see
 - `prompts/cvg/SKILL.md`
 - `prompts/master-resume.md`
 
-Then set `AI_PROVIDER=claude_local` in `.env.local` and run:
+Then set `AI_PROVIDER=live` in `.env.local`, with keys for whichever providers
+you route to:
 
 ```bash
-npm run worker        # poll continuously
-npm run worker:once   # drain the queue and exit
+AI_PROVIDER="live"
+GEMINI_API_KEY="..."
+ANTHROPIC_API_KEY="..."
+
+PROVIDER_SCORING="gemini_api"      # Google Search grounding on the visa pillar
+PROVIDER_CV="anthropic_api"        # long-form quality + prompt caching
 ```
 
-Results appear in the workspace on the next page load. With the worker stopped,
-tasks queue rather than failing.
+Routing is **per task** and configurable, so switching a task to another provider
+or model is an env change, not a code change. `AI_PROVIDER=mock` runs the whole
+app on deterministic fixtures and spends nothing.
 
-Models are per task (`MODEL_SCORING`, `MODEL_CV`). Claude Code takes its effort
-level from `~/.claude/settings.json`, not a flag.
+Results appear immediately; `settleAiJobs` also re-runs on page load as an
+idempotent safety net.
 
-> Pro quota, not money, is the binding constraint. The worker shares your
-> subscription with the Claude Code sessions you use to develop this app. If it
-> bites, set `MODEL_CV=claude-sonnet-5` — an env change, not a code change.
+> **Money, not quota, is the binding constraint.** Every generation is billed per
+> token — measured, roughly $0.07–0.09 per grounded score. Run
+> `npm run ai:report` for actual usage and cost, and `npm run ai:bench` to
+> compare providers on the same job.
 
 ---
 
@@ -143,7 +146,7 @@ Two steps still need a human:
 | | |
 |---|---|
 | [docs/architecture/overview.md](docs/architecture/overview.md) | The shape, and the simplifications behind it |
-| [docs/decisions/](docs/decisions/) | ADR-0001…0004 |
+| [docs/decisions/](docs/decisions/) | ADR-0001…0005 (ADR-0002 is superseded by ADR-0005) |
 | [docs/product/open-decisions.md](docs/product/open-decisions.md) | Unresolved conflicts across the source documents |
 | [TASKBOARD.md](TASKBOARD.md) | Execution status, traceable to backlog IDs |
 | [AGENTS.md](AGENTS.md) | Conventions and constraints for AI assistants |
@@ -153,9 +156,11 @@ Two steps still need a human:
 | | |
 |---|---|
 | `npm run dev` | Local app |
-| `npm run worker` | Local Claude Code worker |
-|  `npm run db:migrate` | Apply schema |
+| `npm run db:migrate` | Apply schema |
 | `npm run db:studio` | Browse the data |
 | `npm test` | Unit tests (no database) |
 | `npm run test:integration` | Database-backed verification |
+| `npm run ai:report` | Measured token usage and real cost per run |
+| `npm run ai:bench` | Compare providers/models on the same job |
+| `npm run ai:models` | List available Gemini models |
 | `npm run typecheck` / `npm run build` | |

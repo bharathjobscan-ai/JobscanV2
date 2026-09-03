@@ -143,9 +143,8 @@ export async function updateDescriptionAction(
 /**
  * Trigger score / resume / cover letter.
  *
- * With AI_PROVIDER=mock this completes inline. With `claude_local` it queues
- * work for the Mac worker, so the message tells the user what to expect rather
- * than leaving them wondering why nothing happened.
+ * Every provider runs inline and synchronously (ADR-0005), mock included, so
+ * the result is ready when this returns. Nothing is queued.
  */
 export async function generateAction(
   _prev: ActionState,
