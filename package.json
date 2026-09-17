@@ -23,7 +23,8 @@
     "prequalify:calibrate": "vitest run --config vitest.run.config.mts tests/ops/prequal-calibration.ts",
     "sponsors:refresh": "tsx scripts/refresh-sponsor-register.mts",
     "sponsors:audit": "tsx scripts/audit-sponsor-aliases.mts",
-    "artwork:fetch": "tsx scripts/fetch-artwork.mts"
+    "artwork:fetch": "tsx scripts/fetch-artwork.mts",
+    "jobs:attribute": "tsx scripts/attribute-historical-jobs.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
