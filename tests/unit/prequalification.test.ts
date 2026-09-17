@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  PREQUAL_FILTERS,
-  PREQUAL_FILTER_LABELS,
-  PREQUAL_WINDOWS,
-  PREQUAL_WINDOW_LABELS,
-} from "@/lib/config/constants";
+import { PREQUAL_FILTERS, PREQUAL_FILTER_LABELS } from "@/lib/config/constants";
 
 import { prequalify } from "@/features/prequalification/engine";
 import { evaluateDomain } from "@/features/prequalification/domain";
@@ -438,18 +433,8 @@ describe("prequalify", () => {
  * bounded on BOTH sides, or it silently means "since yesterday", which is the
  * commonest way this kind of filter lies.
  */
-describe("prequalification filter vocabulary", () => {
-  it("offers a window for each question the owner asked", () => {
-    // "last week ... because of experience" and "yesterday ... because of domain"
-    expect(PREQUAL_WINDOWS).toContain("week");
-    expect(PREQUAL_WINDOWS).toContain("yesterday");
-    expect(PREQUAL_WINDOWS[0]).toBe("all");
-  });
-
-  it("labels every window and every factor", () => {
-    for (const w of PREQUAL_WINDOWS) {
-      expect(PREQUAL_WINDOW_LABELS[w]?.length ?? 0).toBeGreaterThan(2);
-    }
+describe("prequalification filtering", () => {
+  it("labels every factor the filter offers", () => {
     for (const f of PREQUAL_FILTERS) {
       expect(PREQUAL_FILTER_LABELS[f]?.length ?? 0).toBeGreaterThan(2);
     }

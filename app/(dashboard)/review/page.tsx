@@ -11,10 +11,8 @@ import {
   countByFactor,
   countForReview,
   listForReview,
-  PREQUAL_WINDOWS,
   REVIEW_VIEWS,
   REVIEW_VIEW_LABELS,
-  type PrequalWindow,
   type ReviewView,
 } from "@/features/prequalification/queries";
 import { PrequalFilters } from "@/components/applications/prequal-filters";
@@ -32,26 +30,31 @@ export const dynamic = "force-dynamic";
 export default async function ReviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; factor?: string; window?: string }>;
+  searchParams: Promise<{
+    view?: string;
+    factor?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
-  const { view: raw, factor: rawFactor, window: rawWindow } = await searchParams;
+  const { view: raw, factor: rawFactor, from: rawFrom, to: rawTo } = await searchParams;
   const view: ReviewView = REVIEW_VIEWS.includes(raw as ReviewView)
     ? (raw as ReviewView)
     : "review";
 
-  // JSV2S1153 — the second and third dimensions. Unknown values are dropped
-  // rather than erroring: a hand-edited URL should degrade to "no filter".
-  const factors = (rawFactor?.split(",") ?? []).filter((f): f is PrequalFilter =>
-    PREQUAL_FILTERS.includes(f as PrequalFilter),
-  );
-  const window: PrequalWindow = PREQUAL_WINDOWS.includes(rawWindow as PrequalWindow)
-    ? (rawWindow as PrequalWindow)
-    : "all";
+  // JSV2S1153. Unknown or malformed values are dropped rather than erroring: a
+  // hand-edited URL should degrade to "no filter", not to a crash.
+  const factor = PREQUAL_FILTERS.includes(rawFactor as PrequalFilter)
+    ? (rawFactor as PrequalFilter)
+    : null;
+  const isDate = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+  const from = isDate(rawFrom);
+  const to = isDate(rawTo);
 
   const [items, counts, byFactor] = await Promise.all([
-    listForReview({ view, factors, window }),
+    listForReview({ view, factors: factor ? [factor] : [], from, to }),
     countForReview(),
-    countByFactor(view, window),
+    countByFactor(view, from, to),
   ]);
 
   return (
@@ -92,16 +95,18 @@ export default async function ReviewPage({
 
       <PrequalFilters
         view={view}
-        factors={factors}
-        window={window}
+        factor={factor}
+        from={from}
+        to={to}
         byFactor={byFactor}
+        resultCount={items.length}
       />
 
       {items.length === 0 ? (
         <Card>
           <EmptyState
             title={
-              factors.length > 0 || window !== "all"
+              factor !== null || from !== null || to !== null
                 ? "Nothing matches these filters"
                 : view === "review"
                   ? "Nothing waiting on you"
@@ -111,8 +116,8 @@ export default async function ReviewPage({
             }
             hint={
               // A filtered empty result must not read as "the queue is clear".
-              factors.length > 0 || window !== "all"
-                ? "Widen the reason or the time window to see more."
+              factor !== null || from !== null || to !== null
+                ? "Widen the reason or the date range to see more."
                 : view === "stale"
                   ? "When you change the role, domain or location config, jobs judged under the old rules appear here."
                   : "Jobs that pass all four filters go straight to Applications."

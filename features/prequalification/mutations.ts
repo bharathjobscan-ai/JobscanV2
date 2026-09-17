@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 
 import { applicationEvents, applications, rawJobs } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
@@ -173,18 +173,58 @@ export async function requalifyStale(limit = 500): Promise<{ evaluated: number; 
       country: job.country,
       description: job.description,
     });
-    if (verdict.decision === "pass") nowPassing += 1;
 
-    await db
-      .update(rawJobs)
-      .set({
-        prequalification: verdict.decision,
-        prequalificationDetail: verdict,
-        prequalifiedAt: new Date(verdict.evaluatedAt),
-        prequalificationVersion: verdict.configVersion,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(rawJobs.id, job.id)));
+    /**
+     * D1 (ADR-0006) applies to a RE-JUDGEMENT too, not only to ingest.
+     *
+     * This updated the verdict and stopped there, so a job promoted to PASS by
+     * a rules change became qualified with no application — invisible to every
+     * query in features/applications/queries.ts, which are all rooted at
+     * `applications`. Correcting the experience guard on 2026-09-17 promoted
+     * three jobs (a Wise Senior PM role and two Ebury payment-screening roles)
+     * and none of them reached the workspace. The pipeline screen's orphan
+     * check caught it, which is the only reason it was not silent.
+     *
+     * Verdict and application are written in ONE transaction: a job marked
+     * `pass` without its application is exactly the inconsistency this fixes,
+     * so the two must not be able to come apart.
+     */
+    const promoted = verdict.decision === "pass";
+    if (promoted) nowPassing += 1;
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(rawJobs)
+        .set({
+          prequalification: verdict.decision,
+          prequalificationDetail: verdict,
+          prequalifiedAt: new Date(verdict.evaluatedAt),
+          prequalificationVersion: verdict.configVersion,
+          updatedAt: new Date(),
+        })
+        .where(eq(rawJobs.id, job.id));
+
+      if (!promoted) return;
+
+      const [application] = await tx
+        .insert(applications)
+        .values({ rawJobId: job.id, status: "ready_to_apply" })
+        .returning({ id: applications.id });
+
+      await tx.insert(applicationEvents).values({
+        applicationId: application.id,
+        eventType: "application_created",
+        toStatus: "ready_to_apply",
+        summary: `Application created on re-qualification — ${job.title} at ${job.company}`,
+        metadata: {
+          source: job.source,
+          prequalification: verdict.decision,
+          configVersion: verdict.configVersion,
+          // Which rule changed its mind, so a promotion is traceable.
+          previousVersion: job.prequalificationVersion,
+        },
+      });
+    });
   }
 
   return { evaluated: stale.length, nowPassing };

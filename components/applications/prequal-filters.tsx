@@ -1,98 +1,125 @@
 import Link from "next/link";
 
+import { inputClass } from "@/components/ui/base";
 import {
   PREQUAL_FILTERS,
   PREQUAL_FILTER_LABELS,
-  PREQUAL_WINDOWS,
-  PREQUAL_WINDOW_LABELS,
   type PrequalFilter,
-  type PrequalWindow,
 } from "@/lib/config/constants";
-import type { ReviewView } from "@/features/prequalification/queries";
+import {
+  REVIEW_VIEWS,
+  REVIEW_VIEW_LABELS,
+  type ReviewView,
+} from "@/features/prequalification/queries";
 
 /**
- * Two-dimensional filtering of the pre-qualification queue (JSV2S1153).
+ * Filtering the pre-qualification queue (JSV2S1153).
  *
- * Answers "everything rejected last week on experience" and "everything held
- * for review yesterday on domain" — the questions that make the gate tunable.
- * One job at a time does not scale past the first hundred.
+ * A plain GET form: two selects and a date range, submitted to the same page.
+ * State therefore lives entirely in the URL, so a filtered view is linkable,
+ * the back button works, and there is no client JavaScript or hydration cost.
  *
- * State lives entirely in the URL, so a filtered view is linkable and the back
- * button works. No client state, no hydration cost.
+ * `decidedBy` is the filter dimension, NOT "any filter that failed". A job can
+ * fail two rules; only one decided it. Filtering on failures would double-count
+ * and send tuning after the wrong rule.
  */
-
-function href(
-  view: ReviewView,
-  factors: PrequalFilter[],
-  window: PrequalWindow,
-): string {
-  const params = new URLSearchParams();
-  if (view !== "review") params.set("view", view);
-  if (factors.length > 0) params.set("factor", factors.join(","));
-  if (window !== "all") params.set("window", window);
-  const q = params.toString();
-  return q ? `/review?${q}` : "/review";
-}
-
-const chip = (active: boolean) =>
-  active
-    ? "rounded-md bg-surface-muted px-2 py-1 font-medium"
-    : "rounded-md px-2 py-1 text-muted hover:bg-surface-muted hover:text-foreground";
-
 export function PrequalFilters({
   view,
-  factors,
-  window,
+  factor,
+  from,
+  to,
   byFactor,
+  resultCount,
 }: {
   view: ReviewView;
-  factors: PrequalFilter[];
-  window: PrequalWindow;
+  factor: PrequalFilter | null;
+  from: string | null;
+  to: string | null;
   byFactor: Record<string, number>;
+  resultCount: number;
 }) {
+  const filtered = factor !== null || from !== null || to !== null;
   const total = Object.values(byFactor).reduce((n, v) => n + v, 0);
 
   return (
-    <div className="flex flex-col gap-2 border-b border-line pb-2.5 text-xs">
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="mr-1 text-[10px] tracking-wide text-faint uppercase">
+    <form
+      method="get"
+      action="/review"
+      className="flex flex-wrap items-end gap-3 border-b border-line pb-3"
+    >
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] tracking-wide text-faint uppercase">Status</span>
+        <select name="view" defaultValue={view} className={`${inputClass} w-40`}>
+          {REVIEW_VIEWS.map((v) => (
+            <option key={v} value={v}>
+              {REVIEW_VIEW_LABELS[v]}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] tracking-wide text-faint uppercase">
           Because of
         </span>
+        <select
+          name="factor"
+          defaultValue={factor ?? ""}
+          className={`${inputClass} w-52`}
+        >
+          <option value="">Any reason ({total})</option>
+          {PREQUAL_FILTERS.map((f) => (
+            // The count makes an empty facet visibly empty before it is chosen,
+            // rather than looking like a live filter that returns nothing.
+            <option key={f} value={f}>
+              {PREQUAL_FILTER_LABELS[f]} ({byFactor[f] ?? 0})
+            </option>
+          ))}
+        </select>
+      </label>
 
-        <Link href={href(view, [], window)} className={chip(factors.length === 0)}>
-          Any reason <span className="text-subtle">{total}</span>
-        </Link>
-
-        {PREQUAL_FILTERS.map((f) => {
-          const active = factors.includes(f);
-          // Clicking a chip toggles it, so several factors can be combined.
-          const next = active ? factors.filter((x) => x !== f) : [...factors, f];
-          const count = byFactor[f] ?? 0;
-          return (
-            <Link
-              key={f}
-              href={href(view, next, window)}
-              className={`${chip(active)} ${count === 0 && !active ? "opacity-45" : ""}`}
-              // An empty facet stays clickable but visibly empty, rather than
-              // looking like a live filter that returns nothing.
-              title={count === 0 ? `No jobs decided by ${PREQUAL_FILTER_LABELS[f]}` : undefined}
-            >
-              {PREQUAL_FILTER_LABELS[f]} <span className="text-subtle">{count}</span>
-            </Link>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="mr-1 text-[10px] tracking-wide text-faint uppercase">
-          When
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] tracking-wide text-faint uppercase">
+          Judged from
         </span>
-        {PREQUAL_WINDOWS.map((w) => (
-          <Link key={w} href={href(view, factors, w)} className={chip(w === window)}>
-            {PREQUAL_WINDOW_LABELS[w]}
-          </Link>
-        ))}
-      </div>
-    </div>
+        <input
+          type="date"
+          name="from"
+          defaultValue={from ?? ""}
+          className={`${inputClass} w-40`}
+        />
+      </label>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] tracking-wide text-faint uppercase">To</span>
+        <input
+          type="date"
+          name="to"
+          defaultValue={to ?? ""}
+          className={`${inputClass} w-40`}
+        />
+      </label>
+
+      <button
+        type="submit"
+        className="h-9 rounded-md bg-foreground px-3 text-xs font-medium text-background hover:opacity-90"
+      >
+        Apply
+      </button>
+
+      {filtered ? (
+        <Link
+          href="/review"
+          className="h-9 px-2 text-xs leading-9 text-muted hover:text-foreground"
+        >
+          Clear
+        </Link>
+      ) : null}
+
+      <span className="ml-auto self-center text-xs tabular-nums text-muted">
+        {resultCount} {resultCount === 1 ? "job" : "jobs"}
+        {filtered ? " matching" : ""}
+      </span>
+    </form>
   );
 }

@@ -2,17 +2,8 @@ import { and, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-or
 
 import { applications, rawJobs } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
-import type {
-  PrequalDecision,
-  PrequalFilter,
-  PrequalWindow,
-} from "@/lib/config/constants";
+import type { PrequalDecision, PrequalFilter } from "@/lib/config/constants";
 
-export {
-  PREQUAL_WINDOWS,
-  PREQUAL_WINDOW_LABELS,
-  type PrequalWindow,
-} from "@/lib/config/constants";
 import { db } from "@/lib/db/client";
 import type { PreQualificationResult } from "./types";
 
@@ -109,40 +100,38 @@ function viewFilter(view: ReviewView) {
  * also tripped the experience rule belongs under domain, or the counts
  * double-count and tuning chases the wrong rule.
  */
-/** Start of day, local — the user thinks in their own days, not in UTC. */
-function startOfDay(offsetDays = 0): Date {
-  const d = new Date();
-  d.setDate(d.getDate() - offsetDays);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function windowFilter(window: PrequalWindow) {
-  switch (window) {
-    case "all":
-      return undefined;
-    case "today":
-      return gte(rawJobs.prequalifiedAt, startOfDay());
-    case "yesterday":
-      // Bounded on BOTH sides: "yesterday" must not silently mean "since
-      // yesterday", which is the commonest way a date filter lies.
-      return and(
-        gte(rawJobs.prequalifiedAt, startOfDay(1)),
-        lt(rawJobs.prequalifiedAt, startOfDay()),
-      );
-    case "week":
-      return gte(rawJobs.prequalifiedAt, startOfDay(7));
-    case "month":
-      return gte(rawJobs.prequalifiedAt, startOfDay(30));
-  }
-}
-
 export type ReviewFilters = {
   view?: ReviewView;
   /** `decidedBy` values to keep. Empty means every factor. */
   factors?: PrequalFilter[];
-  window?: PrequalWindow;
+  /** Inclusive date bounds, as YYYY-MM-DD from a date input. */
+  from?: string | null;
+  to?: string | null;
 };
+
+/**
+ * Inclusive date-range filter over when the verdict was reached.
+ *
+ * `to` is made inclusive by comparing against the START OF THE NEXT DAY. A job
+ * judged at 14:30 on the `to` date must be inside the range; comparing against
+ * the date itself silently excludes everything after midnight, which is the
+ * classic way a date filter loses a day.
+ */
+function dateFilter(from?: string | null, to?: string | null) {
+  const clauses = [];
+  if (from) {
+    const start = new Date(`${from}T00:00:00`);
+    if (!Number.isNaN(start.getTime())) clauses.push(gte(rawJobs.prequalifiedAt, start));
+  }
+  if (to) {
+    const end = new Date(`${to}T00:00:00`);
+    if (!Number.isNaN(end.getTime())) {
+      end.setDate(end.getDate() + 1);
+      clauses.push(lt(rawJobs.prequalifiedAt, end));
+    }
+  }
+  return clauses.length > 0 ? and(...clauses) : undefined;
+}
 
 function factorFilter(factors: PrequalFilter[] | undefined) {
   if (!factors?.length) return undefined;
@@ -168,7 +157,7 @@ export async function listForReview(
         viewFilter(f.view ?? "review"),
         isNull(applications.id),
         factorFilter(f.factors),
-        windowFilter(f.window ?? "all"),
+        dateFilter(f.from, f.to),
       ),
     )
     .orderBy(desc(rawJobs.prequalifiedAt))
@@ -184,7 +173,8 @@ export async function listForReview(
  */
 export async function countByFactor(
   view: ReviewView = "review",
-  window: PrequalWindow = "all",
+  from?: string | null,
+  to?: string | null,
 ): Promise<Record<string, number>> {
   const rows = await db
     .select({
@@ -193,7 +183,7 @@ export async function countByFactor(
     })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
-    .where(and(viewFilter(view), isNull(applications.id), windowFilter(window)))
+    .where(and(viewFilter(view), isNull(applications.id), dateFilter(from, to)))
     .groupBy(sql`coalesce(${rawJobs.prequalificationDetail}->>'decidedBy', 'none')`);
 
   return Object.fromEntries(rows.map((r) => [r.factor, r.n]));
