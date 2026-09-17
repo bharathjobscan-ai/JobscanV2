@@ -1,8 +1,12 @@
-import { and, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { applications, rawJobs } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
-import type { PrequalDecision, PrequalFilter } from "@/lib/config/constants";
+import {
+  PREQUAL_FILTER_LABELS,
+  type PrequalDecision,
+  type PrequalFilter,
+} from "@/lib/config/constants";
 
 import { db } from "@/lib/db/client";
 import type { PreQualificationResult } from "./types";
@@ -104,9 +108,15 @@ export type ReviewFilters = {
   view?: ReviewView;
   /** `decidedBy` values to keep. Empty means every factor. */
   factors?: PrequalFilter[];
-  /** Inclusive date bounds, as YYYY-MM-DD from a date input. */
+  /** `raw_jobs.source` values to keep. Empty means every source. */
+  sources?: string[];
+  /** Country names to keep. Empty means everywhere. */
+  countries?: string[];
+  /** Inclusive date bounds, as YYYY-MM-DD from the range picker. */
   from?: string | null;
   to?: string | null;
+  /** Free text over title and company. */
+  search?: string | null;
 };
 
 /**
@@ -135,11 +145,21 @@ function dateFilter(from?: string | null, to?: string | null) {
 
 function factorFilter(factors: PrequalFilter[] | undefined) {
   if (!factors?.length) return undefined;
-  // decidedBy lives inside the jsonb detail, so this reads it out rather than
-  // recomputing the verdict — the stored verdict is the one being audited.
-  return inArray(
-    sql`${rawJobs.prequalificationDetail}->>'decidedBy'`,
-    factors,
+  // `decidedBy` lives inside the jsonb detail; this reads the STORED verdict
+  // rather than recomputing, because the stored verdict is what is being
+  // audited.
+  return inArray(sql`${rawJobs.prequalificationDetail}->>'decidedBy'`, factors);
+}
+
+function searchFilter(search?: string | null) {
+  const q = search?.trim();
+  if (!q) return undefined;
+  // Title or company. Escaped for LIKE so a literal % or _ cannot turn a
+  // search into a wildcard that quietly matches everything.
+  const safe = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+  return or(
+    ilike(rawJobs.title, `%${safe}%`),
+    ilike(rawJobs.company, `%${safe}%`),
   );
 }
 
@@ -157,7 +177,10 @@ export async function listForReview(
         viewFilter(f.view ?? "review"),
         isNull(applications.id),
         factorFilter(f.factors),
+        f.sources?.length ? inArray(rawJobs.source, f.sources) : undefined,
+        f.countries?.length ? inArray(rawJobs.country, f.countries) : undefined,
         dateFilter(f.from, f.to),
+        searchFilter(f.search),
       ),
     )
     .orderBy(desc(rawJobs.prequalifiedAt))
@@ -167,26 +190,48 @@ export async function listForReview(
 }
 
 /**
- * How many jobs each factor is responsible for, within the current view and
- * window. Drives the counts beside each filter chip, so an empty facet is
- * visibly empty rather than a dead end.
+ * The facets, with counts, for the filter panel.
+ *
+ * Counted within the current VIEW but ignoring the other selections, so a
+ * checkbox always shows how many jobs it would add — a count that collapsed to
+ * zero as you ticked boxes would make the panel unusable.
  */
-export async function countByFactor(
-  view: ReviewView = "review",
-  from?: string | null,
-  to?: string | null,
-): Promise<Record<string, number>> {
+export type ReviewFacets = {
+  factor: { value: string; label: string; count: number }[];
+  source: { value: string; label: string; count: number }[];
+  country: { value: string; label: string; count: number }[];
+};
+
+export async function getFacets(view: ReviewView = "review"): Promise<ReviewFacets> {
   const rows = await db
     .select({
-      factor: sql<string>`coalesce(${rawJobs.prequalificationDetail}->>'decidedBy', 'none')`,
-      n: sql<number>`count(*)::int`,
+      factor: sql<string>`${rawJobs.prequalificationDetail}->>'decidedBy'`,
+      source: rawJobs.source,
+      country: rawJobs.country,
     })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
-    .where(and(viewFilter(view), isNull(applications.id), dateFilter(from, to)))
-    .groupBy(sql`coalesce(${rawJobs.prequalificationDetail}->>'decidedBy', 'none')`);
+    .where(and(viewFilter(view), isNull(applications.id)));
 
-  return Object.fromEntries(rows.map((r) => [r.factor, r.n]));
+  const tally = (values: (string | null)[]) => {
+    const m = new Map<string, number>();
+    for (const v of values) {
+      if (!v) continue;
+      m.set(v, (m.get(v) ?? 0) + 1);
+    }
+    return [...m.entries()]
+      .map(([value, count]) => ({ value, label: value, count }))
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+  };
+
+  return {
+    factor: tally(rows.map((r) => r.factor)).map((f) => ({
+      ...f,
+      label: PREQUAL_FILTER_LABELS[f.value as PrequalFilter] ?? f.value,
+    })),
+    source: tally(rows.map((r) => r.source)),
+    country: tally(rows.map((r) => r.country)),
+  };
 }
 
 export async function countForReview(): Promise<Record<ReviewView, number>> {

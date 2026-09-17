@@ -8,7 +8,7 @@ import {
 import { Badge, Button, Card, CardHeader, EmptyState, buttonClass } from "@/components/ui/base";
 import { promoteAction, rejectAction, requalifyAction } from "@/features/prequalification/actions";
 import {
-  countByFactor,
+  getFacets,
   countForReview,
   listForReview,
   REVIEW_VIEWS,
@@ -33,29 +33,43 @@ export default async function ReviewPage({
   searchParams: Promise<{
     view?: string;
     factor?: string;
+    source?: string;
+    country?: string;
     from?: string;
     to?: string;
+    q?: string;
   }>;
 }) {
-  const { view: raw, factor: rawFactor, from: rawFrom, to: rawTo } = await searchParams;
-  const view: ReviewView = REVIEW_VIEWS.includes(raw as ReviewView)
-    ? (raw as ReviewView)
+  const params = await searchParams;
+  const view: ReviewView = REVIEW_VIEWS.includes(params.view as ReviewView)
+    ? (params.view as ReviewView)
     : "review";
 
-  // JSV2S1153. Unknown or malformed values are dropped rather than erroring: a
-  // hand-edited URL should degrade to "no filter", not to a crash.
-  const factor = PREQUAL_FILTERS.includes(rawFactor as PrequalFilter)
-    ? (rawFactor as PrequalFilter)
-    : null;
+  // JSV2S1153. Anything unrecognised is dropped rather than raised: a
+  // hand-edited URL should degrade to "no filter", never to a crash.
+  const list = (v?: string) => (v ? v.split(",").filter(Boolean) : []);
+  const factors = list(params.factor).filter((f): f is PrequalFilter =>
+    PREQUAL_FILTERS.includes(f as PrequalFilter),
+  );
+  const sources = list(params.source);
+  const countries = list(params.country);
   const isDate = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
-  const from = isDate(rawFrom);
-  const to = isDate(rawTo);
+  const from = isDate(params.from);
+  const to = isDate(params.to);
+  const search = params.q?.trim() || null;
 
-  const [items, counts, byFactor] = await Promise.all([
-    listForReview({ view, factors: factor ? [factor] : [], from, to }),
+  const [items, counts, facets] = await Promise.all([
+    listForReview({ view, factors, sources, countries, from, to, search }),
     countForReview(),
-    countByFactor(view, from, to),
+    getFacets(view),
   ]);
+
+  const filtered =
+    factors.length > 0 ||
+    sources.length > 0 ||
+    countries.length > 0 ||
+    from !== null ||
+    search !== null;
 
   return (
     <div className="space-y-4">
@@ -95,10 +109,11 @@ export default async function ReviewPage({
 
       <PrequalFilters
         view={view}
-        factor={factor}
-        from={from}
-        to={to}
-        byFactor={byFactor}
+        facets={facets}
+        initial={{ factor: factors, source: sources, country: countries }}
+        initialFrom={from}
+        initialTo={to}
+        initialSearch={search}
         resultCount={items.length}
       />
 
@@ -106,7 +121,7 @@ export default async function ReviewPage({
         <Card>
           <EmptyState
             title={
-              factor !== null || from !== null || to !== null
+              filtered
                 ? "Nothing matches these filters"
                 : view === "review"
                   ? "Nothing waiting on you"
@@ -116,8 +131,8 @@ export default async function ReviewPage({
             }
             hint={
               // A filtered empty result must not read as "the queue is clear".
-              factor !== null || from !== null || to !== null
-                ? "Widen the reason or the date range to see more."
+              filtered
+                ? "Widen the filters or the date range to see more."
                 : view === "stale"
                   ? "When you change the role, domain or location config, jobs judged under the old rules appear here."
                   : "Jobs that pass all four filters go straight to Applications."
