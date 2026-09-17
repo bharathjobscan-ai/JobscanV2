@@ -89,8 +89,23 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
+/**
+ * Revision of the RULES ENGINE, as distinct from the config it reads.
+ *
+ * `CONFIG_VERSION` hashes `PREQUAL_CONFIG`, which meant a change to the engine
+ * itself was invisible to it: on 2026-09-17 the experience guard was corrected
+ * to stop treating an open-ended "4+ years" as a ceiling, four jobs should have
+ * been re-judged, and every stored verdict still looked current because no
+ * config VALUE had moved. A logic fix that nothing re-runs is a fix that never
+ * reaches the data.
+ *
+ * Bump this whenever the behaviour of features/prequalification/ changes in a
+ * way that could alter a verdict. It costs one re-run and nothing else.
+ */
+export const ENGINE_REVISION = 2;
+
 export const CONFIG_VERSION = createHash("sha256")
-  .update(stableStringify(PREQUAL_CONFIG))
+  .update(`engine:${ENGINE_REVISION}|${stableStringify(PREQUAL_CONFIG)}`)
   .digest("hex")
   .slice(0, 12);
 

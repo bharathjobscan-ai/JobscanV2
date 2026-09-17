@@ -32,7 +32,9 @@ export function prequalify(job: PrequalJob): PreQualificationResult {
 
   const role = evaluateRole(job.title);
   const domain = evaluateDomain(job.title, sections);
-  const experience = evaluateExperience(jdText);
+  // A primary-tier title ("Senior Product Manager") outranks a low stated years
+  // requirement — the title is what the role filter already matched on.
+  const experience = evaluateExperience(jdText, role.tier === "primary");
   const location = evaluateLocation(job.location, job.country, job.description);
 
   const byFilter: Record<PrequalFilter, FilterStatus> = {

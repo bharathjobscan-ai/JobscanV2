@@ -38,10 +38,16 @@ export const SECTION_WEIGHTS: Record<SectionId, number> = {
 /**
  * Domain gate.
  *
- * With section-once, tier-multiplied scoring the maximum is ~14.5, and a
- * Tier-1 title match alone is exactly 5. So `pass: 5` means "the title is
- * on-domain, or two body sections agree", and `review: 2` means "something
- * relevant was said somewhere".
+ * Scoring is section-once and tier-multiplied: each section contributes
+ * `SECTION_WEIGHTS[section] x bestTier.multiplier` ONCE, at the strength of the
+ * best tier it matched — ten payments terms in one section score exactly the
+ * same as one. The title is a section in its own right, at the heaviest weight.
+ * Negative terms then subtract a flat 2 as a soft counterweight.
+ *
+ * Maximum is ~14.5. A Tier-1 title match alone is 5.
+ *
+ * NOTE: this block described `pass: 5` / `review: 2` until 2026-09-17, which
+ * had not been true since the gate was lowered on 2026-09-04 — see below.
  */
 export const DOMAIN_GATE = {
   /**
@@ -55,6 +61,18 @@ export const DOMAIN_GATE = {
   pass: 3,
   review: 1,
 } as const;
+
+/**
+ * Worked example, so the numbers above are checkable.
+ *
+ * Axon's "Senior Product Manager" (law-enforcement software) matched only
+ * "subscriptions", once, in `company_description`:
+ *
+ *     company_description (1) x payments_adjacent (0.6) = 0.6
+ *
+ * 0.6 < review (1), so it failed — a generic word in marketing boilerplate was
+ * not allowed to carry an off-domain job through. That is the gate working.
+ */
 
 /**
  * Experience tolerance (JSV2S1054).

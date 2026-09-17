@@ -96,7 +96,16 @@ export function extractExperience(text: string): Extracted | null {
   return found.reduce((lowest, next) => (next.min < lowest.min ? next : lowest));
 }
 
-export function evaluateExperience(text: string): ExperienceResult {
+export function evaluateExperience(
+  text: string,
+  /**
+   * Whether the title itself reads as senior (JSV2S1153).
+   *
+   * Passed in rather than re-derived here, so the experience filter and the
+   * role filter can never disagree about what "senior" means.
+   */
+  seniorTitle = false,
+): ExperienceResult {
   const { candidateYears, floor, ceiling, unstatedPasses } = PREQUAL_CONFIG.experience;
   const found = extractExperience(text);
 
@@ -134,15 +143,44 @@ export function evaluateExperience(text: string): ExperienceResult {
     };
   }
 
-  // The over-qualification guard. A stated range topping out below the floor is
-  // a junior role however the title is worded.
-  const statedTop = found.max ?? found.min;
-  if (statedTop < floor) {
+  /**
+   * The over-qualification guard — corrected 2026-09-17.
+   *
+   * This read `found.max ?? found.min`, which treated an OPEN-ENDED minimum as
+   * though it were a ceiling: "4+ years" has no top, but the fallback made the
+   * top 4, and 4 < 5 failed a nine-year candidate. Measured against the 95
+   * stored jobs it rejected four outright, including a Wise Senior PM role in
+   * London and two Ebury payment-screening roles — 6% of the reject pile, and
+   * biased toward exactly the employers worth having, because fintechs write
+   * "4+ years" far more often than "8-12 years".
+   *
+   * Only a CLOSED range can indicate a junior role. An open minimum is a floor
+   * the candidate either clears or does not, and `ABOVE_CEILING` above already
+   * handles the case where it is out of reach.
+   */
+  if (found.max !== null && found.max < floor) {
+    /**
+     * A senior title outranks the stated years (owner's decision, 2026-09-17).
+     *
+     * "Senior Product Manager, 2-4 years" is contradictory rather than junior,
+     * and the title is the better evidence — it is what the role filter already
+     * matched on. Relaxed to `unknown`, which routes the job to the review
+     * queue instead of discarding it: relaxed, not blind.
+     */
+    if (seniorTitle) {
+      return {
+        ...base,
+        status: "unknown",
+        rule: "BELOW_FLOOR",
+        reason: `Asks for ${found.min}-${found.max} years, below the ${floor}-year floor, but the title reads as senior — worth a look rather than a reject.`,
+      };
+    }
+
     return {
       ...base,
       status: "fail",
       rule: "BELOW_FLOOR",
-      reason: `Asks for ${found.max ? `${found.min}-${found.max}` : `${found.min}+`} years, below the ${floor}-year floor — too junior.`,
+      reason: `Asks for ${found.min}-${found.max} years, below the ${floor}-year floor — too junior.`,
     };
   }
 
