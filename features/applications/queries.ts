@@ -1,15 +1,34 @@
-import { and, asc, desc, eq, exists, inArray, isNotNull, not, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  lt,
+  not,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import {
   applicationAttempts,
   applicationDocuments,
   applicationEvents,
   applications,
+  ingestionRuns,
   rawJobs,
 } from "@/db/schema";
 import {
   ACTIVE_STATUSES,
   CLOSED_STATUSES,
+  MATCH_CATEGORIES,
+  MATCH_LABELS,
+  REFERRAL_LABELS,
+  REFERRAL_STATUSES,
   nextAction,
   type ApplicationStatus,
   type ApplicationView,
@@ -163,9 +182,88 @@ function viewFilter(view: ApplicationView) {
   }
 }
 
+/**
+ * Faceted filtering of the applications list (JSV2S1159).
+ *
+ * The same interaction as the pre-qualification queue, asked of a different
+ * subject: not "why was this screened out" but "which of these needs a
+ * referral, and which fetch did they come from".
+ *
+ * Selections WITHIN a facet are OR-ed, ACROSS facets AND-ed — "priority apply
+ * AND referral needed" has to mean both.
+ */
+export type ApplicationSelections = Record<string, string[]>;
+
+export type ApplicationFilters = {
+  view?: ApplicationView;
+  selections?: ApplicationSelections;
+  /** Inclusive bounds on when the job was ingested, as YYYY-MM-DD. */
+  from?: string | null;
+  to?: string | null;
+  search?: string | null;
+};
+
+/** `to` is inclusive: compared against the start of the following day. */
+function ingestedRange(from?: string | null, to?: string | null) {
+  const clauses = [];
+  if (from) {
+    const start = new Date(`${from}T00:00:00`);
+    if (!Number.isNaN(start.getTime())) {
+      clauses.push(gte(sql`coalesce(${rawJobs.prequalifiedAt}, ${rawJobs.firstSeenAt})`, start));
+    }
+  }
+  if (to) {
+    const end = new Date(`${to}T00:00:00`);
+    if (!Number.isNaN(end.getTime())) {
+      end.setDate(end.getDate() + 1);
+      clauses.push(lt(sql`coalesce(${rawJobs.prequalifiedAt}, ${rawJobs.firstSeenAt})`, end));
+    }
+  }
+  return clauses.length > 0 ? and(...clauses) : undefined;
+}
+
+function applicationSelectionFilters(selections?: ApplicationSelections) {
+  if (!selections) return [];
+  const clauses = [];
+
+  // Narrowed against the known vocabulary rather than passed through: these
+  // values arrive from the URL, and an unrecognised one should filter to
+  // nothing rather than reach the query.
+  const match = (selections.match ?? []).filter((v): v is MatchCategory =>
+    MATCH_CATEGORIES.includes(v as MatchCategory),
+  );
+  if (match.length) clauses.push(inArray(applications.matchCategory, match));
+
+  const referral = (selections.referral ?? []).filter((v): v is ReferralStatus =>
+    REFERRAL_STATUSES.includes(v as ReferralStatus),
+  );
+  if (referral.length) clauses.push(inArray(applications.referralStatus, referral));
+  if (selections.source?.length) {
+    clauses.push(inArray(rawJobs.source, selections.source));
+  }
+  if (selections.country?.length) {
+    clauses.push(inArray(rawJobs.country, selections.country));
+  }
+  if (selections.fetch?.length) {
+    clauses.push(inArray(rawJobs.ingestionRunId, selections.fetch));
+  }
+  return clauses;
+}
+
+function applicationSearch(search?: string | null) {
+  const q = search?.trim();
+  if (!q) return undefined;
+  // Escaped so a literal % or _ cannot become a wildcard matching everything.
+  const safe = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+  return or(ilike(rawJobs.title, `%${safe}%`), ilike(rawJobs.company, `%${safe}%`));
+}
+
 export async function listApplications(
-  view: ApplicationView = "all",
+  viewOrFilters: ApplicationView | ApplicationFilters = "all",
 ): Promise<ApplicationListItem[]> {
+  const f: ApplicationFilters =
+    typeof viewOrFilters === "string" ? { view: viewOrFilters } : viewOrFilters;
+  const view = f.view ?? "all";
   const rows = await db
     .select({
       id: applications.id,
@@ -194,7 +292,14 @@ export async function listApplications(
     })
     .from(applications)
     .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
-    .where(viewFilter(view))
+    .where(
+      and(
+        viewFilter(view),
+        ...applicationSelectionFilters(f.selections),
+        ingestedRange(f.from, f.to),
+        applicationSearch(f.search),
+      ),
+    )
     .orderBy(desc(applications.lastActivityAt));
 
   return rows.map((row) => {
@@ -340,3 +445,83 @@ export async function countIncomplete(): Promise<number> {
 
 /** Used by the score panel to show whether an analysis exists at all. */
 export const hasScoreAnalysis = isNotNull(applications.jobScoreAnalysis);
+
+
+/**
+ * Facet values for the applications filter panel (JSV2S1159).
+ *
+ * Counted within the current view but ignoring the other selections, so a
+ * checkbox always shows how many it would add. Counts that collapsed as boxes
+ * were ticked would make the panel unusable.
+ */
+export async function getApplicationFacets(
+  view: ApplicationView = "all",
+): Promise<Record<string, { value: string; label: string; count: number }[]>> {
+  const rows = await db
+    .select({
+      match: applications.matchCategory,
+      referral: applications.referralStatus,
+      source: rawJobs.source,
+      country: rawJobs.country,
+      fetch: rawJobs.ingestionRunId,
+      fetchSource: ingestionRuns.source,
+      fetchStartedAt: ingestionRuns.startedAt,
+    })
+    .from(applications)
+    .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
+    .leftJoin(ingestionRuns, eq(ingestionRuns.id, rawJobs.ingestionRunId))
+    .where(viewFilter(view));
+
+  const tally = (
+    values: (string | null)[],
+    label: (v: string) => string,
+  ): { value: string; label: string; count: number }[] => {
+    const m = new Map<string, number>();
+    for (const v of values) {
+      if (!v) continue;
+      m.set(v, (m.get(v) ?? 0) + 1);
+    }
+    return [...m.entries()]
+      .map(([value, count]) => ({ value, label: label(value), count }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  };
+
+  // A run id is unreadable alone, so each is labelled with its source and date.
+  const runs = new Map<string, { label: string; count: number }>();
+  for (const row of rows) {
+    if (!row.fetch) continue;
+    const seen = runs.get(row.fetch);
+    if (seen) {
+      seen.count += 1;
+      continue;
+    }
+    runs.set(row.fetch, {
+      label: `${row.fetchSource ?? "unknown"} · ${
+        row.fetchStartedAt ? row.fetchStartedAt.toISOString().slice(0, 10) : "—"
+      } · ${row.fetch.slice(0, 8)}`,
+      count: 1,
+    });
+  }
+
+  return {
+    match: tally(
+      rows.map((r) => r.match),
+      (v) => MATCH_LABELS[v as MatchCategory] ?? v,
+    ),
+    referral: tally(
+      rows.map((r) => r.referral),
+      (v) => REFERRAL_LABELS[v as ReferralStatus] ?? v,
+    ),
+    source: tally(
+      rows.map((r) => r.source),
+      (v) => v,
+    ),
+    country: tally(
+      rows.map((r) => r.country),
+      (v) => v,
+    ),
+    fetch: [...runs.entries()]
+      .map(([value, r]) => ({ value, label: r.label, count: r.count }))
+      .sort((a, b) => b.count - a.count),
+  };
+}

@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, ilike, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 
-import { applications, rawJobs } from "@/db/schema";
+import { applications, ingestionRuns, rawJobs } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
 import {
   PREQUAL_FILTERS,
@@ -116,7 +116,7 @@ function viewFilter(view: ReviewView) {
  * that filter's own outcomes — "rejected on experience, below the floor" rather
  * than the coarser "rejected on experience".
  */
-export type FilterSelections = Partial<Record<PrequalFilter, string[]>>;
+export type FilterSelections = Partial<Record<PrequalFilter | "fetch", string[]>>;
 
 export type ReviewFilters = {
   view?: ReviewView;
@@ -160,13 +160,20 @@ function valueExpr(filter: PrequalFilter) {
 
 function selectionFilters(selections: FilterSelections | undefined) {
   if (!selections) return [];
-  return PREQUAL_FILTERS.flatMap((filter) => {
+  const clauses = PREQUAL_FILTERS.flatMap((filter) => {
     const values = selections[filter];
     // Selections WITHIN a filter are OR-ed; ACROSS filters they are AND-ed,
     // which is what "domain is payments-adjacent and experience below floor"
     // has to mean.
     return values?.length ? [inArray(valueExpr(filter), values)] : [];
   });
+
+  // Which fetch brought the job in (JSV2S1158) — the same axis the pipeline
+  // table reports on, so a suspicious run can be inspected job by job.
+  const runs = selections.fetch;
+  if (runs?.length) clauses.push(inArray(rawJobs.ingestionRunId, runs));
+
+  return clauses;
 }
 
 function searchFilter(search?: string | null) {
@@ -207,7 +214,7 @@ export async function listForReview(
 
 export type FacetValue = { value: string; label: string; count: number };
 /** One entry per pre-qualification filter, each with the values it produced. */
-export type ReviewFacets = Partial<Record<PrequalFilter, FacetValue[]>>;
+export type ReviewFacets = Partial<Record<PrequalFilter | "fetch", FacetValue[]>>;
 
 /**
  * What each filter actually produced, within the current view.
@@ -225,9 +232,13 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
       domain: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'domain'->>'primaryDomain', 'none')`,
       experience: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'experience'->>'rule', 'none')`,
       location: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'location'->>'rule', 'none')`,
+      fetch: rawJobs.ingestionRunId,
+      fetchSource: ingestionRuns.source,
+      fetchStartedAt: ingestionRuns.startedAt,
     })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
+    .leftJoin(ingestionRuns, eq(ingestionRuns.id, rawJobs.ingestionRunId))
     .where(and(viewFilter(view), isNull(applications.id), isNull(rawJobs.binnedAt)));
 
   const facets: ReviewFacets = {};
@@ -242,6 +253,30 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
       .map(([value, count]) => ({ value, label: labelFor(filter, value), count }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   }
+
+  // A run id is unreadable on its own, so each is labelled with its source and
+  // date. Newest first: the run you want is almost always the last one.
+  const runs = new Map<string, { label: string; at: Date | null; count: number }>();
+  for (const row of rows) {
+    if (!row.fetch) continue;
+    const existing = runs.get(row.fetch);
+    if (existing) {
+      existing.count += 1;
+      continue;
+    }
+    const at = row.fetchStartedAt;
+    runs.set(row.fetch, {
+      label: `${row.fetchSource ?? "unknown"} · ${
+        at ? at.toISOString().slice(0, 10) : "—"
+      } · ${row.fetch.slice(0, 8)}`,
+      at,
+      count: 1,
+    });
+  }
+  facets.fetch = [...runs.entries()]
+    .map(([value, r]) => ({ value, label: r.label, count: r.count }))
+    .sort((a, b) => b.count - a.count);
+
   return facets;
 }
 

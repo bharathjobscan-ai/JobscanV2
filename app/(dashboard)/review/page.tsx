@@ -22,8 +22,8 @@ import {
   type FilterSelections,
   type ReviewView,
 } from "@/features/prequalification/queries";
-import { PrequalFilters } from "@/components/applications/prequal-filters";
-import { PREQUAL_FILTERS } from "@/lib/config/constants";
+import { FilterPanel } from "@/components/ui/filter-panel";
+import { PREQUAL_FILTERS, PREQUAL_FILTER_LABELS } from "@/lib/config/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +47,7 @@ export default async function ReviewPage({
   // JSV2S1153. Anything unrecognised is dropped rather than raised: a
   // hand-edited URL should degrade to "no filter", never to a crash.
   const selections: FilterSelections = {};
-  for (const f of PREQUAL_FILTERS) {
+  for (const f of [...PREQUAL_FILTERS, "fetch"] as const) {
     const values = params[f]?.split(",").filter(Boolean) ?? [];
     if (values.length > 0) selections[f] = values;
   }
@@ -103,14 +103,21 @@ export default async function ReviewPage({
         ))}
       </nav>
 
-      <PrequalFilters
-        view={view}
-        facets={facets}
-        initial={selections}
+      <FilterPanel
+        basePath="/review"
+        preserve={{ view: view === "review" ? undefined : view }}
+        categories={[
+          ...PREQUAL_FILTERS.map((f) => ({ key: f, label: PREQUAL_FILTER_LABELS[f] })),
+          { key: "fetch", label: "Fetch" },
+        ]}
+        facets={facets as Record<string, { value: string; label: string; count: number }[]>}
+        initial={selections as Record<string, string[]>}
         initialFrom={from}
         initialTo={to}
         initialSearch={search}
         resultCount={items.length}
+        searchPlaceholder="Search title or company"
+        dateLabel="Judged between"
       />
 
       {items.length === 0 ? (

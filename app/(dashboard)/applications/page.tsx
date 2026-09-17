@@ -9,10 +9,12 @@ import {
 import { PreferredCityBadge } from "@/components/applications/prequal-badges";
 import { Badge, Card, EmptyState, LinkButton } from "@/components/ui/base";
 import { getApplicationCosts } from "@/features/ai/queries";
+import { FilterPanel } from "@/components/ui/filter-panel";
 import { formatUsd } from "@/lib/ai/pricing";
 import {
   countByView,
   countIncomplete,
+  getApplicationFacets,
   listApplications,
 } from "@/features/applications/queries";
 import {
@@ -32,7 +34,7 @@ function relative(date: Date): string {
 export default async function ApplicationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const params = await searchParams;
   const view = (
@@ -41,10 +43,27 @@ export default async function ApplicationsPage({
       : "all"
   ) as ApplicationView;
 
-  const [items, counts, incomplete] = await Promise.all([
-    listApplications(view),
+
+  /**
+   * Faceted filtering (JSV2S1159). Unrecognised values from a hand-edited URL
+   * are narrowed away in the query layer rather than raised here.
+   */
+  const FACETS = ["match", "referral", "source", "country", "fetch"] as const;
+  const selections: Record<string, string[]> = {};
+  for (const key of FACETS) {
+    const values = params[key]?.split(",").filter(Boolean) ?? [];
+    if (values.length > 0) selections[key] = values;
+  }
+  const isDate = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+  const from = isDate(params.from);
+  const to = isDate(params.to);
+  const search = params.q?.trim() || null;
+
+  const [items, counts, incomplete, facets] = await Promise.all([
+    listApplications({ view, selections, from, to, search }),
     countByView(),
     countIncomplete(),
+    getApplicationFacets(view),
   ]);
 
   /**
@@ -92,6 +111,30 @@ export default async function ApplicationsPage({
           );
         })}
       </nav>
+
+      {/* JSV2S1159 — the same panel as the pre-qualification queue, asked of a
+          different subject: not "why was this screened out" but "which of these
+          needs a referral, and which fetch did they come from". */}
+      <FilterPanel
+        basePath="/applications"
+        preserve={{ view: view === "all" ? undefined : view }}
+        categories={[
+          { key: "match", label: "Match" },
+          { key: "referral", label: "Referral" },
+          { key: "source", label: "Source" },
+          { key: "country", label: "Country" },
+          { key: "fetch", label: "Fetch" },
+        ]}
+        facets={facets}
+        initial={selections}
+        initialFrom={from}
+        initialTo={to}
+        initialSearch={search}
+        resultCount={items.length}
+        searchPlaceholder="Search title or company"
+        dateLabel="Ingested between"
+        noun="application"
+      />
 
       {items.length === 0 ? (
         <Card>
