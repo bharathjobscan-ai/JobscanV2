@@ -1,3 +1,4 @@
+import { LINKEDIN_ACTOR } from "@/config/apify";
 import { getEnv } from "@/lib/config/env";
 import { withRetry } from "../reliability";
 import { bestDescription } from "../html-text";
@@ -19,8 +20,7 @@ import type { FetchParams, FetchResult, FetchedJob, JobSourceAdapter } from "./t
  *    `applyType` is preserved so the workspace can at least say which is which.
  */
 
-const ACTOR_ID = "valig~linkedin-jobs-scraper";
-const RUN_SYNC_ENDPOINT = `https://api.apify.com/v2/acts/${ACTOR_ID}/run-sync-get-dataset-items`;
+const RUN_SYNC_ENDPOINT = `https://api.apify.com/v2/acts/${LINKEDIN_ACTOR.slug}/run-sync-get-dataset-items`;
 
 /** One record as the actor emits it. Every field may be absent or blank. */
 export type ApifyLinkedInJob = {
@@ -139,15 +139,65 @@ export function mapDataset(items: readonly ApifyLinkedInJob[]): FetchResult {
   return { jobs, failures, notes: { received: items.length } };
 }
 
-/** The actor's own input schema. */
-function buildInput(params: FetchParams) {
+/** Maximum the actor will return in one run, per its schema. */
+export const ACTOR_MAX_LIMIT = 1000;
+
+/**
+ * LinkedIn's own recency tokens. The schema is an enum, so an unsupported
+ * window falls back to no filter rather than a rejected run.
+ */
+function datePostedToken(days: number | undefined): string {
+  if (days === undefined) return "";
+  if (days <= 1) return "r86400";
+  if (days <= 7) return "r604800";
+  if (days <= 30) return "r2592000";
+  return "";
+}
+
+/**
+ * The actor's input, per its published schema — verified 2026-09-05 against
+ * build `default` of actor `RIGGeqD6RqKmlVoQU` (`valig/linkedin-jobs-scraper`).
+ *
+ * **Three of the four fields were wrong until 2026-09-05.** We sent `title`,
+ * `rows` and `publishedAt`; the actor expects `keywords`, `limit` and
+ * `datePosted`. Apify ignores unknown input keys silently, so this never
+ * surfaced as an error — which made it worse than one:
+ *
+ * - no keyword filter, so results were arbitrary jobs in the location;
+ * - no recency filter, so stale postings came back;
+ * - **`limit` fell back to its default of 100**, making `limitPerLocation` in
+ *   `config/pipeline.ts` completely inert. Eleven locations would have fetched
+ *   1,100 jobs a night rather than the 330 that was budgeted — and the actor
+ *   bills per result.
+ *
+ * The shape of the failure is the lesson: a silently-ignored input key cannot
+ * be caught by a status code, only by reading the schema.
+ */
+export function buildInput(params: FetchParams) {
+  const titles = params.keywords ?? [];
+
   return {
-    // The actor takes one search string; the role list is OR-ed into it.
-    title: (params.keywords ?? []).join(" OR "),
+    // One broad search string; `titleInclude` does the precise work below.
+    keywords: titles[0] ?? "",
     location: params.locations?.[0] ?? "",
-    rows: params.limit,
-    // 'r86400' is LinkedIn's own 24-hour recency token.
-    publishedAt: params.postedWithinDays === 1 ? "r86400" : "",
+    datePosted: datePostedToken(params.postedWithinDays),
+    // Clamped both ways: 0 would fetch nothing, and the actor caps at 1000.
+    limit: Math.max(1, Math.min(params.limit, ACTOR_MAX_LIMIT)),
+    /**
+     * Post-filter on title, which a single `keywords` string cannot express.
+     * Case-insensitive substring, so "Product Manager" still keeps "Senior
+     * Product Manager" — this exists to drop the non-PM roles the search drags
+     * in, not to enumerate every variant.
+     */
+    ...(titles.length > 0 ? { titleInclude: titles } : {}),
+    /** Filtering at the source is cheapest: the actor bills per result. */
+    ...(params.titleExclude?.length ? { titleExclude: params.titleExclude } : {}),
+    /**
+     * Jobs already stored. Skipping them at the actor means we do not PAY for
+     * records dedupe would discard — the only dedupe that saves money.
+     */
+    ...(params.skipJobIds?.length ? { skipJobId: params.skipJobIds } : {}),
+    ...(params.raw ?? {}),
   };
 }
 

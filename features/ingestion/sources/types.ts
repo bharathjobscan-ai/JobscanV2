@@ -30,6 +30,20 @@ export type FetchParams = {
    * candidate for a billed scoring call downstream. An adapter must honour it.
    */
   limit: number;
+  /**
+   * Titles to drop outright, where the source can filter on them.
+   *
+   * Applied at the source rather than after ingestion because a paid source
+   * bills per result returned — a record filtered here is one we never buy.
+   */
+  titleExclude?: string[];
+  /**
+   * Source-native job ids already stored, for sources that can skip them.
+   *
+   * Distinct from the dedupe in `ingest.ts`, which runs *after* the records
+   * have been paid for. This is the only dedupe that saves money.
+   */
+  skipJobIds?: string[];
   /** Escape hatch for parameters only one source understands. */
   raw?: Record<string, unknown>;
 };

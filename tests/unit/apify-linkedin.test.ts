@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { bestDescription, htmlToText } from "@/features/ingestion/html-text";
+import { APIFY_PRICING, estimateFetchCostUsd } from "@/config/apify";
 import {
+  ACTOR_MAX_LIMIT,
+  buildInput,
   mapDataset,
   mapJob,
   type ApifyLinkedInJob,
@@ -194,5 +197,107 @@ describe("end to end: actor payload through pre-qualification", () => {
 
     expect(verdict.role.status).toBe("pass");
     expect(verdict.decision).not.toBe("pass");
+  });
+});
+
+/**
+ * The actor's input schema, asserted by field NAME.
+ *
+ * These exist because the adapter shipped with three of four field names wrong
+ * — `title`/`rows`/`publishedAt` instead of `keywords`/`limit`/`datePosted`.
+ * Apify ignores unknown input keys silently, so there was no error to catch:
+ * the run simply used defaults, and `limitPerLocation` was inert while the
+ * actor billed per result. Only an assertion on the exact names catches that.
+ *
+ * Verified 2026-09-05 against build `default` of actor RIGGeqD6RqKmlVoQU.
+ */
+describe("buildInput — the actor's schema", () => {
+  const base = { keywords: ["Product Manager"], locations: ["London"], limit: 30 };
+
+  it("uses the field names the actor actually declares", () => {
+    const input = buildInput({ ...base, postedWithinDays: 1 }) as Record<string, unknown>;
+
+    expect(input).toMatchObject({
+      keywords: "Product Manager",
+      location: "London",
+      datePosted: "r86400",
+      limit: 30,
+    });
+
+    // The names that were silently ignored must never come back.
+    expect(input).not.toHaveProperty("title");
+    expect(input).not.toHaveProperty("rows");
+    expect(input).not.toHaveProperty("publishedAt");
+  });
+
+  it("honours the result limit — this is a cost control, not a hint", () => {
+    expect(buildInput({ ...base, limit: 5 })).toMatchObject({ limit: 5 });
+    // The actor caps at 1000; asking for more is silently truncated by it.
+    expect(buildInput({ ...base, limit: 99999 })).toMatchObject({
+      limit: ACTOR_MAX_LIMIT,
+    });
+    // Zero would fetch nothing and look like a broken source.
+    expect(buildInput({ ...base, limit: 0 })).toMatchObject({ limit: 1 });
+  });
+
+  it("maps the recency window onto LinkedIn's enum tokens", () => {
+    const at = (days?: number) =>
+      (buildInput({ ...base, postedWithinDays: days }) as { datePosted: string })
+        .datePosted;
+
+    expect(at(1)).toBe("r86400");
+    expect(at(7)).toBe("r604800");
+    expect(at(30)).toBe("r2592000");
+    // Outside the enum: no filter beats a rejected run.
+    expect(at(90)).toBe("");
+    expect(at(undefined)).toBe("");
+  });
+
+  it("post-filters on title instead of OR-ing everything into one search", () => {
+    const input = buildInput({
+      ...base,
+      keywords: ["Product Manager", "Product Owner"],
+    }) as Record<string, unknown>;
+
+    expect(input.keywords).toBe("Product Manager");
+    expect(input.titleInclude).toEqual(["Product Manager", "Product Owner"]);
+  });
+
+  it("omits optional filters rather than sending empty arrays", () => {
+    const input = buildInput(base) as Record<string, unknown>;
+    expect(input).not.toHaveProperty("titleExclude");
+    expect(input).not.toHaveProperty("skipJobId");
+  });
+
+  it("passes skipJobIds through, so known jobs are never paid for twice", () => {
+    const input = buildInput({ ...base, skipJobIds: ["42", "43"] });
+    expect(input).toMatchObject({ skipJobId: ["42", "43"] });
+  });
+});
+
+/** JSV2S1144 — the cost model, read from the actor on 2026-09-05. */
+describe("Apify cost estimate", () => {
+  it("charges per result and per run start", () => {
+    // One run of 30 results: $0.001 start + 30 x $0.0004.
+    expect(estimateFetchCostUsd(30)).toBeCloseTo(0.001 + 0.012, 6);
+  });
+
+  it("costs something even when a run returns nothing", () => {
+    // "Fetched and found no new jobs" is not free — the start event still bills.
+    expect(estimateFetchCostUsd(0)).toBeCloseTo(APIFY_PRICING.perRunStartUsd, 6);
+  });
+
+  it("prices the proposed nightly plan", () => {
+    // 11 locations x 30 results is the config/pipeline.ts proposal.
+    const nightly = estimateFetchCostUsd(30, 11);
+    expect(nightly).toBeCloseTo(0.011 + 0.132, 6);
+    // Comfortably under a pound a night; roughly $4.30 a month at 30 nights.
+    expect(nightly * 30).toBeLessThan(5);
+  });
+
+  it("shows what the limit bug would have cost — the actor defaults to 100", () => {
+    const budgeted = estimateFetchCostUsd(30, 11);
+    const actual = estimateFetchCostUsd(100, 11);
+    expect(actual).toBeGreaterThan(budgeted * 3);
   });
 });
