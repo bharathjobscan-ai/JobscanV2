@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 
 import { detectFormat, parseUploadFile, UploadError } from "@/features/ingestion/parsers";
-import { MAX_UPLOAD_ROWS } from "@/features/ingestion/schema";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_ROWS } from "@/features/ingestion/schema";
 
 const CSV = `title,company,source,job_url
 Senior Product Manager,Example Ltd,linkedin,https://example.com/1
@@ -134,7 +134,12 @@ describe("guardrails", () => {
   });
 
   it("refuses a file over the size limit", async () => {
-    const big = Buffer.alloc(6 * 1024 * 1024, "a");
-    await expect(parseUploadFile(big, "jobs.csv")).rejects.toThrow(/limit is 5/);
+    const big = Buffer.alloc(MAX_UPLOAD_BYTES + 1, "a");
+    // Asserted against the constant, not a literal. This test hard-coded "5"
+    // and went red when commit 2a0f481 aligned the limit to Vercel's 4.5 MB
+    // request cap — the code was right and the test was stale.
+    await expect(parseUploadFile(big, "jobs.csv")).rejects.toThrow(
+      new RegExp(`limit is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB`),
+    );
   });
 });
