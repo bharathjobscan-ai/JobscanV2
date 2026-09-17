@@ -1,8 +1,18 @@
-import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { applications, rawJobs } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
-import type { PrequalDecision } from "@/lib/config/constants";
+import type {
+  PrequalDecision,
+  PrequalFilter,
+  PrequalWindow,
+} from "@/lib/config/constants";
+
+export {
+  PREQUAL_WINDOWS,
+  PREQUAL_WINDOW_LABELS,
+  type PrequalWindow,
+} from "@/lib/config/constants";
 import { db } from "@/lib/db/client";
 import type { PreQualificationResult } from "./types";
 
@@ -86,16 +96,107 @@ function viewFilter(view: ReviewView) {
   }
 }
 
-export async function listForReview(view: ReviewView = "review"): Promise<ReviewItem[]> {
+/**
+ * Two-dimensional filtering of the queue (JSV2S1153).
+ *
+ * "Everything rejected last week on experience" and "everything held for review
+ * yesterday on domain" are the questions that make the gate tunable. Without
+ * them a verdict is only auditable one job at a time, which does not scale past
+ * the first hundred.
+ *
+ * `factor` filters on `decidedBy` — the filter that actually DROVE the outcome —
+ * not merely on a filter that happened to fail. A job rejected on domain that
+ * also tripped the experience rule belongs under domain, or the counts
+ * double-count and tuning chases the wrong rule.
+ */
+/** Start of day, local — the user thinks in their own days, not in UTC. */
+function startOfDay(offsetDays = 0): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - offsetDays);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function windowFilter(window: PrequalWindow) {
+  switch (window) {
+    case "all":
+      return undefined;
+    case "today":
+      return gte(rawJobs.prequalifiedAt, startOfDay());
+    case "yesterday":
+      // Bounded on BOTH sides: "yesterday" must not silently mean "since
+      // yesterday", which is the commonest way a date filter lies.
+      return and(
+        gte(rawJobs.prequalifiedAt, startOfDay(1)),
+        lt(rawJobs.prequalifiedAt, startOfDay()),
+      );
+    case "week":
+      return gte(rawJobs.prequalifiedAt, startOfDay(7));
+    case "month":
+      return gte(rawJobs.prequalifiedAt, startOfDay(30));
+  }
+}
+
+export type ReviewFilters = {
+  view?: ReviewView;
+  /** `decidedBy` values to keep. Empty means every factor. */
+  factors?: PrequalFilter[];
+  window?: PrequalWindow;
+};
+
+function factorFilter(factors: PrequalFilter[] | undefined) {
+  if (!factors?.length) return undefined;
+  // decidedBy lives inside the jsonb detail, so this reads it out rather than
+  // recomputing the verdict — the stored verdict is the one being audited.
+  return inArray(
+    sql`${rawJobs.prequalificationDetail}->>'decidedBy'`,
+    factors,
+  );
+}
+
+export async function listForReview(
+  filters: ReviewView | ReviewFilters = "review",
+): Promise<ReviewItem[]> {
+  const f: ReviewFilters = typeof filters === "string" ? { view: filters } : filters;
+
   const rows = await db
     .select({ job: rawJobs, applicationId: applications.id })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
-    .where(and(viewFilter(view), isNull(applications.id)))
+    .where(
+      and(
+        viewFilter(f.view ?? "review"),
+        isNull(applications.id),
+        factorFilter(f.factors),
+        windowFilter(f.window ?? "all"),
+      ),
+    )
     .orderBy(desc(rawJobs.prequalifiedAt))
     .limit(200);
 
   return rows.map(toItem);
+}
+
+/**
+ * How many jobs each factor is responsible for, within the current view and
+ * window. Drives the counts beside each filter chip, so an empty facet is
+ * visibly empty rather than a dead end.
+ */
+export async function countByFactor(
+  view: ReviewView = "review",
+  window: PrequalWindow = "all",
+): Promise<Record<string, number>> {
+  const rows = await db
+    .select({
+      factor: sql<string>`coalesce(${rawJobs.prequalificationDetail}->>'decidedBy', 'none')`,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(rawJobs)
+    .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
+    .where(and(viewFilter(view), isNull(applications.id), windowFilter(window)))
+    .groupBy(sql`coalesce(${rawJobs.prequalificationDetail}->>'decidedBy', 'none')`);
+
+  return Object.fromEntries(rows.map((r) => [r.factor, r.n]));
 }
 
 export async function countForReview(): Promise<Record<ReviewView, number>> {

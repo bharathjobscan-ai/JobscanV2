@@ -280,6 +280,24 @@ export type FilterStatus = (typeof FILTER_STATUSES)[number];
 export const PREQUAL_FILTERS = ["role", "domain", "experience", "location"] as const;
 export type PrequalFilter = (typeof PREQUAL_FILTERS)[number];
 
+/**
+ * Time windows for filtering the pre-qualification queue (JSV2S1153).
+ *
+ * Here rather than in `queries.ts` because that module opens a database
+ * connection at import, and the unit suite must run without one. Vocabulary is
+ * vocabulary; the SQL that applies it stays in the query layer.
+ */
+export const PREQUAL_WINDOWS = ["all", "today", "yesterday", "week", "month"] as const;
+export type PrequalWindow = (typeof PREQUAL_WINDOWS)[number];
+
+export const PREQUAL_WINDOW_LABELS: Record<PrequalWindow, string> = {
+  all: "Any time",
+  today: "Today",
+  yesterday: "Yesterday",
+  week: "Last 7 days",
+  month: "Last 30 days",
+};
+
 export const PREQUAL_FILTER_LABELS: Record<PrequalFilter, string> = {
   role: "Role",
   domain: "Domain",

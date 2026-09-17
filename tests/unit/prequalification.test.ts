@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  PREQUAL_FILTERS,
+  PREQUAL_FILTER_LABELS,
+  PREQUAL_WINDOWS,
+  PREQUAL_WINDOW_LABELS,
+} from "@/lib/config/constants";
+
 import { prequalify } from "@/features/prequalification/engine";
 import { evaluateDomain } from "@/features/prequalification/domain";
 import { evaluateExperience, extractExperience } from "@/features/prequalification/experience";
@@ -207,11 +214,42 @@ describe("experience filter", () => {
     expect(result.rule).toBe("NOT_STATED");
   });
 
-  /** The over-qualification hole: acceptable_min was declared and never used. */
-  it("fails a role pitched below the seniority floor", () => {
-    const result = evaluateExperience("2+ years of experience in product");
+  /**
+   * Corrected 2026-09-17. This asserted that "2+ years" FAILS, which encoded
+   * the bug: an open-ended minimum is a floor the candidate clears, not a
+   * ceiling. It cost four real jobs — a Wise Senior PM role in London and two
+   * Ebury payment-screening roles among them.
+   */
+  it("passes an open-ended minimum the candidate clears", () => {
+    for (const phrase of ["2+ years", "4+ years", "at least 2 years"]) {
+      const result = evaluateExperience(`${phrase} of experience in product`);
+      expect(result.status, phrase).toBe("pass");
+      expect(result.rule, phrase).toBe("WITHIN_RANGE");
+    }
+  });
+
+  /** A CLOSED range topping out below the floor is genuinely junior. */
+  it("fails a closed range that tops out below the floor", () => {
+    const result = evaluateExperience("2-4 years of experience in product");
     expect(result.status).toBe("fail");
     expect(result.rule).toBe("BELOW_FLOOR");
+  });
+
+  /**
+   * A senior title outranks the stated years (owner's decision, 2026-09-17):
+   * "Senior Product Manager, 2-4 years" is contradictory, not junior. Relaxed
+   * to review rather than pass — relaxed, not blind.
+   */
+  it("routes a junior range under a senior title to review, not reject", () => {
+    const result = evaluateExperience("2-4 years of experience", true);
+    expect(result.status).toBe("unknown");
+    expect(result.rule).toBe("BELOW_FLOOR");
+    expect(result.reason).toMatch(/title reads as senior/i);
+  });
+
+  it("still fails an out-of-reach requirement whatever the title says", () => {
+    // The relaxation must not become a blanket exemption.
+    expect(evaluateExperience("15+ years of experience", true).status).toBe("fail");
   });
 
   it("parses en-dash ranges, which is what LinkedIn emits", () => {
@@ -390,5 +428,47 @@ describe("prequalify", () => {
     );
     expect(result.decision).toBe("pass");
     expect(result.location.preferredCity).toBe("London");
+  });
+});
+
+/**
+ * JSV2S1153 — the two-dimensional filter's pure half.
+ *
+ * The window boundaries are what make a date filter honest: "yesterday" must be
+ * bounded on BOTH sides, or it silently means "since yesterday", which is the
+ * commonest way this kind of filter lies.
+ */
+describe("prequalification filter vocabulary", () => {
+  it("offers a window for each question the owner asked", () => {
+    // "last week ... because of experience" and "yesterday ... because of domain"
+    expect(PREQUAL_WINDOWS).toContain("week");
+    expect(PREQUAL_WINDOWS).toContain("yesterday");
+    expect(PREQUAL_WINDOWS[0]).toBe("all");
+  });
+
+  it("labels every window and every factor", () => {
+    for (const w of PREQUAL_WINDOWS) {
+      expect(PREQUAL_WINDOW_LABELS[w]?.length ?? 0).toBeGreaterThan(2);
+    }
+    for (const f of PREQUAL_FILTERS) {
+      expect(PREQUAL_FILTER_LABELS[f]?.length ?? 0).toBeGreaterThan(2);
+    }
+  });
+
+  it("filters on the factor that DECIDED the verdict", () => {
+    // Axon failed both domain and experience, but domain decided it. Counting
+    // it under experience too would double-count and send tuning after the
+    // wrong rule.
+    const axon = prequalify({
+      title: "Senior Product Manager",
+      company: "Axon",
+      location: "Greater London, England, United Kingdom",
+      country: "United Kingdom",
+      description:
+        "We build technology for first responders and law enforcement. " +
+        "Real-time operations, alerts and presence. 3+ years of experience.",
+    });
+    expect(axon.decision).toBe("reject");
+    expect(axon.decidedBy).toBe("domain");
   });
 });

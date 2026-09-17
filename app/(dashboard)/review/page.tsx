@@ -8,12 +8,17 @@ import {
 import { Badge, Button, Card, CardHeader, EmptyState, buttonClass } from "@/components/ui/base";
 import { promoteAction, rejectAction, requalifyAction } from "@/features/prequalification/actions";
 import {
+  countByFactor,
   countForReview,
   listForReview,
+  PREQUAL_WINDOWS,
   REVIEW_VIEWS,
   REVIEW_VIEW_LABELS,
+  type PrequalWindow,
   type ReviewView,
 } from "@/features/prequalification/queries";
+import { PrequalFilters } from "@/components/applications/prequal-filters";
+import { PREQUAL_FILTERS, type PrequalFilter } from "@/lib/config/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -27,14 +32,27 @@ export const dynamic = "force-dynamic";
 export default async function ReviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; factor?: string; window?: string }>;
 }) {
-  const { view: raw } = await searchParams;
+  const { view: raw, factor: rawFactor, window: rawWindow } = await searchParams;
   const view: ReviewView = REVIEW_VIEWS.includes(raw as ReviewView)
     ? (raw as ReviewView)
     : "review";
 
-  const [items, counts] = await Promise.all([listForReview(view), countForReview()]);
+  // JSV2S1153 — the second and third dimensions. Unknown values are dropped
+  // rather than erroring: a hand-edited URL should degrade to "no filter".
+  const factors = (rawFactor?.split(",") ?? []).filter((f): f is PrequalFilter =>
+    PREQUAL_FILTERS.includes(f as PrequalFilter),
+  );
+  const window: PrequalWindow = PREQUAL_WINDOWS.includes(rawWindow as PrequalWindow)
+    ? (rawWindow as PrequalWindow)
+    : "all";
+
+  const [items, counts, byFactor] = await Promise.all([
+    listForReview({ view, factors, window }),
+    countForReview(),
+    countByFactor(view, window),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -72,20 +90,32 @@ export default async function ReviewPage({
         ))}
       </nav>
 
+      <PrequalFilters
+        view={view}
+        factors={factors}
+        window={window}
+        byFactor={byFactor}
+      />
+
       {items.length === 0 ? (
         <Card>
           <EmptyState
             title={
-              view === "review"
-                ? "Nothing waiting on you"
-                : view === "rejected"
-                  ? "Nothing has been screened out"
-                  : "Every verdict is current"
+              factors.length > 0 || window !== "all"
+                ? "Nothing matches these filters"
+                : view === "review"
+                  ? "Nothing waiting on you"
+                  : view === "rejected"
+                    ? "Nothing has been screened out"
+                    : "Every verdict is current"
             }
             hint={
-              view === "stale"
-                ? "When you change the role, domain or location config, jobs judged under the old rules appear here."
-                : "Jobs that pass all four filters go straight to Applications."
+              // A filtered empty result must not read as "the queue is clear".
+              factors.length > 0 || window !== "all"
+                ? "Widen the reason or the time window to see more."
+                : view === "stale"
+                  ? "When you change the role, domain or location config, jobs judged under the old rules appear here."
+                  : "Jobs that pass all four filters go straight to Applications."
             }
           />
         </Card>
