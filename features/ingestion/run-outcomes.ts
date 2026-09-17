@@ -59,14 +59,30 @@ export type RunOutcome = {
   binned: number;
 };
 
-export async function getRunOutcomes(limit = 25): Promise<RunOutcome[]> {
+export type RunOutcomes = {
+  runs: RunOutcome[];
+  /**
+   * Jobs with no run attribution — everything ingested before runs existed.
+   *
+   * Returned alongside the runs rather than fetched separately: the connection
+   * pool holds three, and /pipeline was firing four queries in parallel. With
+   * no pool-acquire timeout in postgres.js the fourth waits indefinitely, which
+   * is the exact hang the pool comment warns about. Two counts that both read
+   * raw_jobs belong in one round trip anyway.
+   */
+  unattributed: number;
+};
+
+export async function getRunOutcomes(limit = 25): Promise<RunOutcomes> {
   const runs = await db
     .select()
     .from(ingestionRuns)
     .orderBy(desc(ingestionRuns.startedAt))
     .limit(limit);
 
-  if (runs.length === 0) return [];
+  if (runs.length === 0) {
+    return { runs: [], unattributed: await countUnattributed() };
+  }
 
   /**
    * One grouped query for every run, rather than one query per run.
@@ -110,7 +126,7 @@ export async function getRunOutcomes(limit = 25): Promise<RunOutcome[]> {
 
   const byRun = new Map(counts.map((c) => [c.runId, c]));
 
-  return runs.map((run) => {
+  const outcomes = runs.map((run) => {
     const c = byRun.get(run.id);
     return {
       runId: run.id,
@@ -136,6 +152,8 @@ export async function getRunOutcomes(limit = 25): Promise<RunOutcome[]> {
         run.fetched === (c?.landed ?? 0) + run.duplicates + run.rejected,
     };
   });
+
+  return { runs: outcomes, unattributed: await countUnattributed() };
 }
 
 /**
@@ -145,7 +163,7 @@ export async function getRunOutcomes(limit = 25): Promise<RunOutcome[]> {
  * the corpus would be worse than no table, because the totals would not
  * reconcile with the queue counts and nothing would say why.
  */
-export async function countUnattributedJobs(): Promise<number> {
+async function countUnattributed(): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(rawJobs)

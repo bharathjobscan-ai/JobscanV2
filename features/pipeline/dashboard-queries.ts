@@ -16,6 +16,13 @@ import type { IngestionRunStatus, PrequalDecision } from "@/lib/config/constants
 export type PileCounts = Record<PrequalDecision | "unevaluated", number>;
 
 export type PipelineSummary = PileCounts & {
+  /**
+   * Soft-deleted jobs, excluded from every pile above (JSV2S1157).
+   *
+   * Reported rather than dropped so the numbers still account for every job:
+   * pass + review + reject + unevaluated + binned is the whole corpus.
+   */
+  binned: number;
   withApplication: number;
   /** Qualified but unscored — what the next run will do. */
   awaitingScore: number;
@@ -32,18 +39,33 @@ export type PipelineSummary = PileCounts & {
  * under navigation. Counting is cheap; connecting is not.
  */
 export async function getPipelineSummary(): Promise<PipelineSummary> {
+  /**
+   * Binned jobs are excluded from every pile (JSV2S1157).
+   *
+   * They were not, until 2026-09-17, and the tiles then disagreed with the
+   * queues they link to: the pipeline counted 69 screened out while /review
+   * showed 68, because the one binned job is a reject and only the review
+   * queries knew about the Bin. A tile whose number does not match the page it
+   * opens is worse than no tile.
+   *
+   * `binned` is reported separately so the jobs are still accounted for rather
+   * than silently vanishing from the totals.
+   */
+  const live = sql`${rawJobs.binnedAt} is null`;
+
   const [row] = await db
     .select({
-      pass: sql<number>`count(*) filter (where ${rawJobs.prequalification} = 'pass')::int`,
-      review: sql<number>`count(*) filter (where ${rawJobs.prequalification} = 'review')::int`,
-      reject: sql<number>`count(*) filter (where ${rawJobs.prequalification} = 'reject')::int`,
-      unevaluated: sql<number>`count(*) filter (where ${rawJobs.prequalification} is null)::int`,
+      pass: sql<number>`count(*) filter (where ${live} and ${rawJobs.prequalification} = 'pass')::int`,
+      review: sql<number>`count(*) filter (where ${live} and ${rawJobs.prequalification} = 'review')::int`,
+      reject: sql<number>`count(*) filter (where ${live} and ${rawJobs.prequalification} = 'reject')::int`,
+      unevaluated: sql<number>`count(*) filter (where ${live} and ${rawJobs.prequalification} is null)::int`,
+      binned: sql<number>`count(*) filter (where ${rawJobs.binnedAt} is not null)::int`,
       withApplication: sql<number>`count(${applications.id})::int`,
       awaitingScore: sql<number>`count(*) filter (
-        where ${rawJobs.prequalification} = 'pass' and ${applications.jobScore} is null
+        where ${live} and ${rawJobs.prequalification} = 'pass' and ${applications.jobScore} is null
       )::int`,
       orphanedPasses: sql<number>`count(*) filter (
-        where ${rawJobs.prequalification} = 'pass' and ${applications.id} is null
+        where ${live} and ${rawJobs.prequalification} = 'pass' and ${applications.id} is null
       )::int`,
     })
     .from(rawJobs)
@@ -54,6 +76,7 @@ export async function getPipelineSummary(): Promise<PipelineSummary> {
     review: row?.review ?? 0,
     reject: row?.reject ?? 0,
     unevaluated: row?.unevaluated ?? 0,
+    binned: row?.binned ?? 0,
     withApplication: row?.withApplication ?? 0,
     awaitingScore: row?.awaitingScore ?? 0,
     orphanedPasses: row?.orphanedPasses ?? 0,

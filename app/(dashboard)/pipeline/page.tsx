@@ -3,10 +3,7 @@ import Link from "next/link";
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui/base";
 import { getBudgetStatus } from "@/features/ai/budget-queries";
 import { getPipelineSummary } from "@/features/pipeline/dashboard-queries";
-import {
-  countUnattributedJobs,
-  getRunOutcomes,
-} from "@/features/ingestion/run-outcomes";
+import { getRunOutcomes } from "@/features/ingestion/run-outcomes";
 import { INGESTION_RUN_LABELS, type IngestionRunStatus } from "@/lib/config/constants";
 import { formatUsd } from "@/lib/ai/pricing";
 
@@ -78,12 +75,17 @@ function Pile({
 export default async function PipelinePage() {
   // Three round trips, not seven. On a one-connection serverless pool each
   // query is sequential, so fan-out is latency and connection pressure.
-  const [piles, outcomes, unattributed, budget] = await Promise.all([
+  /**
+   * THREE queries, not four. The pool holds three connections and postgres.js
+   * has no pool-acquire timeout, so a fourth parallel query waits indefinitely
+   * and starves every other request on the instance — see lib/db/client.ts.
+   */
+  const [piles, runOutcomes, budget] = await Promise.all([
     getPipelineSummary(),
     getRunOutcomes(20),
-    countUnattributedJobs(),
     getBudgetStatus(),
   ]);
+  const { runs: outcomes, unattributed } = runOutcomes;
   const awaiting = piles.awaitingScore;
   const orphaned = piles.orphanedPasses;
 

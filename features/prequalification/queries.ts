@@ -38,6 +38,8 @@ export type ReviewItem = {
   applicationId: string | null;
   /** True when the verdict predates the current config and may be stale. */
   stale: boolean;
+  /** Which ingestion run brought this job in (JSV2S1158). */
+  ingestionRunId: string | null;
 };
 
 function toItem(row: {
@@ -61,6 +63,7 @@ function toItem(row: {
     stale:
       row.job.prequalificationVersion !== null &&
       row.job.prequalificationVersion !== CONFIG_VERSION,
+    ingestionRunId: row.job.ingestionRunId,
   };
 }
 

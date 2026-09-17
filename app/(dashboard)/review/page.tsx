@@ -12,7 +12,7 @@ import {
   rejectAction,
   requalifyAction,
 } from "@/features/prequalification/actions";
-import { BinSelection } from "@/components/applications/bin-selection";
+import { BinSelection, BIN_FORM_ID } from "@/components/applications/bin-selection";
 import {
   getFacets,
   countForReview,
@@ -148,9 +148,13 @@ export default async function ReviewPage({
                       <span className="flex items-center gap-2.5">
                         {/* Name and value are what the bulk action reads; one
                             ticked box and fifty use the same code path. */}
+                        {/* Joins the bulk form by id, not by nesting: this row
+                            already contains promote and reject forms, and a
+                            nested <form> is dropped by the browser. */}
                         <input
                           type="checkbox"
                           name="jobId"
+                          form={BIN_FORM_ID}
                           value={item.id}
                           aria-label={`Select ${item.title}`}
                           className="size-3.5 shrink-0"
@@ -181,6 +185,33 @@ export default async function ReviewPage({
 
                   <div className="space-y-2 px-4 py-3 text-xs">
                     <p className="text-muted">{d?.reason ?? "No recorded reason."}</p>
+
+                    {/* JSV2S1158 — when it was judged, and which fetch brought
+                        it in. Without the run id a job in the queue cannot be
+                        traced back to the batch it arrived with. */}
+                    <p className="text-subtle">
+                      Judged{" "}
+                      {item.prequalifiedAt
+                        ? item.prequalifiedAt.toLocaleString(undefined, {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "—"}
+                      {item.ingestionRunId ? (
+                        <>
+                          {" · run "}
+                          <span
+                            className="font-mono text-[10.5px] text-faint"
+                            title={item.ingestionRunId}
+                          >
+                            {item.ingestionRunId.slice(0, 8)}
+                          </span>
+                        </>
+                      ) : null}
+                    </p>
 
                     {d ? (
                       <FilterStatusRow

@@ -33,10 +33,22 @@ function connect() {
      * false, and a pool of one makes things *worse*: concurrent requests queue
      * behind a single connection, and postgres.js has no pool-acquire timeout,
      * so one slow query blocks every other request on that instance
-     * indefinitely. Three is enough for real concurrency and still an order of
-     * magnitude below the free-tier ceiling.
+     * indefinitely.
+     *
+     * Raised 3 -> 12 on 2026-09-17, because 3 was still too few for the same
+     * reason, one step up. Pages issue their queries in `Promise.all` — the
+     * pipeline page alone fires three — so a SINGLE request could consume the
+     * entire pool, and a second overlapping request (a hot reload, a prefetch,
+     * two tabs) queued behind it with no acquire timeout and never recovered.
+     * The database was answering in 30ms throughout; the contention was
+     * entirely ours.
+     *
+     * The rule this settles on: the pool must be larger than the widest
+     * `Promise.all` in any page, multiplied by the concurrency that page can
+     * see. Twelve is comfortably that, and still well under the free tier's
+     * pooler ceiling.
      */
-    max: 3,
+    max: 12,
 
     /**
      * The important one. Everything else is tuning; this is what stops a hang.
