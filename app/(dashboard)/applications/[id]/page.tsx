@@ -427,6 +427,27 @@ export default async function ApplicationDetailPage({
                   <dd>{job.inboundSourceDetail}</dd>
                 </>
               ) : null}
+
+              {/* JSV2S1158 — which fetch brought this job in, and when it was
+                  judged. The run id is what ties one application back to the
+                  batch it arrived with on the pipeline screen. */}
+              <dt className="text-subtle">Ingested</dt>
+              <dd>
+                {job.prequalifiedAt
+                  ? formatDateTime(job.prequalifiedAt)
+                  : job.firstSeenAt
+                    ? formatDateTime(job.firstSeenAt)
+                    : "—"}
+              </dd>
+
+              {job.ingestionRunId ? (
+                <>
+                  <dt className="text-subtle">Run</dt>
+                  <dd className="font-mono text-[11px]" title={job.ingestionRunId}>
+                    {job.ingestionRunId}
+                  </dd>
+                </>
+              ) : null}
             </dl>
             {/* JSV2S1152 — the posting as ingested, with the gate's matched
                 domain terms highlighted, so its verdict can be audited against

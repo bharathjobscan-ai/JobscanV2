@@ -141,6 +141,25 @@ export default async function ApplicationsPage({
                       {" · "}
                       <span className="text-subtle">{item.source}</span>
                     </p>
+                    {/* JSV2S1158 — when the job arrived and which fetch brought
+                        it, so an application traces back to its batch. */}
+                    <p className="mt-0.5 truncate text-[11px] text-subtle">
+                      {item.ingestedAt
+                        ? item.ingestedAt.toLocaleDateString(undefined, {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })
+                        : "—"}
+                      {item.ingestionRunId ? (
+                        <>
+                          {" · run "}
+                          <span className="font-mono text-faint" title={item.ingestionRunId}>
+                            {item.ingestionRunId.slice(0, 8)}
+                          </span>
+                        </>
+                      ) : null}
+                    </p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5">

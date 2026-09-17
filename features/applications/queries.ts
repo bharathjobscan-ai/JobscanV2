@@ -128,6 +128,14 @@ export type ApplicationListItem = {
   isIncomplete: boolean;
   hasResume: boolean;
   nextAction: string;
+  /** JSV2S1158 — the ingestion run this job arrived in, if it has one. */
+  ingestionRunId: string | null;
+  /**
+   * When the job entered the system. `prequalifiedAt` where the gate has run,
+   * otherwise `firstSeenAt` — a manually uploaded job predating the gate still
+   * has an arrival date worth showing.
+   */
+  ingestedAt: Date | null;
 };
 
 /**
@@ -176,6 +184,11 @@ export async function listApplications(
       prequalificationDetail: rawJobs.prequalificationDetail,
       jobUrl: rawJobs.jobUrl,
       description: rawJobs.description,
+      // JSV2S1158 — which fetch brought this job in, and when it was judged.
+      // Without these an application cannot be traced back to its batch.
+      ingestionRunId: rawJobs.ingestionRunId,
+      prequalifiedAt: rawJobs.prequalifiedAt,
+      firstSeenAt: rawJobs.firstSeenAt,
       isPending: pendingPredicate(),
       hasResume,
     })
@@ -208,6 +221,10 @@ export async function listApplications(
       lastActivityAt: row.lastActivityAt,
       isIncomplete: incomplete,
       hasResume: Boolean(row.hasResume),
+      ingestionRunId: row.ingestionRunId,
+      // Prefer the gate's timestamp; fall back to first sighting for jobs that
+      // predate pre-qualification.
+      ingestedAt: row.prequalifiedAt ?? row.firstSeenAt,
       nextAction: nextAction({
         status: row.status,
         referralStatus: row.referralStatus,
