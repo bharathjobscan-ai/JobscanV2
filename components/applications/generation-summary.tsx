@@ -64,6 +64,11 @@ export function GenerationSummary({ summary }: { summary: Summary }) {
       ? "warning"
       : "positive";
 
+  const gaps = summary.gaps ?? [];
+  // Renamed from `gapBridging` on 2026-09-05 (JSV2S1063). The fallback keeps
+  // documents generated before the rename rendering.
+  const prep = summary.interviewPrep ?? summary.gapBridging ?? [];
+
   return (
     <div className="flex flex-col gap-3 p-4">
       <dl className="flex flex-wrap gap-x-8 gap-y-3">
@@ -131,47 +136,61 @@ export function GenerationSummary({ summary }: { summary: Summary }) {
         </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        {summary.gaps?.length ? (
-          <div>
-            <h4 className="mb-1 text-xs font-semibold text-negative">Gaps</h4>
-            <ul className="flex flex-col gap-1 text-xs">
-              {summary.gaps.map((gap, i) => (
-                <li
-                  key={i}
-                  className="relative pl-4 before:absolute before:left-0 before:top-[0.5em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-negative"
-                >
-                  {gap}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+      {/*
+        Gaps and interview preparation are read once and then in the way, so
+        they sit behind a disclosure like the score analysis does — need to
+        know, not always on screen.
 
-        {summary.gapBridging?.length ? (
-          <div>
-            <h4 className="mb-1 text-xs font-semibold text-info">
-              Prepare before interview
-            </h4>
-            <ul className="flex flex-col gap-1 text-xs">
-              {summary.gapBridging.map((item, i) => (
-                <li
-                  key={i}
-                  className="relative pl-4 before:absolute before:left-0 before:top-[0.5em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-info"
-                >
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </div>
+        `interviewPrep` with a `gapBridging` fallback: the field was renamed on
+        2026-09-05 (JSV2S1063) and documents generated before that still carry
+        the old name. Reading only the new one silently emptied this section.
+      */}
+      {gaps.length > 0 || prep.length > 0 ? (
+        <details className="border-t border-line pt-2.5">
+          <summary className="cursor-pointer text-xs font-medium text-muted hover:text-foreground">
+            Gaps &amp; interview preparation
+            <span className="ml-1.5 text-subtle">
+              ({gaps.length} gap{gaps.length === 1 ? "" : "s"}
+              {prep.length > 0 ? ` · ${prep.length} to prepare` : ""})
+            </span>
+          </summary>
 
-      {summary.emailSubject ? (
-        <div className="border-t border-line pt-2.5 text-xs">
-          <span className="text-subtle">Suggested email subject: </span>
-          <span className="font-medium">{summary.emailSubject}</span>
-        </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {gaps.length > 0 ? (
+              <div>
+                <h4 className="mb-1 text-xs font-semibold text-negative">Gaps</h4>
+                <ul className="flex flex-col gap-1 text-xs">
+                  {gaps.map((gap, i) => (
+                    <li
+                      key={i}
+                      className="relative pl-4 before:absolute before:left-0 before:top-[0.5em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-negative"
+                    >
+                      {gap}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {prep.length > 0 ? (
+              <div>
+                <h4 className="mb-1 text-xs font-semibold text-info">
+                  Prepare before interview
+                </h4>
+                <ul className="flex flex-col gap-1 text-xs">
+                  {prep.map((item, i) => (
+                    <li
+                      key={i}
+                      className="relative pl-4 before:absolute before:left-0 before:top-[0.5em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-info"
+                    >
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </details>
       ) : null}
     </div>
   );

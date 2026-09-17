@@ -8,6 +8,23 @@ import type { FetchParams } from "@/features/ingestion/sources/types";
  */
 
 /**
+ * Master switch for unattended AI spend — PAUSED 2026-09-05 by the owner.
+ *
+ * "Till the data is all uploaded, cleaned and MVP2 is live, no need of
+ * automated AI usage. Only I will initiate a call every time I need, through a
+ * button click on the dashboard."
+ *
+ * While this is `false` the scheduled scoring pass selects nothing and spends
+ * nothing. Ingestion still runs — fetching and pre-qualifying are deterministic
+ * and free, and the point of the pause is to stop paying for AI on data that is
+ * still being cleaned, not to stop collecting jobs.
+ *
+ * Everything reachable from a button in the workspace is unaffected. This gates
+ * the cron, not the user.
+ */
+export const AUTOMATED_SCORING_ENABLED = false;
+
+/**
  * Spend ceiling for the automated run (JSV2S1137, decided 2026-09-04).
  *
  * Checked before each scoring call against measured cost in `ai_jobs.usage`.

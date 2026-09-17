@@ -1,6 +1,6 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
 
-import { MAX_SCORES_PER_RUN } from "@/config/pipeline";
+import { AUTOMATED_SCORING_ENABLED, MAX_SCORES_PER_RUN } from "@/config/pipeline";
 import { applications, rawJobs } from "@/db/schema";
 import { getBudgetStatus } from "@/features/ai/budget-queries";
 import { enqueueTask, TaskBlocked } from "@/features/ai/tasks";
@@ -43,6 +43,8 @@ export type ScoringPassResult = {
   budget: BudgetStatus;
   stoppedEarly: boolean;
   outcomes: ScoringOutcome[];
+  /** Set when the pass did nothing because unattended scoring is switched off. */
+  pausedReason?: string;
 };
 
 export type ScoringPassOptions = {
@@ -83,6 +85,30 @@ export async function runScoringPass(
   options: ScoringPassOptions = {},
 ): Promise<ScoringPassResult> {
   const limit = Math.min(options.limit ?? MAX_SCORES_PER_RUN, MAX_SCORES_PER_RUN);
+
+  /**
+   * Paused by the owner on 2026-09-05 (see `AUTOMATED_SCORING_ENABLED`).
+   *
+   * Checked before `selectEligible` so a paused run does no work at all, and
+   * reported as a real result rather than an empty one — a run that scored
+   * nothing because it was switched off must not look like a run that found
+   * nothing to score.
+   */
+  if (!AUTOMATED_SCORING_ENABLED) {
+    return {
+      eligible: 0,
+      attempted: 0,
+      scored: 0,
+      failed: 0,
+      deferred: 0,
+      budget: await getBudgetStatus(),
+      stoppedEarly: true,
+      outcomes: [],
+      pausedReason:
+        "Automated scoring is paused (config/pipeline.ts). Generation is manual, from the workspace, until MVP2 is live.",
+    };
+  }
+
   const eligible = await selectEligible(limit);
 
   const outcomes: ScoringOutcome[] = [];
