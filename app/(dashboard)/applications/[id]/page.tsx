@@ -24,18 +24,43 @@ import {
   ArtworkCredit,
 } from "@/components/applications/artwork-backdrop";
 import { ScoreLedgerTable } from "@/components/applications/score-ledger";
+import {
+  Basis,
+  FigureRow,
+  OnNeed,
+  ScoreHero,
+  type Figure,
+} from "@/components/applications/score-hero";
 import { Badge, buttonClass, Card, CardHeader, EmptyState } from "@/components/ui/base";
 import { Markdown } from "@/components/ui/markdown";
 import { getApplicationCost } from "@/features/ai/queries";
 import { getGroundingUsage } from "@/features/ai/budget-queries";
 import { getTaskStates, settleAiJobs } from "@/features/ai/tasks";
 import { getApplicationDetail } from "@/features/applications/queries";
-import { DOCUMENT_LABELS, STATUS_LABELS } from "@/lib/config/constants";
+import {
+  DOCUMENT_LABELS,
+  REFERRAL_LABELS,
+  STATUS_LABELS,
+} from "@/lib/config/constants";
 import { pageFit } from "@/lib/documents/parse";
 import { applyAccepted, project } from "@/features/simg/apply";
 import { measureAts } from "@/features/simg/measure";
 import { resolveArtwork } from "@/features/artwork/resolve";
 import { buildLedger } from "@/features/scoring/ledger";
+
+/**
+ * The application workspace, rebuilt to the approved design (JSV2S1139).
+ *
+ * The page answers one question — apply or not — so the score is the single
+ * result at the centre and everything else sits underneath it in the order the
+ * decision is actually made: the number, the figures behind it, the arithmetic
+ * on request, why it reads that way, what has been produced, and what SimG
+ * would change.
+ *
+ * Low-frequency detail — the full analysis, the job facts, attempts, versions,
+ * the timeline — moved behind "on need" disclosures rather than competing for
+ * attention in a sidebar. NOTHING WAS REMOVED; it is one click further away.
+ */
 
 function formatDate(value: Date | string | null): string {
   if (!value) return "—";
@@ -66,14 +91,12 @@ export default async function ApplicationDetailPage({
 
   // Generation settles inline, so this is only a safety net for a run that
   // died between recording and settling. Issued alongside the reads rather
-  // than before them: a sequential wave costs a full round trip, which is
-  // ~220ms with the database on another continent.
+  // than before them: a sequential wave costs a full round trip.
   const [, application, tasks, cost, grounding] = await Promise.all([
     settleAiJobs(id),
     getApplicationDetail(id),
     getTaskStates(id),
     getApplicationCost(id),
-    // Month-wide, not per application: the grounding allowance is shared.
     getGroundingUsage(),
   ]);
 
@@ -81,375 +104,273 @@ export default async function ApplicationDetailPage({
 
   const { job } = application;
   const resume = application.latestDocuments.resume;
+  const coverLetter = application.latestDocuments.cover_letter;
+  const scoreReport = application.latestDocuments.score_report;
 
-  /**
-   * The location's painting (JSV2S1143) and the deduction ledger (JSV2S1140).
-   * Both are pure functions of data already loaded — no extra query, no AI.
-   */
   const artwork = resolveArtwork({ location: job.location, country: job.country });
   const ledger = buildLedger(application.jobScoreAnalysis, application.jobScore);
 
-  /** Terms the pre-qualification gate matched, for the Raw JD view. */
   const matchedDomainTerms =
-    (
-      job.prequalificationDetail as
-        | { domain?: { matchedTerms?: string[] } }
-        | null
-    )?.domain?.matchedTerms ?? [];
+    (job.prequalificationDetail as { domain?: { matchedTerms?: string[] } } | null)?.domain
+      ?.matchedTerms ?? [];
 
-  /**
-   * SimG's worklist for this CV version (JSV2S1058).
-   *
-   * The projection is computed here, on the server, over the *derived* CV — the
-   * generated markdown with accepted edits replayed — so the page-fit warning
-   * reflects the document as it now stands rather than as it was written.
-   */
   const evaluation = resume?.simg ?? null;
   const derivedCv =
     evaluation && resume?.contentMd
       ? applyAccepted(resume.contentMd, evaluation.recommendations)
       : null;
-  const simgProjection =
-    evaluation && derivedCv ? project(evaluation, derivedCv) : null;
-  /**
-   * JSV2S1145 — the third of the score that is measurable rather than
-   * estimated, recomputed on the CV as it now stands. Free: no AI call.
-   */
-  const atsMeasured =
-    evaluation && derivedCv ? measureAts(derivedCv, evaluation) : null;
-  const coverLetter = application.latestDocuments.cover_letter;
-  const scoreReport = application.latestDocuments.score_report;
+  const simgProjection = evaluation && derivedCv ? project(evaluation, derivedCv) : null;
+  const atsMeasured = evaluation && derivedCv ? measureAts(derivedCv, evaluation) : null;
+
   const blockedReason = application.isIncomplete
     ? "Add the job description first"
     : undefined;
-
   const taskFor = (type: string) => tasks.find((t) => t.taskType === type);
 
+  const analysis = application.jobScoreAnalysis;
+
+  /** The four figures: the facts the score rests on, at a glance. */
+  const figures: Figure[] = [
+    {
+      label: "Visa signal",
+      value: application.visaSignal ?? "Not established",
+      hint: analysis?.visaSignals?.length
+        ? `${analysis.visaSignals.length} signal${analysis.visaSignals.length === 1 ? "" : "s"}`
+        : undefined,
+      tone: application.visaSignal ? undefined : "negative",
+    },
+    {
+      label: "Document score",
+      value: simgProjection
+        ? `${simgProjection.baseline} → ${simgProjection.current}`
+        : "—",
+      hint: simgProjection
+        ? `${simgProjection.acceptedCount} edit${simgProjection.acceptedCount === 1 ? "" : "s"} applied`
+        : "No CV generated",
+    },
+    {
+      label: "Referral",
+      value: REFERRAL_LABELS[application.referralStatus],
+      hint: application.referrerName ?? undefined,
+      tone: application.referralStatus === "needed" ? "warning" : undefined,
+    },
+    {
+      label: "Next action",
+      value: application.nextAction,
+      hint: resume ? `Resume v${resume.version} ready` : "Nothing generated",
+    },
+  ];
+
+  const fit = derivedCv ? pageFit(derivedCv) : null;
+
   return (
-    <div className="relative flex flex-col gap-4">
+    <div className="relative">
       <ArtworkBackdrop artwork={artwork} />
-      {/* -- Header: what is it, where is it, what next -------------------- */}
-      <div className="relative z-10">
-        <Link href="/applications" className="text-xs text-muted hover:text-foreground">
-          ← Applications
-        </Link>
-        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-lg font-semibold tracking-tight">{job.title}</h1>
-            <p className="text-sm text-muted">
-              {job.company}
-              {job.location ? ` · ${job.location}` : ""}
-              {job.country ? ` · ${job.country}` : ""}
-            </p>
+
+      {/* Standing bar: status stays in reach whatever is on screen. */}
+      <div className="sticky top-0 z-20 -mx-4 mb-2 border-b border-line bg-background/85 px-4 py-2.5 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/applications"
+            className="shrink-0 text-xs text-muted hover:text-foreground"
+          >
+            ← Applications
+          </Link>
+          <div className="flex min-w-0 flex-1 items-baseline gap-2">
+            <span className="truncate text-sm font-semibold">{job.title}</span>
+            <span className="truncate text-xs text-faint">{job.company}</span>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
             <MatchBadge category={application.matchCategory} />
             <ReferralBadge status={application.referralStatus} />
-            <StatusBadge
-              status={application.status}
-              isPending={application.isPending}
-            />
+            <StatusBadge status={application.status} isPending={application.isPending} />
           </div>
         </div>
-        <p className="mt-2 text-xs">
-          <span className="text-subtle">Next: </span>
-          <span className="font-medium">{application.nextAction}</span>
-        </p>
       </div>
 
-      {tasks.length > 0 ? (
-        <div className="flex flex-wrap gap-2 rounded-lg border border-line bg-surface-muted px-4 py-2.5 text-xs">
-          {tasks.map((task) => (
-            <span key={task.id} className="flex items-center gap-1.5">
-              <Badge tone={task.status === "failed" ? "negative" : "info"}>
-                {task.label}: {task.status}
-              </Badge>
-              {task.error ? (
-                <span className="text-negative">{task.error}</span>
-              ) : task.status !== "failed" ? (
-                <span className="text-muted">running…</span>
-              ) : null}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      <div className="relative z-10 mx-auto max-w-4xl">
+        {tasks.length > 0 ? (
+          <div className="mb-3 flex flex-wrap gap-2 rounded-lg border border-line bg-surface-muted px-4 py-2.5 text-xs">
+            {tasks.map((task) => (
+              <span key={task.id} className="flex items-center gap-1.5">
+                <Badge tone={task.status === "failed" ? "negative" : "info"}>
+                  {task.label}: {task.status}
+                </Badge>
+                {task.error ? <span className="text-negative">{task.error}</span> : null}
+              </span>
+            ))}
+          </div>
+        ) : null}
 
-      <div className="relative z-10 grid gap-4 lg:grid-cols-[1fr_320px]">
-        {/* -- Left column ------------------------------------------------ */}
-        <div className="flex flex-col gap-4">
-          {application.isIncomplete ? (
-            <Card>
-              <CardHeader
-                title="Job description missing"
-                meta="required for scoring and tailoring"
-              />
-              <DescriptionForm
-                applicationId={application.id}
-                rawJobId={job.id}
-                current={job.description}
-              />
-            </Card>
-          ) : null}
-
-          {/* Job Score (JSV2S1080, JSV2S1081) */}
-          <Card>
+        {application.isIncomplete ? (
+          <Card className="mb-4">
             <CardHeader
-              title="Job Score"
-              meta={
-                application.jobScoreGeneratedAt
-                  ? formatDateTime(application.jobScoreGeneratedAt)
-                  : undefined
-              }
-              action={
-                <GenerateButton
-                  applicationId={application.id}
-                  taskType="score"
-                  label="Generate score"
-                  disabled={application.isIncomplete || !!taskFor("score")}
-                  disabledReason={blockedReason}
-                  regenerate={application.jobScore !== null}
-                />
-              }
+              title="Job description missing"
+              meta="required for scoring and tailoring"
             />
-            {application.jobScore === null ? (
-              <EmptyState
-                title="Not scored yet"
-                hint="Scoring weighs sponsorship likelihood, domain relevance and experience fit."
-              />
-            ) : (
-              <div className="flex flex-col gap-3 p-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl font-semibold tabular-nums">
-                    {application.jobScore}
-                  </span>
-                  <span className="text-xs text-subtle">/ 100</span>
-                  <MatchBadge category={application.matchCategory} />
-                  {application.visaSignal ? (
-                    <Badge tone="info">Visa: {application.visaSignal}</Badge>
-                  ) : null}
-                </div>
-
-                {application.jobScoreAnalysis?.summary ? (
-                  <p className="text-sm">{application.jobScoreAnalysis.summary}</p>
-                ) : null}
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {application.jobScoreAnalysis?.strengths?.length ? (
-                    <div>
-                      <h3 className="mb-1 text-xs font-semibold text-muted">
-                        Strengths
-                      </h3>
-                      <ul className="list-disc pl-4 text-xs">
-                        {application.jobScoreAnalysis.strengths.map((s, i) => (
-                          <li key={i}>{s}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {application.jobScoreAnalysis?.gaps?.length ? (
-                    <div>
-                      <h3 className="mb-1 text-xs font-semibold text-muted">Gaps</h3>
-                      <ul className="list-disc pl-4 text-xs">
-                        {application.jobScoreAnalysis.gaps.map((g, i) => (
-                          <li key={i}>{g}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* Detail lives behind the disclosure so the card stays a summary. */}
-                {application.jobScoreAnalysis?.breakdown ||
-                application.jobScoreAnalysis?.visaSignals?.length ||
-                scoreReport?.contentMd ? (
-                  <details className="border-t border-line pt-3">
-                    <summary className="cursor-pointer text-xs font-medium text-muted hover:text-foreground">
-                      Full score analysis
-                    </summary>
-
-                    <div className="mt-3 flex flex-col gap-4">
-                      {/* JSV2S1140 — the deduction ledger leads, because "what
-                          did this cost me" is the actionable reading. The raw
-                          rubric stays underneath for the full detail. */}
-                      {ledger ? <ScoreLedgerTable ledger={ledger} /> : null}
-
-                      {application.jobScoreAnalysis ? (
-                        <ScoreBreakdown analysis={application.jobScoreAnalysis} />
-                      ) : null}
-
-                      {application.jobScoreAnalysis?.visaSignals?.length ? (
-                        <div>
-                          <h3 className="mb-1.5 text-xs font-semibold text-muted">
-                            Visa signals
-                          </h3>
-                          <ul className="flex flex-col gap-1 text-xs">
-                            {application.jobScoreAnalysis.visaSignals.map((signal, i) => (
-                              <li
-                                key={i}
-                                className="relative pl-4 before:absolute before:left-0 before:top-[0.5em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-info"
-                              >
-                                {signal}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-
-                      {scoreReport?.contentMd ? (
-                        <div className="border-t border-line pt-3">
-                          <Markdown content={scoreReport.contentMd} />
-                        </div>
-                      ) : null}
-                    </div>
-                  </details>
-                ) : null}
-              </div>
-            )}
+            <DescriptionForm
+              applicationId={application.id}
+              rawJobId={job.id}
+              current={job.description}
+            />
           </Card>
+        ) : null}
 
-          {/* Resume docs (JSV2S1078, JSV2S1079) — one CVG call writes both,
-              and both carry the same analysis, so it is shown once. */}
-          <Card>
-            <CardHeader
-              title="Resume docs"
-              meta={resume ? `v${resume.version} · ${resume.model ?? resume.generatedBy}` : undefined}
-              action={
-                <div className="flex items-center gap-2">
-                  {resume?.contentMd
-                    ? (() => {
-                        const fit = pageFit(resume.contentMd);
-                        return fit.fits ? (
-                          <Badge tone="positive" title={`~${fit.estimatedLines} lines`}>
-                            Fits one page
-                          </Badge>
-                        ) : (
-                          <Badge
-                            tone="negative"
-                            title={`~${fit.estimatedLines} lines against ~72 on an A4 page — regenerate to cut content`}
-                          >
-                            Over by ~{fit.overBy}
-                          </Badge>
-                        );
-                      })()
-                    : null}
-                  <GenerateButton
-                    applicationId={application.id}
-                    taskType="tailor_cv"
-                    label="Generate CV + CL"
-                    disabled={application.isIncomplete || !!taskFor("tailor_cv")}
-                    disabledReason={blockedReason}
-                    regenerate={!!resume}
-                  />
-                </div>
-              }
-            />
+        {/* --- The result ------------------------------------------------- */}
+        <ScoreHero
+          score={application.jobScore}
+          matchCategory={application.matchCategory}
+          summary={analysis?.summary}
+          company={job.company}
+          location={job.location}
+          title={job.title}
+        />
 
-            {!resume && !coverLetter ? (
+        <div className="mb-8 flex flex-wrap justify-center gap-2">
+          <GenerateButton
+            applicationId={application.id}
+            taskType="score"
+            label="Generate score"
+            disabled={application.isIncomplete || !!taskFor("score")}
+            disabledReason={blockedReason}
+            regenerate={application.jobScore !== null}
+          />
+          <GenerateButton
+            applicationId={application.id}
+            taskType="tailor_cv"
+            label="Generate CV + CL"
+            disabled={application.isIncomplete || !!taskFor("tailor_cv")}
+            disabledReason={blockedReason}
+            regenerate={!!resume}
+          />
+        </div>
+
+        <FigureRow figures={figures} />
+
+        {/* The arithmetic, on request. Collapsed because it is reference
+            rather than headline — but one click away, because a score you
+            cannot audit is a score you cannot argue with. */}
+        {ledger ? (
+          <details className="mt-6 rounded-lg border border-line bg-surface p-5">
+            <summary className="cursor-pointer text-xs font-medium text-muted hover:text-foreground">
+              Show the calculation
+            </summary>
+            <div className="mt-4">
+              <ScoreLedgerTable ledger={ledger} />
+            </div>
+          </details>
+        ) : null}
+
+        <Basis holding={analysis?.strengths ?? []} failing={analysis?.gaps ?? []} />
+
+        {/* --- Material --------------------------------------------------- */}
+        <section className="pt-12">
+          <div className="mb-4 flex items-baseline justify-between gap-4">
+            <p className="text-[11px] tracking-wider text-faint uppercase">Material</p>
+            <p className="text-[11px] text-faint">Generated on qualification</p>
+          </div>
+
+          {!resume && !coverLetter ? (
+            <Card>
               <EmptyState
                 title="No documents yet"
                 hint="One pass writes the tailored CV and its cover letter together."
               />
-            ) : (
-              <>
-                <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
-                  {resume ? (
-                    <a href={`/api/documents/${resume.id}`} className={buttonClass.primary}>
-                      Download CV
-                    </a>
-                  ) : null}
-                  {coverLetter ? (
-                    <a
-                      href={`/api/documents/${coverLetter.id}`}
-                      className={buttonClass.primary}
-                    >
-                      Download Cover Letter
-                    </a>
-                  ) : null}
-                  <span className="ml-auto text-[11px] text-subtle">
-                    .docx · one-page A4 · ATS-safe
-                  </span>
-                </div>
+            </Card>
+          ) : (
+            <Card>
+              <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+                {resume ? (
+                  <a href={`/api/documents/${resume.id}`} className={buttonClass.primary}>
+                    Download CV
+                  </a>
+                ) : null}
+                {coverLetter ? (
+                  <a
+                    href={`/api/documents/${coverLetter.id}`}
+                    className={buttonClass.primary}
+                  >
+                    Download Cover Letter
+                  </a>
+                ) : null}
+                <span className="ml-auto text-[11px] text-subtle">
+                  .docx · one-page A4 · ATS-safe
+                  {fit && !fit.fits ? ` · over by ~${fit.overBy} lines` : ""}
+                </span>
+              </div>
 
-                {/* The summary describes the pair, so it appears once. */}
-                {resume?.summary ? (
-                  <GenerationSummary summary={resume.summary} />
-                ) : (
-                  <p className="px-4 py-3 text-xs text-muted">
-                    No summary captured — regenerate to see the classification and gaps.
-                  </p>
-                )}
-              </>
-            )}
-          </Card>
+              {resume?.summary ? (
+                <GenerationSummary summary={resume.summary} />
+              ) : (
+                <p className="px-4 py-3 text-xs text-muted">
+                  No summary captured — regenerate to see the classification and gaps.
+                </p>
+              )}
+            </Card>
+          )}
+        </section>
 
-          {/* SimG — mandatory Pass G and its worklist (JSV2S1058, JSV2S1126) */}
-          {evaluation && simgProjection ? (
+        {/* --- SimG ------------------------------------------------------- */}
+        {evaluation && simgProjection ? (
+          <section className="pt-12">
             <SimgWorklist
               applicationId={application.id}
               evaluation={evaluation}
               projection={simgProjection}
               measured={atsMeasured}
             />
+          </section>
+        ) : null}
+
+        {/* --- On need ---------------------------------------------------- */}
+        <section className="pt-12 pb-16">
+          <p className="mb-2 text-[11px] tracking-wider text-faint uppercase">On need</p>
+
+          {analysis || scoreReport?.contentMd ? (
+            <OnNeed title="Full score analysis" meta="Narrative">
+              <div className="flex flex-col gap-4">
+                {analysis ? <ScoreBreakdown analysis={analysis} /> : null}
+                {analysis?.visaSignals?.length ? (
+                  <div>
+                    <h3 className="mb-1.5 text-xs font-semibold text-muted">
+                      Visa signals
+                    </h3>
+                    <ul className="flex flex-col gap-1 text-xs text-muted">
+                      {analysis.visaSignals.map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {scoreReport?.contentMd ? (
+                  <div className="text-xs">
+                    <Markdown content={scoreReport.contentMd} />
+                  </div>
+                ) : null}
+              </div>
+            </OnNeed>
           ) : null}
 
-          {/* Timeline (JSV2S1084 + JSV2S1097) */}
-          <Card>
-            <CardHeader title="Timeline" meta={`${application.timeline.length} events`} />
-            <NoteForm applicationId={application.id} />
-            <ol className="divide-y divide-line">
-              {application.timeline.map((event) => (
-                <li key={event.id} className="flex gap-3 px-4 py-2.5 text-xs">
-                  <span className="w-28 shrink-0 text-subtle">
-                    {formatDateTime(event.occurredAt)}
-                  </span>
-                  <span className="flex-1">{event.summary}</span>
-                </li>
-              ))}
-            </ol>
-          </Card>
-        </div>
-
-        {/* -- Right column ----------------------------------------------- */}
-        <aside className="flex flex-col gap-4">
-          {/* Job Context (JSV2S1077) */}
-          <Card>
-            <CardHeader title="Job" meta={job.source} />
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 p-4 text-xs">
+          <OnNeed title="Job posting & pre-qualification" meta={job.source}>
+            <dl className="grid grid-cols-[9rem_1fr] gap-y-1.5 text-xs">
+              <dt className="text-subtle">Location</dt>
+              <dd>{job.location ?? "—"}</dd>
               <dt className="text-subtle">Posted</dt>
               <dd>{formatDate(job.postedAt)}</dd>
               <dt className="text-subtle">Seniority</dt>
               <dd>{job.seniority ?? "—"}</dd>
-              <dt className="text-subtle">Type</dt>
-              <dd>{job.employmentType ?? "—"}</dd>
               <dt className="text-subtle">Salary</dt>
               <dd>{job.salaryRaw ?? "—"}</dd>
-              <dt className="text-subtle">Sponsorship</dt>
+              <dt className="text-subtle">Sponsorship in posting</dt>
               <dd>
-                {job.visaSponsorshipMentioned === null
-                  ? "—"
-                  : job.visaSponsorshipMentioned
-                    ? "Mentioned"
-                    : "Not mentioned"}
+                {job.visaSponsorshipMentioned === true ? "Mentioned" : "Not mentioned"}
               </dd>
-              {job.inboundSourceDetail ? (
-                <>
-                  <dt className="text-subtle">Lead</dt>
-                  <dd>{job.inboundSourceDetail}</dd>
-                </>
-              ) : null}
-
-              {/* JSV2S1158 — which fetch brought this job in, and when it was
-                  judged. The run id is what ties one application back to the
-                  batch it arrived with on the pipeline screen. */}
               <dt className="text-subtle">Ingested</dt>
               <dd>
                 {job.prequalifiedAt
                   ? formatDateTime(job.prequalifiedAt)
-                  : job.firstSeenAt
-                    ? formatDateTime(job.firstSeenAt)
-                    : "—"}
+                  : formatDateTime(job.firstSeenAt)}
               </dd>
-
               {job.ingestionRunId ? (
                 <>
                   <dt className="text-subtle">Run</dt>
@@ -459,135 +380,152 @@ export default async function ApplicationDetailPage({
                 </>
               ) : null}
             </dl>
-            {/* JSV2S1152 — the posting as ingested, with the gate's matched
-                domain terms highlighted, so its verdict can be audited against
-                the actual words rather than taken on trust. */}
-            <div className="border-t border-line px-4 py-2.5">
+
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <RawJdDialog
                 description={job.description}
                 matchedTerms={matchedDomainTerms}
                 title={job.title}
                 company={job.company}
               />
-              {/* JSV2S1143 — the backdrop is unattributed otherwise. */}
-              <div className="mt-2.5 border-t border-line pt-2.5">
-                <ArtworkCredit artwork={artwork} />
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-3 border-t border-line px-4 py-2.5 text-xs">
               <a
                 href={job.jobUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="underline underline-offset-2 hover:text-foreground"
+                className="text-xs underline underline-offset-2 hover:text-foreground"
               >
                 Original posting ↗
               </a>
-              {job.externalApplyUrl ? (
-                <a
-                  href={job.externalApplyUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline underline-offset-2 hover:text-foreground"
-                >
-                  Apply directly ↗
-                </a>
-              ) : null}
             </div>
-          </Card>
 
-          {/* Status (JSV2S1082–1084) */}
-          <Card>
-            <CardHeader
-              title="Status"
-              meta={
-                application.appliedAt
-                  ? `applied ${formatDate(application.appliedAt)}`
-                  : undefined
-              }
-            />
-            <StatusForm applicationId={application.id} current={application.status} />
-          </Card>
+            <div className="mt-3 border-t border-line pt-3">
+              <ArtworkCredit artwork={artwork} />
+            </div>
+          </OnNeed>
 
-          {/* Referral (JSV2S1086–1088) */}
-          <Card>
-            <CardHeader title="Referral" />
-            <ReferralForm
-              applicationId={application.id}
-              status={application.referralStatus}
-              referrerName={application.referrerName}
-              referralNotes={application.referralNotes}
-            />
-          </Card>
+          <OnNeed
+            title="Status, referral & attempts"
+            meta={`${application.attempts.length} attempts`}
+          >
+            <div className="flex flex-col gap-4">
+              <Card>
+                <CardHeader
+                  title="Status"
+                  meta={
+                    application.appliedAt
+                      ? `applied ${formatDate(application.appliedAt)}`
+                      : undefined
+                  }
+                />
+                <StatusForm applicationId={application.id} current={application.status} />
+              </Card>
 
-          {/* Attempts (JSV2S1094–1096) */}
-          <Card>
-            <CardHeader
-              title="Attempts"
-              meta={`${application.attempts.length}`}
-            />
-            {application.attempts.length === 0 ? (
-              <p className="px-4 py-3 text-xs text-muted">
-                No attempt recorded. Moving the status to Applied opens attempt 1.
-              </p>
-            ) : (
-              <ul className="divide-y divide-line">
-                {application.attempts.map((attempt) => (
-                  <li key={attempt.id} className="px-4 py-2.5 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">Attempt {attempt.attemptNumber}</span>
-                      <span className="text-subtle">
-                        {formatDate(attempt.appliedAt)}
+              <Card>
+                <CardHeader title="Referral" />
+                <ReferralForm
+                  applicationId={application.id}
+                  status={application.referralStatus}
+                  referrerName={application.referrerName}
+                  referralNotes={application.referralNotes}
+                />
+              </Card>
+
+              <Card>
+                <CardHeader title="Attempts" meta={`${application.attempts.length}`} />
+                {application.attempts.length === 0 ? (
+                  <p className="px-4 py-3 text-xs text-muted">
+                    No attempt recorded. Moving the status to Applied opens attempt 1.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-line">
+                    {application.attempts.map((attempt) => (
+                      <li key={attempt.id} className="px-4 py-2.5 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium">
+                            Attempt {attempt.attemptNumber}
+                          </span>
+                          <span className="text-subtle">
+                            {formatDate(attempt.appliedAt)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-muted">
+                          {attempt.channel
+                            ? `${attempt.channel.replace("_", " ")} · `
+                            : ""}
+                          {attempt.emailUsed ?? "no email recorded"}
+                        </p>
+                        {attempt.outcome ? (
+                          <p className="mt-1 text-subtle">
+                            Outcome: {STATUS_LABELS[attempt.outcome]}
+                          </p>
+                        ) : null}
+                        {attempt.notes ? (
+                          <p className="mt-1 text-subtle">{attempt.notes}</p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <AttemptForm applicationId={application.id} />
+              </Card>
+            </div>
+          </OnNeed>
+
+          <OnNeed
+            title="Audit trail & versions"
+            meta={`${application.timeline.length} events · ${application.documents.length} versions`}
+          >
+            <div className="flex flex-col gap-4">
+              <Card>
+                <CardHeader title="Timeline" />
+                <NoteForm applicationId={application.id} />
+                <ol className="divide-y divide-line">
+                  {application.timeline.map((event) => (
+                    <li key={event.id} className="flex gap-3 px-4 py-2.5 text-xs">
+                      <span className="w-28 shrink-0 text-subtle">
+                        {formatDateTime(event.occurredAt)}
                       </span>
-                    </div>
-                    <p className="mt-0.5 text-muted">
-                      {attempt.channel ? `${attempt.channel.replace("_", " ")} · ` : ""}
-                      {attempt.emailUsed ?? "no email recorded"}
-                    </p>
-                    {attempt.outcome ? (
-                      <p className="mt-1 text-subtle">
-                        Outcome: {STATUS_LABELS[attempt.outcome]}
-                      </p>
-                    ) : null}
-                    {attempt.notes ? (
-                      <p className="mt-1 text-subtle">{attempt.notes}</p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <AttemptForm applicationId={application.id} />
-          </Card>
+                      <span className="min-w-0">{event.summary}</span>
+                    </li>
+                  ))}
+                </ol>
+              </Card>
 
-          <Card>
-            <CardHeader title="Document versions" />
-            {application.documents.length === 0 ? (
-              <p className="px-4 py-3 text-xs text-muted">Nothing generated yet.</p>
-            ) : (
-              <ul className="divide-y divide-line">
-                {application.documents.map((doc) => (
-                  <li
-                    key={doc.id}
-                    className="flex items-center justify-between gap-2 px-4 py-2 text-xs"
-                  >
-                    <span>
-                      {DOCUMENT_LABELS[doc.docType]}{" "}
-                      <span className="text-subtle">v{doc.version}</span>
-                    </span>
-                    <a
-                      href={`/api/documents/${doc.id}`}
-                      className="text-muted underline underline-offset-2 hover:text-foreground"
-                    >
-                      {doc.docType === "score_report" ? ".md" : ".docx"}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+              <Card>
+                <CardHeader title="Document versions" />
+                {application.documents.length === 0 ? (
+                  <p className="px-4 py-3 text-xs text-muted">Nothing generated yet.</p>
+                ) : (
+                  <ul className="divide-y divide-line">
+                    {application.documents.map((doc) => (
+                      <li
+                        key={doc.id}
+                        className="flex items-center justify-between gap-2 px-4 py-2 text-xs"
+                      >
+                        <span>
+                          {DOCUMENT_LABELS[doc.docType]}{" "}
+                          <span className="text-subtle">v{doc.version}</span>
+                        </span>
+                        <a
+                          href={`/api/documents/${doc.id}`}
+                          className="text-muted underline underline-offset-2 hover:text-foreground"
+                        >
+                          {doc.docType === "score_report" ? ".md" : ".docx"}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            </div>
+          </OnNeed>
 
-          <AiCostCard cost={cost} grounding={grounding} />
-        </aside>
+          <OnNeed title="AI cost" meta="This application">
+            <AiCostCard cost={cost} grounding={grounding} />
+          </OnNeed>
+
+          <div className="border-t border-line" />
+        </section>
       </div>
     </div>
   );
