@@ -22,6 +22,7 @@ import type { IngestionSummary } from "@/features/pipeline/digest";
 process.loadEnvFile(".env.local");
 
 const { renderDigest } = await import("@/features/pipeline/digest");
+const { runIngestionPass } = await import("@/features/ingestion/orchestrator");
 const { runScoringPass } = await import("@/features/pipeline/orchestrator");
 const { getBudgetStatus } = await import("@/features/ai/budget-queries");
 const { listRecentlyScored } = await import("@/features/pipeline/queries");
@@ -29,12 +30,33 @@ const { listRecentlyScored } = await import("@/features/pipeline/queries");
 const dryRun = process.argv.includes("--dry");
 
 /**
- * Ingestion is not wired yet — it needs the Apify adapter (JSV2S1019), which is
- * waiting on the actor's payload shape. Scoring runs over whatever is already
- * pre-qualified, so the pipeline is useful before the fetcher exists and the
- * digest reports honestly that nothing was fetched.
+ * Ingestion, wired 2026-09-18 (JSV2S1017).
+ *
+ * This was a literal empty array with a comment saying the fetcher did not
+ * exist. It does now, so the nightly job fetches as well as scores — and every
+ * live fetch before today was a script run by hand.
+ *
+ * Fetching runs even while scoring is paused: pre-qualification is
+ * deterministic and free, and the point of the pause is to stop paying for AI
+ * on data still being cleaned, not to stop collecting jobs.
  */
-const ingestion: IngestionSummary[] = [];
+const pass = await runIngestionPass({ dryRun });
+
+const ingestion: IngestionSummary[] = pass.locations.map((l) => ({
+  source: `linkedin · ${l.location}`,
+  status: l.status,
+  fetched: l.fetched,
+  inserted: l.qualified,
+  duplicates: l.duplicates,
+  // Landed but gated: the difference between what persisted and what qualified.
+  screenedOut: Math.max(0, l.landed - l.qualified),
+  rejected: 0,
+  errors: l.reason ? [l.reason] : [],
+}));
+
+if (!pass.configured) {
+  console.log("APIFY_TOKEN is not set — ingestion skipped, scoring will still run.");
+}
 
 const scoring = await runScoringPass({ dryRun });
 
@@ -45,9 +67,15 @@ const digest = renderDigest({
   topScores: await listRecentlyScored(5),
 });
 
+// The night's ingestion spend, stated plainly. Apify bills per result, so this
+// is the one number that grows with the fetch plan (JSV2S1144).
+const costLine = pass.configured
+  ? `\nIngestion cost: $${pass.totalCostUsd.toFixed(4)} across ${pass.locations.length} location(s), ${pass.totalFetched} fetched, ${pass.totalLanded} landed, ${pass.totalQualified} qualified.`
+  : "";
+
 const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-if (summaryPath) appendFileSync(summaryPath, `${digest}\n`);
-console.log(digest);
+if (summaryPath) appendFileSync(summaryPath, `${digest}${costLine}\n`);
+console.log(digest + costLine);
 
 // A failed provider call should turn the run red so Actions emails about it; a
 // tripped spend ceiling should not, because that is the system working.

@@ -55,8 +55,22 @@ export const SPEND_CEILING = {
  */
 export const FETCH_DEFAULTS = {
   postedWithinDays: 1,
-  limitPerLocation: 30,
+  /**
+   * A TOTAL ceiling across all locations, not a per-location one (decided
+   * 2026-09-18).
+   *
+   * The owner asked for "max 100 product roles", and the actor's `limit` is
+   * per run. Expressing the cap as a total and dividing it means adding a
+   * location does not silently raise the bill — which is exactly how the
+   * 11 x 30 plan would have grown to 1,100 jobs a night.
+   */
+  totalLimit: 100,
 } as const;
+
+/** Per-location share of the total cap, rounded up so the cap is never under-used. */
+export function limitPerLocation(locations = FETCH_LOCATIONS.length): number {
+  return Math.max(1, Math.ceil(FETCH_DEFAULTS.totalLimit / Math.max(1, locations)));
+}
 
 /**
  * The first live fetch (JSV2S1020, decided 2026-09-17).
@@ -74,26 +88,20 @@ export const PROBE_FETCH = {
 } as const;
 
 /**
- * Locations searched each night.
+ * Locations searched each night (narrowed 2026-09-18 by the owner).
  *
- * The eleven preferred cities, plus region-level remote searches so a job
- * advertised as "Remote - Europe" is not missed for naming no city. Kept
- * explicit rather than derived from `config/prequalification/locations.ts`:
- * that file lists everywhere a job is *acceptable*, which is much wider than
- * everywhere worth paying to search.
+ * Three cities rather than eleven, to start. Deliberately kept explicit rather
+ * than derived from `config/prequalification/locations.ts`: that file lists
+ * everywhere a job is *acceptable*, which is far wider than everywhere worth
+ * paying to search.
+ *
+ * Widening this raises the bill in proportion, which is why the result cap is
+ * expressed as a total rather than per location.
  */
 export const FETCH_LOCATIONS: readonly string[] = [
   "London, United Kingdom",
-  "Manchester, United Kingdom",
-  "Dublin, Ireland",
-  "Berlin, Germany",
   "Amsterdam, Netherlands",
-  "Stockholm, Sweden",
-  "Lisbon, Portugal",
-  "Barcelona, Spain",
-  "Paris, France",
-  "Dubai, United Arab Emirates",
-  "Abu Dhabi, United Arab Emirates",
+  "Berlin, Germany",
 ];
 
 /**
@@ -125,11 +133,12 @@ export const FETCH_KEYWORDS: readonly string[] = [
 
 /** One `FetchParams` per location, for the orchestrator to run through. */
 export function dailyFetchPlan(): FetchParams[] {
+  const perLocation = limitPerLocation();
   return FETCH_LOCATIONS.map((location) => ({
     keywords: [...FETCH_KEYWORDS],
     locations: [location],
     postedWithinDays: FETCH_DEFAULTS.postedWithinDays,
-    limit: FETCH_DEFAULTS.limitPerLocation,
+    limit: perLocation,
   }));
 }
 

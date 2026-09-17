@@ -126,8 +126,16 @@ export function renderDigest(input: DigestInput): string {
 
     if (scoring.stoppedEarly) {
       out.push("");
+      /**
+       * A paused pass and a ceiling-stopped pass are different facts, and this
+       * printed the literal string "null" for the first because it always read
+       * `budget.reason`. A run that did nothing because it was switched off
+       * must not look like one that ran out of money.
+       */
       out.push(
-        `> **Stopped early.** ${scoring.budget.reason} Deferred jobs keep their pre-qualification and are picked up by the next run — nothing is lost.`,
+        scoring.pausedReason
+          ? `> **Paused.** ${scoring.pausedReason}`
+          : `> **Stopped early.** ${scoring.budget.reason ?? "The spend ceiling was reached."} Deferred jobs keep their pre-qualification and are picked up by the next run — nothing is lost.`,
       );
     }
 
