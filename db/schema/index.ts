@@ -6,3 +6,4 @@ export * from "./application-documents";
 export * from "./ai-jobs";
 export * from "./ingestion-runs";
 export * from "./ingestion-failures";
+export * from "./sponsor-licences";

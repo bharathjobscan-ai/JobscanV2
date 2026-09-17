@@ -52,7 +52,7 @@ export async function parseUploadFile(
   return rows;
 }
 
-function parseCsv(buffer: Buffer): Record<string, unknown>[] {
+export function parseCsv(buffer: Buffer): Record<string, unknown>[] {
   const result = Papa.parse<Record<string, unknown>>(
     buffer.toString("utf8").replace(/^﻿/, ""),
     { header: true, skipEmptyLines: "greedy", dynamicTyping: false },

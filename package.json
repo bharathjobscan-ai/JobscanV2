@@ -20,7 +20,10 @@
     "ai:models": "vitest run --config vitest.run.config.mts tests/unit/gemini-models.itest.ts",
     "ai:bench": "vitest run --config vitest.run.config.mts tests/integration/gemini-benchmark.itest.ts",
     "pipeline:daily": "tsx scripts/daily-run.mts",
-    "prequalify:calibrate": "vitest run --config vitest.run.config.mts tests/ops/prequal-calibration.ts"
+    "prequalify:calibrate": "vitest run --config vitest.run.config.mts tests/ops/prequal-calibration.ts",
+    "sponsors:refresh": "tsx scripts/refresh-sponsor-register.mts",
+    "sponsors:audit": "tsx scripts/audit-sponsor-aliases.mts",
+    "artwork:fetch": "tsx scripts/fetch-artwork.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
