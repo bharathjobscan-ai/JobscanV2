@@ -13,10 +13,11 @@ import {
   listForReview,
   REVIEW_VIEWS,
   REVIEW_VIEW_LABELS,
+  type FilterSelections,
   type ReviewView,
 } from "@/features/prequalification/queries";
 import { PrequalFilters } from "@/components/applications/prequal-filters";
-import { PREQUAL_FILTERS, type PrequalFilter } from "@/lib/config/constants";
+import { PREQUAL_FILTERS } from "@/lib/config/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -30,15 +31,7 @@ export const dynamic = "force-dynamic";
 export default async function ReviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    view?: string;
-    factor?: string;
-    source?: string;
-    country?: string;
-    from?: string;
-    to?: string;
-    q?: string;
-  }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const params = await searchParams;
   const view: ReviewView = REVIEW_VIEWS.includes(params.view as ReviewView)
@@ -47,27 +40,24 @@ export default async function ReviewPage({
 
   // JSV2S1153. Anything unrecognised is dropped rather than raised: a
   // hand-edited URL should degrade to "no filter", never to a crash.
-  const list = (v?: string) => (v ? v.split(",").filter(Boolean) : []);
-  const factors = list(params.factor).filter((f): f is PrequalFilter =>
-    PREQUAL_FILTERS.includes(f as PrequalFilter),
-  );
-  const sources = list(params.source);
-  const countries = list(params.country);
+  const selections: FilterSelections = {};
+  for (const f of PREQUAL_FILTERS) {
+    const values = params[f]?.split(",").filter(Boolean) ?? [];
+    if (values.length > 0) selections[f] = values;
+  }
   const isDate = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
   const from = isDate(params.from);
   const to = isDate(params.to);
   const search = params.q?.trim() || null;
 
   const [items, counts, facets] = await Promise.all([
-    listForReview({ view, factors, sources, countries, from, to, search }),
+    listForReview({ view, selections, from, to, search }),
     countForReview(),
     getFacets(view),
   ]);
 
   const filtered =
-    factors.length > 0 ||
-    sources.length > 0 ||
-    countries.length > 0 ||
+    Object.values(selections).some((v) => v.length > 0) ||
     from !== null ||
     search !== null;
 
@@ -110,7 +100,7 @@ export default async function ReviewPage({
       <PrequalFilters
         view={view}
         facets={facets}
-        initial={{ factor: factors, source: sources, country: countries }}
+        initial={selections}
         initialFrom={from}
         initialTo={to}
         initialSearch={search}

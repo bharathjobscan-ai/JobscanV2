@@ -3,10 +3,11 @@ import { and, desc, eq, gte, ilike, inArray, isNull, lt, ne, or, sql } from "dri
 import { applications, rawJobs } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
 import {
-  PREQUAL_FILTER_LABELS,
+  PREQUAL_FILTERS,
   type PrequalDecision,
   type PrequalFilter,
 } from "@/lib/config/constants";
+import { FILTER_VALUE_KEY, labelFor } from "./labels";
 
 import { db } from "@/lib/db/client";
 import type { PreQualificationResult } from "./types";
@@ -104,14 +105,19 @@ function viewFilter(view: ReviewView) {
  * also tripped the experience rule belongs under domain, or the counts
  * double-count and tuning chases the wrong rule.
  */
+/**
+ * Selections per pre-qualification filter, e.g.
+ * `{ experience: ["BELOW_FLOOR"], domain: ["payments_adjacent"] }`.
+ *
+ * Keyed by filter so the panel's categories ARE the filters and its values are
+ * that filter's own outcomes — "rejected on experience, below the floor" rather
+ * than the coarser "rejected on experience".
+ */
+export type FilterSelections = Partial<Record<PrequalFilter, string[]>>;
+
 export type ReviewFilters = {
   view?: ReviewView;
-  /** `decidedBy` values to keep. Empty means every factor. */
-  factors?: PrequalFilter[];
-  /** `raw_jobs.source` values to keep. Empty means every source. */
-  sources?: string[];
-  /** Country names to keep. Empty means everywhere. */
-  countries?: string[];
+  selections?: FilterSelections;
   /** Inclusive date bounds, as YYYY-MM-DD from the range picker. */
   from?: string | null;
   to?: string | null;
@@ -143,24 +149,30 @@ function dateFilter(from?: string | null, to?: string | null) {
   return clauses.length > 0 ? and(...clauses) : undefined;
 }
 
-function factorFilter(factors: PrequalFilter[] | undefined) {
-  if (!factors?.length) return undefined;
-  // `decidedBy` lives inside the jsonb detail; this reads the STORED verdict
-  // rather than recomputing, because the stored verdict is what is being
-  // audited.
-  return inArray(sql`${rawJobs.prequalificationDetail}->>'decidedBy'`, factors);
+/** `detail -> <filter> ->> <rule|primaryDomain>`, with null folded to 'none'. */
+function valueExpr(filter: PrequalFilter) {
+  const key = FILTER_VALUE_KEY[filter];
+  return sql`coalesce(${rawJobs.prequalificationDetail}->${filter}->>${key}, 'none')`;
+}
+
+function selectionFilters(selections: FilterSelections | undefined) {
+  if (!selections) return [];
+  return PREQUAL_FILTERS.flatMap((filter) => {
+    const values = selections[filter];
+    // Selections WITHIN a filter are OR-ed; ACROSS filters they are AND-ed,
+    // which is what "domain is payments-adjacent and experience below floor"
+    // has to mean.
+    return values?.length ? [inArray(valueExpr(filter), values)] : [];
+  });
 }
 
 function searchFilter(search?: string | null) {
   const q = search?.trim();
   if (!q) return undefined;
-  // Title or company. Escaped for LIKE so a literal % or _ cannot turn a
-  // search into a wildcard that quietly matches everything.
+  // Escaped for LIKE, so a literal % or _ cannot turn a search into a wildcard
+  // that quietly matches everything.
   const safe = q.replace(/[\\%_]/g, (c) => `\\${c}`);
-  return or(
-    ilike(rawJobs.title, `%${safe}%`),
-    ilike(rawJobs.company, `%${safe}%`),
-  );
+  return or(ilike(rawJobs.title, `%${safe}%`), ilike(rawJobs.company, `%${safe}%`));
 }
 
 export async function listForReview(
@@ -176,9 +188,7 @@ export async function listForReview(
       and(
         viewFilter(f.view ?? "review"),
         isNull(applications.id),
-        factorFilter(f.factors),
-        f.sources?.length ? inArray(rawJobs.source, f.sources) : undefined,
-        f.countries?.length ? inArray(rawJobs.country, f.countries) : undefined,
+        ...selectionFilters(f.selections),
         dateFilter(f.from, f.to),
         searchFilter(f.search),
       ),
@@ -189,49 +199,44 @@ export async function listForReview(
   return rows.map(toItem);
 }
 
-/**
- * The facets, with counts, for the filter panel.
- *
- * Counted within the current VIEW but ignoring the other selections, so a
- * checkbox always shows how many jobs it would add — a count that collapsed to
- * zero as you ticked boxes would make the panel unusable.
- */
-export type ReviewFacets = {
-  factor: { value: string; label: string; count: number }[];
-  source: { value: string; label: string; count: number }[];
-  country: { value: string; label: string; count: number }[];
-};
+export type FacetValue = { value: string; label: string; count: number };
+/** One entry per pre-qualification filter, each with the values it produced. */
+export type ReviewFacets = Partial<Record<PrequalFilter, FacetValue[]>>;
 
+/**
+ * What each filter actually produced, within the current view.
+ *
+ * Scoped to the view and nothing else: in the review queue only the outcomes
+ * that appear among review jobs are offered, so the panel never shows a value
+ * that cannot return anything here. Deliberately NOT narrowed by the other
+ * selections — a count that collapsed as you ticked boxes would make every
+ * further filter look empty.
+ */
 export async function getFacets(view: ReviewView = "review"): Promise<ReviewFacets> {
   const rows = await db
     .select({
-      factor: sql<string>`${rawJobs.prequalificationDetail}->>'decidedBy'`,
-      source: rawJobs.source,
-      country: rawJobs.country,
+      role: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'role'->>'rule', 'none')`,
+      domain: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'domain'->>'primaryDomain', 'none')`,
+      experience: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'experience'->>'rule', 'none')`,
+      location: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'location'->>'rule', 'none')`,
     })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
     .where(and(viewFilter(view), isNull(applications.id)));
 
-  const tally = (values: (string | null)[]) => {
-    const m = new Map<string, number>();
-    for (const v of values) {
-      if (!v) continue;
-      m.set(v, (m.get(v) ?? 0) + 1);
+  const facets: ReviewFacets = {};
+  for (const filter of PREQUAL_FILTERS) {
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const value = row[filter];
+      if (!value) continue;
+      counts.set(value, (counts.get(value) ?? 0) + 1);
     }
-    return [...m.entries()]
-      .map(([value, count]) => ({ value, label: value, count }))
-      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
-  };
-
-  return {
-    factor: tally(rows.map((r) => r.factor)).map((f) => ({
-      ...f,
-      label: PREQUAL_FILTER_LABELS[f.value as PrequalFilter] ?? f.value,
-    })),
-    source: tally(rows.map((r) => r.source)),
-    country: tally(rows.map((r) => r.country)),
-  };
+    facets[filter] = [...counts.entries()]
+      .map(([value, count]) => ({ value, label: labelFor(filter, value), count }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  }
+  return facets;
 }
 
 export async function countForReview(): Promise<Record<ReviewView, number>> {

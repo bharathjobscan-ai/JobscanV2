@@ -4,36 +4,34 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { DateRangePicker } from "@/components/ui/date-range";
-import type { ReviewFacets } from "@/features/prequalification/queries";
+import type {
+  FilterSelections,
+  ReviewFacets,
+} from "@/features/prequalification/queries";
+import {
+  PREQUAL_FILTERS,
+  PREQUAL_FILTER_LABELS,
+  type PrequalFilter,
+} from "@/lib/config/constants";
 
 /**
  * The pre-qualification filter panel (JSV2S1153).
  *
- * A category rail on the left, checkboxes for the selected category on the
- * right, a search box, and one date-range calendar. Nothing is applied until
- * Apply is pressed — ticking five boxes should cost one query, not five.
+ * The categories ARE the four filters, and each one's values are the outcomes
+ * that filter produced — so the question "why was this rejected" is answerable
+ * as "experience, below the floor" rather than the coarser "experience".
  *
- * Selections are written to the URL, so a filtered view stays linkable and the
- * back button works. The panel holds draft state only.
+ * Values are scoped to the current view: in the review queue only outcomes that
+ * appear among review jobs are offered, so no checkbox can return nothing.
  *
- * The facet dimension is `decidedBy`, NOT "any filter that failed". A job can
- * fail two rules; only one decided it. Filtering on failures would double-count
- * and send tuning after the wrong rule.
+ * Nothing applies until Apply is pressed — ticking five boxes should cost one
+ * query, not five. Selections are written to the URL, so a filtered view stays
+ * linkable and the back button works; the panel holds draft state only.
  */
 
-type Selections = {
-  factor: string[];
-  source: string[];
-  country: string[];
-};
-
-const CATEGORIES = [
-  { key: "factor", label: "Reason" },
-  { key: "source", label: "Source" },
-  { key: "country", label: "Country" },
-] as const;
-
-type CategoryKey = (typeof CATEGORIES)[number]["key"];
+/** The date range is a category in its own right, last in the rail. */
+const DATE_KEY = "__date" as const;
+type CategoryKey = PrequalFilter | typeof DATE_KEY;
 
 export function PrequalFilters({
   view,
@@ -46,7 +44,7 @@ export function PrequalFilters({
 }: {
   view: string;
   facets: ReviewFacets;
-  initial: Selections;
+  initial: FilterSelections;
   initialFrom: string | null;
   initialTo: string | null;
   initialSearch: string | null;
@@ -54,33 +52,35 @@ export function PrequalFilters({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [category, setCategory] = useState<CategoryKey>("factor");
-  const [selected, setSelected] = useState<Selections>(initial);
+  const [category, setCategory] = useState<CategoryKey>(PREQUAL_FILTERS[0]);
+  const [selected, setSelected] = useState<FilterSelections>(initial);
   const [from, setFrom] = useState(initialFrom);
   const [to, setTo] = useState(initialTo);
   const [search, setSearch] = useState(initialSearch ?? "");
 
+  const chosen = (f: PrequalFilter) => selected[f] ?? [];
   const activeCount =
-    selected.factor.length +
-    selected.source.length +
-    selected.country.length +
+    PREQUAL_FILTERS.reduce((n, f) => n + chosen(f).length, 0) +
     (from ? 1 : 0) +
     (search.trim() ? 1 : 0);
 
-  function toggle(key: CategoryKey, value: string) {
-    setSelected((s) => ({
-      ...s,
-      [key]: s[key].includes(value)
-        ? s[key].filter((v) => v !== value)
-        : [...s[key], value],
-    }));
+  function toggle(filter: PrequalFilter, value: string) {
+    setSelected((s) => {
+      const current = s[filter] ?? [];
+      return {
+        ...s,
+        [filter]: current.includes(value)
+          ? current.filter((v) => v !== value)
+          : [...current, value],
+      };
+    });
   }
 
   function apply() {
     const params = new URLSearchParams();
     if (view !== "review") params.set("view", view);
-    for (const { key } of CATEGORIES) {
-      if (selected[key].length > 0) params.set(key, selected[key].join(","));
+    for (const f of PREQUAL_FILTERS) {
+      if (chosen(f).length > 0) params.set(f, chosen(f).join(","));
     }
     if (from) params.set("from", from);
     if (to) params.set("to", to);
@@ -92,13 +92,13 @@ export function PrequalFilters({
   }
 
   function clearAll() {
-    setSelected({ factor: [], source: [], country: [] });
+    setSelected({});
     setFrom(null);
     setTo(null);
     setSearch("");
   }
 
-  const options = facets[category] ?? [];
+  const options = category === DATE_KEY ? [] : (facets[category] ?? []);
 
   return (
     <div className="relative flex items-center justify-between gap-3 border-b border-line pb-2.5">
@@ -114,7 +114,7 @@ export function PrequalFilters({
       >
         Filter
         {activeCount > 0 ? (
-          <span className="rounded bg-foreground px-1.5 text-[10px] text-background tabular-nums">
+          <span className="rounded bg-foreground px-1.5 text-[10px] tabular-nums text-background">
             {activeCount}
           </span>
         ) : (
@@ -133,7 +133,7 @@ export function PrequalFilters({
             onClick={() => setOpen(false)}
           />
 
-          <div className="absolute top-full right-0 z-30 mt-1 w-[40rem] max-w-[92vw] rounded-lg border border-line bg-surface shadow-lg">
+          <div className="absolute top-full right-0 z-30 mt-1 w-[42rem] max-w-[94vw] rounded-lg border border-line bg-surface shadow-lg">
             <div className="flex items-center gap-3 border-b border-line p-3">
               <input
                 value={search}
@@ -145,29 +145,29 @@ export function PrequalFilters({
               <button
                 type="button"
                 onClick={apply}
-                className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+                className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:opacity-90"
               >
                 Apply Filters
               </button>
             </div>
 
-            <div className="flex">
-              <nav className="w-40 shrink-0 border-r border-line p-2">
-                {CATEGORIES.map((c) => {
-                  const n = selected[c.key].length;
+            <div className="flex min-h-[19rem]">
+              <nav className="w-44 shrink-0 border-r border-line p-2">
+                {PREQUAL_FILTERS.map((f) => {
+                  const n = chosen(f).length;
                   return (
                     <button
-                      key={c.key}
+                      key={f}
                       type="button"
-                      onClick={() => setCategory(c.key)}
+                      onClick={() => setCategory(f)}
                       className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs ${
-                        c.key === category
+                        f === category
                           ? "bg-surface-muted font-medium"
                           : "text-muted hover:bg-surface-muted hover:text-foreground"
                       }`}
                     >
                       <span>
-                        {c.label}
+                        {PREQUAL_FILTER_LABELS[f]}
                         {n > 0 ? <span className="ml-1 text-accent">({n})</span> : null}
                       </span>
                       <span className="text-faint">›</span>
@@ -175,17 +175,40 @@ export function PrequalFilters({
                   );
                 })}
 
-                <div className="mt-2 border-t border-line pt-2">
-                  <span className="px-2 text-[10px] tracking-wide text-faint uppercase">
+                <button
+                  type="button"
+                  onClick={() => setCategory(DATE_KEY)}
+                  className={`mt-1 flex w-full items-center justify-between rounded-md border-t border-line px-2 pt-2.5 pb-1.5 text-left text-xs ${
+                    category === DATE_KEY
+                      ? "font-medium"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  <span>
                     Judged between
+                    {from ? <span className="ml-1 text-accent">(1)</span> : null}
                   </span>
-                </div>
+                  <span className="text-faint">›</span>
+                </button>
               </nav>
 
-              <div className="max-h-72 flex-1 overflow-y-auto p-3">
-                {options.length === 0 ? (
+              {/* One pane, two contents: the chosen filter's values, or the
+                  calendar. Keeping the date out here rather than below means
+                  the panel is one shape whatever is selected. */}
+              <div className="max-h-[19rem] flex-1 overflow-y-auto p-3">
+                {category === DATE_KEY ? (
+                  <DateRangePicker
+                    from={from}
+                    to={to}
+                    onChange={(f, t) => {
+                      setFrom(f);
+                      setTo(t);
+                    }}
+                  />
+                ) : options.length === 0 ? (
                   <p className="text-xs text-muted">
-                    Nothing to filter on in this view.
+                    No {PREQUAL_FILTER_LABELS[category as PrequalFilter].toLowerCase()}{" "}
+                    outcomes in this view.
                   </p>
                 ) : (
                   <ul className="space-y-0.5">
@@ -194,9 +217,9 @@ export function PrequalFilters({
                         <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1.5 text-sm hover:bg-surface-muted">
                           <input
                             type="checkbox"
-                            checked={selected[category].includes(o.value)}
-                            onChange={() => toggle(category, o.value)}
-                            className="size-4 accent-current"
+                            checked={chosen(category as PrequalFilter).includes(o.value)}
+                            onChange={() => toggle(category as PrequalFilter, o.value)}
+                            className="size-4"
                           />
                           <span className="flex-1">{o.label}</span>
                           <span className="text-xs tabular-nums text-faint">
@@ -210,16 +233,8 @@ export function PrequalFilters({
               </div>
             </div>
 
-            <div className="flex items-start justify-between gap-4 border-t border-line p-3">
-              <DateRangePicker
-                from={from}
-                to={to}
-                onChange={(f, t) => {
-                  setFrom(f);
-                  setTo(t);
-                }}
-              />
-              {activeCount > 0 ? (
+            {activeCount > 0 ? (
+              <div className="flex justify-end border-t border-line px-3 py-2">
                 <button
                   type="button"
                   onClick={clearAll}
@@ -227,8 +242,8 @@ export function PrequalFilters({
                 >
                   Clear all
                 </button>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
           </div>
         </>
       ) : null}
