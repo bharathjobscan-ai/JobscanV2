@@ -24,7 +24,8 @@
     "sponsors:refresh": "tsx scripts/refresh-sponsor-register.mts",
     "sponsors:audit": "tsx scripts/audit-sponsor-aliases.mts",
     "artwork:fetch": "tsx scripts/fetch-artwork.mts",
-    "jobs:attribute": "tsx scripts/attribute-historical-jobs.mts"
+    "jobs:attribute": "tsx scripts/attribute-historical-jobs.mts",
+    "runs:backfill-cost": "tsx scripts/backfill-run-cost.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",

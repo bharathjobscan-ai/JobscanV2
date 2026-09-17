@@ -41,6 +41,20 @@ export type RunOutcome = {
   duplicates: number;
   /** Refused by the validator — no `raw_jobs` row exists for these. */
   rejectedAtValidation: number;
+  /** What the run cost, stamped at close. Null for free sources (JSV2S1144). */
+  costUsd: number | null;
+  /**
+   * Run cost divided by the applications it eventually produced.
+   *
+   * The number that matters, and it is NOT the per-job cost. A run that fetches
+   * ten jobs of which one qualifies costs ten results to produce one
+   * application, so the per-application cost is roughly ten times the per-job
+   * cost. Reporting only the latter would flatter the funnel.
+   *
+   * Null while the run has produced no application — dividing by zero would
+   * report an infinite cost for a run that may still be worth it.
+   */
+  costPerApplicationUsd: number | null;
 
   /** Derived: jobs that landed, by where they are now. */
   landed: number;
@@ -139,6 +153,12 @@ export async function getRunOutcomes(limit = 25): Promise<RunOutcomes> {
       inserted: run.inserted,
       duplicates: run.duplicates,
       rejectedAtValidation: run.rejected,
+      costUsd: run.costUsd === null ? null : Number(run.costUsd),
+      costPerApplicationUsd: (() => {
+        if (run.costUsd === null) return null;
+        const produced = (c?.autoQualified ?? 0) + (c?.forceQualified ?? 0);
+        return produced > 0 ? Number(run.costUsd) / produced : null;
+      })(),
       landed: c?.landed ?? 0,
       autoQualified: c?.autoQualified ?? 0,
       forceQualified: c?.forceQualified ?? 0,

@@ -19,6 +19,8 @@ const { sponsorLicences } = await import("@/db/schema");
 const { SPONSOR_ALIASES } = await import("@/config/sponsors/aliases");
 const { normaliseName } = await import("@/features/sponsors/normalise");
 
+let missing = 0;
+
 for (const [brand, legal] of Object.entries(SPONSOR_ALIASES)) {
   const target = normaliseName(legal);
   const exact = await db
@@ -44,9 +46,23 @@ for (const [brand, legal] of Object.entries(SPONSOR_ALIASES)) {
     )
     .limit(6);
 
+  missing += 1;
   console.log(`MISSING  ${brand.padEnd(14)} -> ${legal}`);
   for (const c of candidates) console.log(`           candidate: ${c.name}`);
   if (candidates.length === 0) console.log("           (nothing in the register)");
 }
 
+/**
+ * Non-zero on a broken alias, so the scheduled run FAILS visibly (JSV2S1147).
+ *
+ * A company can lose its licence between refreshes, and a stale alias would go
+ * on reporting `confirmed` for one that no longer exists — the worst failure
+ * this lookup has, because it tells the user to apply for a job they cannot
+ * take. Actions emails on a failed workflow, which is the whole notification
+ * mechanism needed here.
+ */
+if (missing > 0) {
+  console.log(`\n${missing} alias(es) no longer resolve. Fix config/sponsors/aliases.ts.`);
+  process.exit(1);
+}
 process.exit(0);

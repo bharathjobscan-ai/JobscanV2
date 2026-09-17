@@ -57,6 +57,20 @@ export class RunRecorder {
   }
 
   /**
+   * What this run cost, in USD (JSV2S1144).
+   *
+   * Set by whatever knows the source's pricing model, because only it does:
+   * Apify bills per result plus a start event, a future source might bill per
+   * request or not at all. Left unset the column stays null, which reads as
+   * "free" rather than "zero, measured".
+   */
+  private costUsd: number | null = null;
+
+  spend(usd: number): void {
+    this.costUsd = (this.costUsd ?? 0) + usd;
+  }
+
+  /**
    * Record a row that could not be processed (JSV2S1015).
    *
    * Buffered rather than written immediately so a run makes one insert instead
@@ -89,6 +103,10 @@ export class RunRecorder {
         .set({
           ...this.metrics,
           status,
+          // Stored as a string: numeric(10,6) round-trips through the driver as
+          // text, and going via a float would reintroduce the imprecision the
+          // numeric column exists to avoid.
+          costUsd: this.costUsd === null ? null : this.costUsd.toFixed(6),
           logs: this.logs,
           error:
             runError === undefined

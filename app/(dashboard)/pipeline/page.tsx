@@ -209,7 +209,13 @@ export default async function PipelinePage() {
                   <th className="px-2 py-2 text-right font-medium">Force qual.</th>
                   <th className="px-2 py-2 text-right font-medium">Review</th>
                   <th className="px-2 py-2 text-right font-medium">Screened</th>
-                  <th className="px-4 py-2 text-right font-medium">Binned</th>
+                  <th className="px-2 py-2 text-right font-medium">Binned</th>
+                  {/* JSV2S1144 — what the fetch cost, and what that works out
+                      at per application it actually produced. */}
+                  <th className="border-l border-line px-2 py-2 text-right font-medium">
+                    Cost
+                  </th>
+                  <th className="px-4 py-2 text-right font-medium">Per app.</th>
                 </tr>
               </thead>
               <tbody>
@@ -267,8 +273,22 @@ export default async function PipelinePage() {
                     <td className="px-2 py-2 text-right tabular-nums text-muted">
                       {o.screenedOut || "—"}
                     </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-faint">
+                    <td className="px-2 py-2 text-right tabular-nums text-faint">
                       {o.binned || "—"}
+                    </td>
+                    <td className="border-l border-line px-2 py-2 text-right tabular-nums">
+                      {o.costUsd === null ? (
+                        <span className="text-faint" title="This source costs nothing">
+                          free
+                        </span>
+                      ) : (
+                        formatUsd(o.costUsd)
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-muted">
+                      {o.costPerApplicationUsd === null
+                        ? "—"
+                        : formatUsd(o.costPerApplicationUsd)}
                     </td>
                   </tr>
                 ))}
@@ -283,7 +303,9 @@ export default async function PipelinePage() {
           <p className="border-t border-line px-4 py-2 text-[11px] text-subtle">
             Fetched = Duplicate + Rejected + Ingested. Duplicates were paid for
             and discarded — the actor bills per result, so that column is the
-            cost of fetching jobs already held.
+            cost of fetching jobs already held. Cost per application is the run
+            divided by the applications it produced, which is far higher than
+            the per-job cost and is the figure that matters.
           </p>
         ) : null}
 

@@ -1,4 +1,4 @@
-import { LINKEDIN_ACTOR } from "@/config/apify";
+import { LINKEDIN_ACTOR, estimateFetchCostUsd } from "@/config/apify";
 import { getEnv } from "@/lib/config/env";
 import { withRetry } from "../reliability";
 import { bestDescription } from "../html-text";
@@ -233,6 +233,17 @@ export class ApifyLinkedInAdapter implements JobSourceAdapter {
     });
 
     const items = (await response.json()) as ApifyLinkedInJob[];
-    return mapDataset(Array.isArray(items) ? items : []);
+    const result = mapDataset(Array.isArray(items) ? items : []);
+
+    /**
+     * Priced on what the actor RETURNED, not on what was asked for (JSV2S1144).
+     *
+     * `limit` is a ceiling; a search with few matches returns fewer and bills
+     * less. Charging the ceiling would overstate every run. The start event is
+     * charged regardless, which is why a fetch that returns nothing is still
+     * not free.
+     */
+    result.costUsd = estimateFetchCostUsd(Array.isArray(items) ? items.length : 0);
+    return result;
   }
 }

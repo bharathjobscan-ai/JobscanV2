@@ -69,8 +69,17 @@ export type FetchResult = {
    * whole run (JSV2S1013).
    */
   failures: { payload: unknown; error: string }[];
-  /** Anything worth putting on the run's log — page counts, truncation, cost. */
+  /** Anything worth putting on the run's log — page counts, truncation. */
   notes?: Record<string, unknown>;
+  /**
+   * What this fetch cost, in USD (JSV2S1144).
+   *
+   * Reported by the adapter rather than computed by the caller, because only
+   * the adapter knows its source's pricing model — Apify bills per result plus
+   * a start event; another source might bill per request, or nothing. Omitted
+   * means free, which is the honest reading for a source with no cost.
+   */
+  costUsd?: number;
 };
 
 export interface JobSourceAdapter {

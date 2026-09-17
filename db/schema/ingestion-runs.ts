@@ -1,4 +1,13 @@
-import { index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 import type {
   IngestionRunStatus,
@@ -38,6 +47,22 @@ export const ingestionRuns = pgTable(
     updated: integer("updated").notNull().default(0),
     reposted: integer("reposted").notNull().default(0),
     rejected: integer("rejected").notNull().default(0),
+
+    /**
+     * What this run cost, in USD (JSV2S1144).
+     *
+     * STAMPED at close, not derived. AI cost is derived from stored token
+     * counts so that a rate correction applies to history — a trade
+     * `features/ai/cost.ts` documents and accepts. Ingestion is the opposite
+     * case: Apify publishes price changes and the actor's rate WILL move, so
+     * re-pricing an old run would quietly rewrite what was actually billed.
+     * `config/apify.ts` carries the date its rates were read; this column
+     * carries the money.
+     *
+     * Null for sources that cost nothing. A manual upload is free, and a zero
+     * would claim that had been measured.
+     */
+    costUsd: numeric("cost_usd", { precision: 10, scale: 6 }),
 
     /**
      * JSV2S1011 — structured stage records, newest last. Kept on the run rather

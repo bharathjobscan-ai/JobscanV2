@@ -1,0 +1,59 @@
+# JSV2S1147 — keep the local sponsor register current.
+#
+# Its own workflow rather than a step inside daily.yml, for two reasons. The
+# Home Office republishes the register roughly monthly, so running it nightly
+# would download 143,000 rows to change nothing. And a refresh failure must not
+# fail the ingestion run: a stale register still answers, where a failed
+# pipeline brings back no jobs at all.
+name: Refresh sponsor register
+
+on:
+  schedule:
+    # 04:00 UTC each Sunday. Well clear of the nightly pipeline at 00:30.
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: sponsor-register
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Same pattern as daily.yml: secrets are materialised to .env.local at run
+      # time so local and scheduled runs take one code path, and shredded after.
+      - name: Materialise credentials
+        run: |
+          {
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}"
+            echo "DIRECT_URL=${{ secrets.DIRECT_URL }}"
+          } > .env.local
+
+      # Replace-in-one-transaction. The script refuses to overwrite a good copy
+      # with a broken parse: fewer than 1,000 rows aborts before the delete, so
+      # a format change upstream cannot turn every employer into a non-sponsor.
+      - name: Refresh the register
+        run: npm run sponsors:refresh
+
+      # The audit is the point of running this on a schedule at all. Companies
+      # LOSE licences, and a stale alias would keep reporting `confirmed` for
+      # one that no longer exists — the single worst failure this lookup has,
+      # because it tells the user to apply for a job they cannot take.
+      - name: Audit the aliases against the refreshed register
+        run: npm run sponsors:audit
+
+      - name: Shred credentials
+        if: always()
+        run: rm -f .env.local
