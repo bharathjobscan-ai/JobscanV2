@@ -1,10 +1,34 @@
 # JobScan V2 — Product Requirements Document
 
-**Current version:** 1.7 · **Last updated:** 2026-09-04 · **Owner:** Bharath Raghu
+**Current version:** 1.8 · **Last updated:** 2026-09-05 · **Owner:** Bharath Raghu
 
 ---
 
 ## Document control
+
+**Version 1.8 — 2026-09-05 — Mandatory Pass G; scoring moved out of CVG**
+
+- **SimG is now mandatory and automatic** (JSV2S1058). It runs after every CV
+  generation, evaluates the **CV only** — the cover letter is deliberately not
+  revised — and returns a *priced worklist* rather than prose. This supersedes
+  §1.5 and §9.5 below, which described it as invoked on request.
+- **CVG no longer reports a score, a verdict, a match percentage or keyword
+  coverage.** SimG owns all four. The author of a document cannot also be its
+  judge, and two instruments reporting the same quantity can only disagree.
+- **Recommendations are independent by construction**, so their points are
+  additive and the running score is honest as items are accepted one at a time.
+  The whole worklist must also fit one A4 page, so "accept all" can never
+  produce an overflowing CV.
+- **Accepting an edit costs nothing.** SimG quotes `before`/`after` verbatim and
+  the revision is literal substitution — no third model call. `contentMd` is
+  never mutated; the current CV is derived by replaying accepted edits, which
+  gives undo without keeping revision history (JSV2S1126).
+- **ATS hygiene is deterministic** (JSV2S1057): whitespace, curly quotes, glyph
+  bullets and the LinkedIn URL are repaired in code on the single write path,
+  not asked of the model. Tables, HTML, images and non-standard headings are
+  flagged, never rewritten.
+- **Two scores exist and must never share a label**: ScoreG's job score and
+  SimG's document score. Accepting SimG edits does not move the job score.
 
 **Version 1.7 — 2026-09-04 — Deterministic pre-qualification; C3 closed**
 
@@ -60,7 +84,8 @@
   strict one-page target in particular, which governs how much it writes and
   cannot be compensated for by the renderer.
 - SimG (Pass 2) split into `prompts/cvg/SIMG.md` so it is not sent on every
-  generation call. Automatic invocation remains JSV2S1058 (Phase 2).
+  generation call. *Superseded by v1.8: invocation is now automatic, but it
+  remains a separate call and is still never part of the CVG prompt.*
 
 **Version 1.4 — 2026-08-29 — Document deliverable format**
 
@@ -77,7 +102,8 @@
 
 **Version 1.3 — 2026-08-29 — Pass G scope clarified**
 
-- Pass G (adversarial validation of CV optimiser output) is **not** auto-invoked
+- *Superseded by v1.8 — Pass G is now mandatory.* Historic wording:
+  Pass G (adversarial validation of CV optimiser output) is **not** auto-invoked
   in the MVP. It runs today only on explicit confirmation, so resume and cover
   letter generation is a single call. Making it mandatory requires updating the
   CVG skill and is tracked as JSV2S1058 in Phase 2. This lowers the measured
@@ -336,11 +362,19 @@ Both sides stay configurable per task (`PROVIDER_SCORING`, `PROVIDER_CV`,
 `npm run ai:bench` compares providers on the same job, so this stays
 evidence-based as models change.
 
-**Pass G.** Still not auto-invoked; resume and cover letter are produced by a
-single call. Making it mandatory is JSV2S1058, moved into **Phase 1.5**. Its own
-decision rule caps rewrites at one, so the cost is bounded at two extra calls per
-package. Because Phase 1.5 keeps document generation manual, this does not
-compound with the scheduled run.
+**Pass G — mandatory as of 2026-09-05 (JSV2S1058).** Resume and cover letter are
+still produced by a single CVG call; SimG is a **second** call that runs
+automatically after it, so a CV package now costs two calls rather than one.
+There is no third: the revision is applied by literal substitution from SimG's
+verbatim `before`/`after`, so accepting any number of edits is free.
+
+The cost is bounded and **separately measurable** — SimG is its own `ai_jobs`
+task type, so `features/ai/cost.ts` reports it as its own line. That is what
+makes "is SimG worth running every time?" an answerable question rather than a
+guess. `SIMG_AUTOMATIC` in `config/simg.ts` is the switch.
+
+Because Phase 1.5 keeps document generation manual, this does not compound with
+the scheduled run: the nightly pass scores, it never generates.
 
 ### 9.6 Hosting and access control
 
