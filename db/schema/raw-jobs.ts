@@ -98,6 +98,22 @@ export const rawJobs = pgTable(
      */
     prequalificationVersion: text("prequalification_version"),
 
+    /**
+     * Soft delete — the Bin (JSV2S1157).
+     *
+     * Acknowledging a screened-out job, not destroying it. The row stays in the
+     * database with its verdict and evidence intact; it simply stops appearing
+     * in the review and rejected queues, which are working lists rather than an
+     * archive.
+     *
+     * Soft rather than hard because the verdict is the thing worth keeping: a
+     * binned job is evidence of what the gate decided and why, and a rules
+     * change may well deserve to reconsider it. A hard delete would also take
+     * the fingerprint with it, so the same job would be re-ingested and
+     * re-presented on the next fetch — the pile would refill itself.
+     */
+    binnedAt: timestamp("binned_at", { withTimezone: true }),
+
     /** JSV2S1041 — supports repost and active-listing detection later. */
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
       .notNull()

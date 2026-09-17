@@ -1,0 +1,1 @@
+ALTER TABLE "raw_jobs" ADD COLUMN "binned_at" timestamp with time zone;

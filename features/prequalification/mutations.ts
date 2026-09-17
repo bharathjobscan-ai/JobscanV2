@@ -1,4 +1,4 @@
-import { eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import { applicationEvents, applications, rawJobs } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
@@ -156,7 +156,10 @@ export async function requalifyStale(limit = 500): Promise<{ evaluated: number; 
     .select({ job: rawJobs })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
-    .where(isNull(applications.id))
+    // A binned job is a decision already made, exactly as a promoted one is.
+    // Without this, a rules change would re-judge it, promote it to PASS and
+    // resurrect something that was deliberately dismissed (JSV2S1157).
+    .where(and(isNull(applications.id), isNull(rawJobs.binnedAt)))
     .limit(limit);
 
   const stale = rows
@@ -228,4 +231,50 @@ export async function requalifyStale(limit = 500): Promise<{ evaluated: number; 
   }
 
   return { evaluated: stale.length, nowPassing };
+}
+
+
+/**
+ * Move jobs to the Bin — a soft delete (JSV2S1157).
+ *
+ * An acknowledgement, not a destruction. The row keeps its verdict, its
+ * evidence and its fingerprint; it simply leaves the working queues. Keeping
+ * the fingerprint is the load-bearing part: a hard delete would let the same
+ * job be re-ingested and re-presented on the next fetch, so the pile would
+ * refill itself with exactly what was just dismissed.
+ *
+ * Promoted jobs are refused rather than skipped. Binning something that has
+ * already become an application would hide the job while leaving the
+ * application behind, pointing at a row the UI treats as deleted.
+ */
+export async function binJobs(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+
+  const promoted = await db
+    .select({ id: rawJobs.id })
+    .from(rawJobs)
+    .innerJoin(applications, eq(applications.rawJobId, rawJobs.id))
+    .where(inArray(rawJobs.id, ids));
+
+  const binnable = ids.filter((id) => !promoted.some((p) => p.id === id));
+  if (binnable.length === 0) return 0;
+
+  const updated = await db
+    .update(rawJobs)
+    .set({ binnedAt: new Date(), updatedAt: new Date() })
+    .where(and(inArray(rawJobs.id, binnable), isNull(rawJobs.binnedAt)))
+    .returning({ id: rawJobs.id });
+
+  return updated.length;
+}
+
+/** Take jobs back out of the Bin, for when a rules change deserves a second look. */
+export async function restoreJobs(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const updated = await db
+    .update(rawJobs)
+    .set({ binnedAt: null, updatedAt: new Date() })
+    .where(inArray(rawJobs.id, ids))
+    .returning({ id: rawJobs.id });
+  return updated.length;
 }

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { AlreadyPromoted, promoteJob, rejectJob, requalifyStale } from "./mutations";
+import { AlreadyPromoted, binJobs, promoteJob, rejectJob, requalifyStale, restoreJobs } from "./mutations";
 
 /** Server actions for the review queue (JSV2S1038). */
 
@@ -33,4 +33,25 @@ export async function requalifyAction(): Promise<void> {
   await requalifyStale();
   revalidatePath("/review");
   revalidatePath("/applications");
+}
+
+/**
+ * Move one or many jobs to the Bin (JSV2S1157).
+ *
+ * Reads every `jobId` from the form, so the same action serves a single row and
+ * a bulk selection — the UI difference is how many boxes are ticked, not which
+ * endpoint is called.
+ */
+export async function binAction(data: FormData): Promise<void> {
+  const ids = data.getAll("jobId").filter((v): v is string => typeof v === "string");
+  await binJobs(ids);
+  revalidatePath("/review");
+  revalidatePath("/pipeline");
+}
+
+export async function restoreAction(data: FormData): Promise<void> {
+  const ids = data.getAll("jobId").filter((v): v is string => typeof v === "string");
+  await restoreJobs(ids);
+  revalidatePath("/review");
+  revalidatePath("/pipeline");
 }

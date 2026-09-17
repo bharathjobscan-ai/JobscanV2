@@ -188,6 +188,9 @@ export async function listForReview(
       and(
         viewFilter(f.view ?? "review"),
         isNull(applications.id),
+        // The Bin is a soft delete: binned jobs keep their row and their
+        // verdict but leave every working list (JSV2S1157).
+        isNull(rawJobs.binnedAt),
         ...selectionFilters(f.selections),
         dateFilter(f.from, f.to),
         searchFilter(f.search),
@@ -222,7 +225,7 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
     })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
-    .where(and(viewFilter(view), isNull(applications.id)));
+    .where(and(viewFilter(view), isNull(applications.id), isNull(rawJobs.binnedAt)));
 
   const facets: ReviewFacets = {};
   for (const filter of PREQUAL_FILTERS) {
@@ -248,7 +251,7 @@ export async function countForReview(): Promise<Record<ReviewView, number>> {
     })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
-    .where(isNull(applications.id));
+    .where(and(isNull(applications.id), isNull(rawJobs.binnedAt)));
 
   return {
     review: row?.review ?? 0,
@@ -263,6 +266,12 @@ export async function countAwaitingReview(): Promise<number> {
     .select({ n: sql<number>`count(*)::int` })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
-    .where(and(eq(rawJobs.prequalification, "review"), isNull(applications.id)));
+    .where(
+      and(
+        eq(rawJobs.prequalification, "review"),
+        isNull(applications.id),
+        isNull(rawJobs.binnedAt),
+      ),
+    );
   return row?.n ?? 0;
 }

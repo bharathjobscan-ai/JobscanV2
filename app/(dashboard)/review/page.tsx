@@ -6,7 +6,13 @@ import {
   PrequalBadge,
 } from "@/components/applications/prequal-badges";
 import { Badge, Button, Card, CardHeader, EmptyState, buttonClass } from "@/components/ui/base";
-import { promoteAction, rejectAction, requalifyAction } from "@/features/prequalification/actions";
+import {
+  binAction,
+  promoteAction,
+  rejectAction,
+  requalifyAction,
+} from "@/features/prequalification/actions";
+import { BinSelection } from "@/components/applications/bin-selection";
 import {
   getFacets,
   countForReview,
@@ -130,6 +136,7 @@ export default async function ReviewPage({
           />
         </Card>
       ) : (
+        <BinSelection action={binAction}>
         <ul className="space-y-2">
           {items.map((item) => {
             const d = item.detail;
@@ -138,14 +145,25 @@ export default async function ReviewPage({
                 <Card>
                   <CardHeader
                     title={
-                      <a
-                        href={item.jobUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="hover:underline"
-                      >
-                        {item.title}
-                      </a>
+                      <span className="flex items-center gap-2.5">
+                        {/* Name and value are what the bulk action reads; one
+                            ticked box and fifty use the same code path. */}
+                        <input
+                          type="checkbox"
+                          name="jobId"
+                          value={item.id}
+                          aria-label={`Select ${item.title}`}
+                          className="size-3.5 shrink-0"
+                        />
+                        <a
+                          href={item.jobUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:underline"
+                        >
+                          {item.title}
+                        </a>
+                      </span>
                     }
                     meta={`${item.company}${item.location ? ` · ${item.location}` : ""}`}
                     action={
@@ -219,6 +237,7 @@ export default async function ReviewPage({
             );
           })}
         </ul>
+        </BinSelection>
       )}
     </div>
   );

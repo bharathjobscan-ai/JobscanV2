@@ -64,6 +64,13 @@
       "when": 1788499362503,
       "tag": "0008_panoramic_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789651216993,
+      "tag": "0009_omniscient_kree",
+      "breakpoints": true
     }
   ]
 }
