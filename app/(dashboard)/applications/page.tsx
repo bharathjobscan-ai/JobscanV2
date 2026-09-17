@@ -8,6 +8,8 @@ import {
 } from "@/components/applications/badges";
 import { PreferredCityBadge } from "@/components/applications/prequal-badges";
 import { Badge, Card, EmptyState, LinkButton } from "@/components/ui/base";
+import { getApplicationCosts } from "@/features/ai/queries";
+import { formatUsd } from "@/lib/ai/pricing";
 import {
   countByView,
   countIncomplete,
@@ -45,6 +47,16 @@ export default async function ApplicationsPage({
     countIncomplete(),
   ]);
 
+  /**
+   * JSV2S1141 — spend visible while triaging, not only after opening a row.
+   *
+   * One batched query for the whole page: per-row lookups would be an N+1
+   * against a database on another continent. The aggregation is the same pure
+   * function the detail view uses, so the two can never disagree.
+   */
+  const costs = await getApplicationCosts(items.map((item) => item.id));
+  const pageTotal = [...costs.values()].reduce((sum, c) => sum + c.totalUsd, 0);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-4">
@@ -53,6 +65,7 @@ export default async function ApplicationsPage({
           <p className="text-xs text-muted">
             {counts.all} tracked
             {incomplete > 0 ? ` · ${incomplete} missing a job description` : ""}
+            {pageTotal > 0 ? ` · ${formatUsd(pageTotal)} AI spend in this view` : ""}
           </p>
         </div>
         <LinkButton href="/upload" variant="primary">
@@ -137,6 +150,14 @@ export default async function ApplicationsPage({
                     <StatusBadge status={item.status} isPending={item.isPending} />
                     <span className="w-8 text-right">
                       <ScoreBadge score={item.jobScore} />
+                    </span>
+                    <span
+                      className="w-14 text-right text-[11px] tabular-nums text-subtle"
+                      title="AI spent on this application"
+                    >
+                      {(costs.get(item.id)?.totalUsd ?? 0) > 0
+                        ? formatUsd(costs.get(item.id)!.totalUsd)
+                        : "—"}
                     </span>
                   </div>
 

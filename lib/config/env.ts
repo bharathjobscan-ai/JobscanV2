@@ -26,6 +26,11 @@ const EnvSchema = z.object({
   /** Per-task routing, measured rather than assumed — see docs/decisions/0005. */
   PROVIDER_SCORING: z.enum(["gemini_api", "anthropic_api"]).default("gemini_api"),
   PROVIDER_CV: z.enum(["gemini_api", "anthropic_api"]).default("anthropic_api"),
+  /**
+   * SimG's provider (JSV2S1058). Falls back to `PROVIDER_CV` when unset, which
+   * is what it inherited implicitly before this was made explicit.
+   */
+  PROVIDER_SIMG: z.enum(["gemini_api", "anthropic_api"]).optional(),
 
   GEMINI_API_KEY: z.string().min(1).optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
@@ -46,7 +51,24 @@ const EnvSchema = z.object({
   /** D5 — per-task models, deliberately configurable rather than hardcoded. */
   MODEL_SCORING: z.string().default("claude-sonnet-5"),
   MODEL_CV: z.string().default("claude-opus-5"),
+  /**
+   * SimG's model (JSV2S1058). Defaults to `MODEL_CV` — Opus 5 — which is a
+   * deliberate starting point rather than an accident: SimG's judgement about a
+   * CV is only as good as the model making it.
+   *
+   * Separated from `MODEL_CV` so it can move WITHOUT a code change once the
+   * cost is visible. SimG is evaluation, not long-form generation, so Sonnet 5
+   * is the obvious cheaper landing spot:
+   *
+   *     MODEL_SIMG="claude-sonnet-5"
+   *
+   * The cost card splits spend into scoring / documents / SimG precisely so
+   * that decision is made on measured numbers (JSV2S1142).
+   */
+  MODEL_SIMG: z.string().optional(),
   AI_EFFORT: z.enum(["low", "medium", "high", "xhigh", "max"]).default("high"),
+  /** SimG's reasoning effort. Falls back to `AI_EFFORT` when unset. */
+  AI_EFFORT_SIMG: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
 
   /**
    * C1 — RESOLVED 2026-08-29: 14 days, per the PRD's "2 weeks". The Analytics

@@ -1,8 +1,9 @@
-import { and, eq, gte, isNotNull } from "drizzle-orm";
+import { and, eq, gte, isNotNull, sql } from "drizzle-orm";
 
 import { aiJobs } from "@/db/schema";
 import { db } from "@/lib/db/client";
 import { budgetStatus, type BudgetStatus, type PricedRun } from "./budget";
+import { groundingUsage, type GroundingUsage } from "./grounding";
 
 /**
  * The database half of the spend ceiling (JSV2S1137).
@@ -48,4 +49,31 @@ export async function getBudgetStatus(now = new Date()): Promise<BudgetStatus> {
   return budgetStatus(today, month);
 }
 
+/**
+ * Grounded requests made this calendar month (JSV2S1131).
+ *
+ * Counted from `allowed_tools`, which is stamped on the run at the moment the
+ * call is made — the same field `cost.ts` uses — so the count cannot drift from
+ * what was actually requested.
+ *
+ * Deliberately counts every grounded run regardless of outcome cost: the
+ * allowance is consumed per *request*, so a run that returned nothing useful
+ * still spent one.
+ */
+export async function getGroundingUsage(now = new Date()): Promise<GroundingUsage> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(aiJobs)
+    .where(
+      and(
+        eq(aiJobs.allowedTools, "GoogleSearch"),
+        eq(aiJobs.status, "succeeded"),
+        gte(aiJobs.finishedAt, startOfMonth(now)),
+      ),
+    );
+
+  return groundingUsage(row?.count ?? 0);
+}
+
 export type { BudgetStatus } from "./budget";
+export type { GroundingUsage } from "./grounding";

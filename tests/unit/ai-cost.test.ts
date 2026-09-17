@@ -96,3 +96,42 @@ describe("summariseRuns", () => {
     expect(result.byTask).toEqual([]);
   });
 });
+
+/** JSV2S1142 — the split the spend decision turns on. */
+describe("cost buckets", () => {
+  const run = (taskType: string, inputTokens: number) => ({
+    id: taskType + inputTokens,
+    taskType: taskType as never,
+    provider: "anthropic_api",
+    model: "claude-sonnet-5",
+    allowedTools: null,
+    usage: { inputTokens, outputTokens: 500, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    finishedAt: new Date(),
+  });
+
+  it("folds the CV and cover letter into one line, because one call makes both", () => {
+    const summary = summariseRuns([
+      run("score", 4000),
+      run("tailor_cv", 6000),
+      run("cover_letter", 3000),
+      run("simg", 5000),
+    ]);
+
+    expect(summary.byBucket.map((b) => b.key).sort()).toEqual([
+      "documents",
+      "evaluation",
+      "scoring",
+    ]);
+    expect(summary.byBucket.find((b) => b.key === "documents")?.runs).toBe(2);
+  });
+
+  it("reports SimG's share so the run-it-every-time question is answerable", () => {
+    const summary = summariseRuns([run("tailor_cv", 6000), run("simg", 6000)]);
+    // Identical usage on both, so SimG is exactly half the spend.
+    expect(summary.evaluationShare).toBeCloseTo(0.5, 2);
+  });
+
+  it("reports a zero share rather than NaN when nothing has been spent", () => {
+    expect(summariseRuns([]).evaluationShare).toBe(0);
+  });
+});
