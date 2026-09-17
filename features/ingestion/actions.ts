@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { ingestRows, type IngestResult } from "./ingest";
+import { withRun } from "./runs";
 import { parseUploadFile, UploadError } from "./parsers";
 
 export type UploadState = {
@@ -23,10 +24,39 @@ export async function uploadJobsAction(
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     const rows = await parseUploadFile(buffer, file.name);
-    const result = await ingestRows(rows);
+
+    /**
+     * Every upload is a run (JSV2S1158).
+     *
+     * Uploads previously persisted nothing about themselves — results were
+     * reported in-session and then gone. That is fine while someone is
+     * watching, and useless afterwards: "which upload brought this job in, and
+     * what became of that batch?" had no answer. A manual upload is now
+     * recorded exactly as a scheduled fetch is, and gets the same UUID.
+     */
+    const { result } = await withRun(
+      { source: "manual_upload", trigger: "manual_upload", params: { file: file.name } },
+      async (run) => {
+        const outcome = await ingestRows(rows, { runId: run.id });
+
+        run.count("fetched", rows.length);
+        run.count("inserted", outcome.inserted);
+        run.count("duplicates", outcome.duplicate);
+        // Rows the validator refused. Derivation cannot see these later —
+        // they have no raw_jobs row — which is why they are counted here.
+        run.count("rejected", outcome.rejected);
+        run.log("persist", "info", `Uploaded ${file.name}`, {
+          rows: rows.length,
+          inserted: outcome.inserted,
+        });
+
+        return outcome;
+      },
+    );
 
     revalidatePath("/applications");
-    return { result };
+    revalidatePath("/pipeline");
+    return result ? { result } : { error: "Upload failed." };
   } catch (error) {
     if (error instanceof UploadError) return { error: error.message };
     return {

@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { ingestionRuns } from "./ingestion-runs";
 import type { PrequalDecision } from "@/lib/config/constants";
 import {
   boolean,
@@ -99,6 +100,24 @@ export const rawJobs = pgTable(
     prequalificationVersion: text("prequalification_version"),
 
     /**
+     * Which ingestion run brought this job in (JSV2S1158).
+     *
+     * The link that makes per-run metrics possible. Nullable because rows
+     * ingested before runs were recorded have none, and because losing a run
+     * row must not take its jobs with it — `onDelete: "set null"` keeps the
+     * jobs and drops only the attribution.
+     *
+     * Note what this does NOT do: it does not turn the counters on
+     * `ingestion_runs` into duplicates. Those record what the run SAW — rows
+     * fetched, duplicates skipped, records rejected at validation — and those
+     * rows do not exist here to be counted. This column answers the other
+     * question: what became of the jobs that did land.
+     */
+    ingestionRunId: uuid("ingestion_run_id").references(() => ingestionRuns.id, {
+      onDelete: "set null",
+    }),
+
+    /**
      * Soft delete — the Bin (JSV2S1157).
      *
      * Acknowledging a screened-out job, not destroying it. The row stays in the
@@ -138,6 +157,8 @@ export const rawJobs = pgTable(
     index("raw_jobs_company_idx").on(t.company),
     // The review queue and the scheduled scorer both filter on this.
     index("raw_jobs_prequalification_idx").on(t.prequalification),
+    // Per-run metrics group by this on every pipeline page load.
+    index("raw_jobs_ingestion_run_idx").on(t.ingestionRunId),
   ],
 );
 

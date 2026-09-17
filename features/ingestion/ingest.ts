@@ -53,6 +53,14 @@ export type IngestOptions = {
    * later should be a config change rather than a code change.
    */
   trigger?: IngestionTrigger;
+  /**
+   * The run this ingest belongs to (JSV2S1158). Stamped onto every job that
+   * lands, so per-run metrics can be derived afterwards. Optional so existing
+   * callers and tests are unaffected.
+   */
+  runId?: string;
+  /** Where the rows came from, for the run record. */
+  sourceLabel?: string;
 };
 
 type Prepared = {
@@ -300,7 +308,9 @@ export async function ingestRows(
 
       const insertedJobs = await tx
         .insert(rawJobs)
-        .values(jobRows)
+        // JSV2S1158 — attribute every landed job to its run, so "what became
+        // of last night's fetch" is answerable months later.
+        .values(jobRows.map((row) => ({ ...row, ingestionRunId: options.runId })))
         .returning({ id: rawJobs.id, fingerprint: rawJobs.fingerprint });
 
       const jobIdByFingerprint = new Map(

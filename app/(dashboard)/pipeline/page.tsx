@@ -2,7 +2,11 @@ import Link from "next/link";
 
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui/base";
 import { getBudgetStatus } from "@/features/ai/budget-queries";
-import { getPipelineSummary, listRuns } from "@/features/pipeline/dashboard-queries";
+import { getPipelineSummary } from "@/features/pipeline/dashboard-queries";
+import {
+  countUnattributedJobs,
+  getRunOutcomes,
+} from "@/features/ingestion/run-outcomes";
 import { INGESTION_RUN_LABELS, type IngestionRunStatus } from "@/lib/config/constants";
 import { formatUsd } from "@/lib/ai/pricing";
 
@@ -74,9 +78,10 @@ function Pile({
 export default async function PipelinePage() {
   // Three round trips, not seven. On a one-connection serverless pool each
   // query is sequential, so fan-out is latency and connection pressure.
-  const [piles, runs, budget] = await Promise.all([
+  const [piles, outcomes, unattributed, budget] = await Promise.all([
     getPipelineSummary(),
-    listRuns(20),
+    getRunOutcomes(20),
+    countUnattributedJobs(),
     getBudgetStatus(),
   ]);
   const awaiting = piles.awaitingScore;
@@ -167,39 +172,91 @@ export default async function PipelinePage() {
         </Card>
       ) : null}
 
-      {/* --- Run history (JSV2S1011, 1012) ------------------------------ */}
+      {/* --- Per-run outcomes (JSV2S1158) ------------------------------- */}
       <Card>
-        <CardHeader title="Runs" meta={runs.length > 0 ? `last ${runs.length}` : undefined} />
-        {runs.length === 0 ? (
+        <CardHeader
+          title="Runs"
+          meta={
+            unattributed > 0
+              ? `${outcomes.length} recorded · ${unattributed} jobs predate run tracking`
+              : `last ${outcomes.length}`
+          }
+        />
+        {outcomes.length === 0 ? (
           <EmptyState
             title="No runs recorded"
-            hint="Scheduled runs appear here once the nightly workflow has executed. A manual upload does not create a run."
+            hint="Every upload and scheduled fetch now creates a run. The next one will appear here."
           />
         ) : (
-          <ul className="divide-y divide-line">
-            {runs.map((run) => (
-              <li key={run.id} className="px-4 py-2 text-xs">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="font-medium">
-                    {run.source} <span className="text-subtle">· {run.trigger}</span>
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <Badge tone={runTone(run.status)}>
-                      {INGESTION_RUN_LABELS[run.status] ?? run.status}
-                    </Badge>
-                    <span className="text-subtle">{relative(run.startedAt)}</span>
-                  </span>
-                </div>
-                <div className="mt-0.5 text-subtle tabular-nums">
-                  fetched {run.fetched} · new {run.inserted} · duplicate {run.duplicates} ·
-                  rejected {run.rejected}
-                  {run.durationMs ? ` · ${(run.durationMs / 1000).toFixed(1)}s` : ""}
-                </div>
-                {run.error ? <p className="mt-0.5 text-negative">{run.error}</p> : null}
-              </li>
-            ))}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-line text-left text-[10px] tracking-wide text-faint uppercase">
+                  <th className="px-4 py-2 font-medium">Run</th>
+                  <th className="px-2 py-2 text-right font-medium">Ingested</th>
+                  <th className="px-2 py-2 text-right font-medium">Auto qualified</th>
+                  <th className="px-2 py-2 text-right font-medium">Force qualified</th>
+                  <th className="px-2 py-2 text-right font-medium">Needs review</th>
+                  <th className="px-2 py-2 text-right font-medium">Screened out</th>
+                  <th className="px-4 py-2 text-right font-medium">Binned</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outcomes.map((o) => (
+                  <tr key={o.runId} className="border-b border-line last:border-0">
+                    <td className="px-4 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{o.source}</span>
+                        <Badge tone={runTone(o.status)}>
+                          {INGESTION_RUN_LABELS[o.status] ?? o.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-0.5 text-subtle">
+                        {relative(o.startedAt)}
+                        {/* Rows the validator refused leave no raw_jobs row, so
+                            they can only ever be a stamped count. */}
+                        {o.duplicates > 0 ? ` · ${o.duplicates} duplicate` : ""}
+                        {o.rejectedAtValidation > 0
+                          ? ` · ${o.rejectedAtValidation} rejected at validation`
+                          : ""}
+                      </div>
+                      <div
+                        className="mt-0.5 font-mono text-[10px] text-faint"
+                        title="Run id"
+                      >
+                        {o.runId}
+                      </div>
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">{o.landed}</td>
+                    <td className="px-2 py-2 text-right tabular-nums text-positive">
+                      {o.autoQualified || "—"}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {o.forceQualified || "—"}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums text-warning">
+                      {o.needsReview || "—"}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums text-muted">
+                      {o.screenedOut || "—"}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-faint">
+                      {o.binned || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
+
+        {unattributed > 0 ? (
+          <p className="border-t border-line px-4 py-2 text-[11px] text-subtle">
+            {unattributed} jobs were ingested before runs were recorded and belong
+            to no run. They are counted in the queues above but cannot appear in
+            this table — said plainly rather than left to look like a discrepancy.
+          </p>
+        ) : null}
       </Card>
     </div>
   );
