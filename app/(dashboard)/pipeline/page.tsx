@@ -193,11 +193,20 @@ export default async function PipelinePage() {
               <thead>
                 <tr className="border-b border-line text-left text-[10px] tracking-wide text-faint uppercase">
                   <th className="px-4 py-2 font-medium">Run</th>
-                  <th className="px-2 py-2 text-right font-medium">Ingested</th>
-                  <th className="px-2 py-2 text-right font-medium">Auto qualified</th>
-                  <th className="px-2 py-2 text-right font-medium">Force qualified</th>
-                  <th className="px-2 py-2 text-right font-medium">Needs review</th>
-                  <th className="px-2 py-2 text-right font-medium">Screened out</th>
+                  {/* The fetch half: what the actor returned and what never
+                      became a job. These are stamped at ingest — a duplicate
+                      or a validation reject leaves no row to count later. */}
+                  <th className="px-2 py-2 text-right font-medium">Fetched</th>
+                  <th className="px-2 py-2 text-right font-medium">Duplicate</th>
+                  <th className="px-2 py-2 text-right font-medium">Rejected</th>
+                  <th className="border-l border-line px-2 py-2 text-right font-medium">
+                    Ingested
+                  </th>
+                  {/* The outcome half: derived live, because it keeps changing. */}
+                  <th className="px-2 py-2 text-right font-medium">Auto qual.</th>
+                  <th className="px-2 py-2 text-right font-medium">Force qual.</th>
+                  <th className="px-2 py-2 text-right font-medium">Review</th>
+                  <th className="px-2 py-2 text-right font-medium">Screened</th>
                   <th className="px-4 py-2 text-right font-medium">Binned</th>
                 </tr>
               </thead>
@@ -213,12 +222,14 @@ export default async function PipelinePage() {
                       </div>
                       <div className="mt-0.5 text-subtle">
                         {relative(o.startedAt)}
-                        {/* Rows the validator refused leave no raw_jobs row, so
-                            they can only ever be a stamped count. */}
-                        {o.duplicates > 0 ? ` · ${o.duplicates} duplicate` : ""}
-                        {o.rejectedAtValidation > 0
-                          ? ` · ${o.rejectedAtValidation} rejected at validation`
-                          : ""}
+                        {!o.reconciles ? (
+                          <span
+                            className="ml-1.5 text-warning"
+                            title="fetched does not equal ingested + duplicate + rejected"
+                          >
+                            · does not reconcile
+                          </span>
+                        ) : null}
                       </div>
                       <div
                         className="mt-0.5 font-mono text-[10px] text-faint"
@@ -227,7 +238,21 @@ export default async function PipelinePage() {
                         {o.runId}
                       </div>
                     </td>
-                    <td className="px-2 py-2 text-right tabular-nums">{o.landed}</td>
+                    <td className="px-2 py-2 text-right tabular-nums text-muted">
+                      {o.fetched || "—"}
+                    </td>
+                    {/* Paid for and discarded. The actor bills per result, so a
+                        high number here is money spent on jobs already held —
+                        which is what skipJobId exists to prevent. */}
+                    <td className="px-2 py-2 text-right tabular-nums text-muted">
+                      {o.duplicates || "—"}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums text-negative">
+                      {o.rejectedAtValidation || "—"}
+                    </td>
+                    <td className="border-l border-line px-2 py-2 text-right font-medium tabular-nums">
+                      {o.landed || "—"}
+                    </td>
                     <td className="px-2 py-2 text-right tabular-nums text-positive">
                       {o.autoQualified || "—"}
                     </td>
@@ -249,6 +274,16 @@ export default async function PipelinePage() {
             </table>
           </div>
         )}
+
+        {/* The funnel arithmetic, spelled out once so the columns are readable
+            without guessing what adds to what. */}
+        {outcomes.length > 0 ? (
+          <p className="border-t border-line px-4 py-2 text-[11px] text-subtle">
+            Fetched = Duplicate + Rejected + Ingested. Duplicates were paid for
+            and discarded — the actor bills per result, so that column is the
+            cost of fetching jobs already held.
+          </p>
+        ) : null}
 
         {unattributed > 0 ? (
           <p className="border-t border-line px-4 py-2 text-[11px] text-subtle">

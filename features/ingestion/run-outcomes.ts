@@ -44,6 +44,14 @@ export type RunOutcome = {
 
   /** Derived: jobs that landed, by where they are now. */
   landed: number;
+  /**
+   * True when fetched does not equal landed + duplicates + rejected.
+   *
+   * The funnel should account for every fetched row. A gap means something was
+   * lost between the actor and the database without being counted, which is
+   * worth seeing rather than quietly tolerating.
+   */
+  reconciles: boolean;
   autoQualified: number;
   forceQualified: number;
   needsReview: number;
@@ -121,6 +129,11 @@ export async function getRunOutcomes(limit = 25): Promise<RunOutcome[]> {
       needsReview: c?.needsReview ?? 0,
       screenedOut: c?.screenedOut ?? 0,
       binned: c?.binned ?? 0,
+      // A run that fetched nothing trivially reconciles; only a real fetch is
+      // held to the arithmetic.
+      reconciles:
+        run.fetched === 0 ||
+        run.fetched === (c?.landed ?? 0) + run.duplicates + run.rejected,
     };
   });
 }
