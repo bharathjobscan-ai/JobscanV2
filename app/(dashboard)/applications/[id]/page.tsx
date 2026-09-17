@@ -33,6 +33,7 @@ import { getApplicationDetail } from "@/features/applications/queries";
 import { DOCUMENT_LABELS, STATUS_LABELS } from "@/lib/config/constants";
 import { pageFit } from "@/lib/documents/parse";
 import { applyAccepted, project } from "@/features/simg/apply";
+import { measureAts } from "@/features/simg/measure";
 import { resolveArtwork } from "@/features/artwork/resolve";
 import { buildLedger } from "@/features/scoring/ledger";
 
@@ -104,10 +105,18 @@ export default async function ApplicationDetailPage({
    * reflects the document as it now stands rather than as it was written.
    */
   const evaluation = resume?.simg ?? null;
-  const simgProjection =
+  const derivedCv =
     evaluation && resume?.contentMd
-      ? project(evaluation, applyAccepted(resume.contentMd, evaluation.recommendations))
+      ? applyAccepted(resume.contentMd, evaluation.recommendations)
       : null;
+  const simgProjection =
+    evaluation && derivedCv ? project(evaluation, derivedCv) : null;
+  /**
+   * JSV2S1145 — the third of the score that is measurable rather than
+   * estimated, recomputed on the CV as it now stands. Free: no AI call.
+   */
+  const atsMeasured =
+    evaluation && derivedCv ? measureAts(derivedCv, evaluation) : null;
   const coverLetter = application.latestDocuments.cover_letter;
   const scoreReport = application.latestDocuments.score_report;
   const blockedReason = application.isIncomplete
@@ -379,6 +388,7 @@ export default async function ApplicationDetailPage({
               applicationId={application.id}
               evaluation={evaluation}
               projection={simgProjection}
+              measured={atsMeasured}
             />
           ) : null}
 

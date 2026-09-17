@@ -12,6 +12,7 @@ import {
 } from "@/features/simg/actions";
 import type { SimgProjection } from "@/features/simg/apply";
 import type { SimgEvaluation, SimgRecommendation } from "@/features/simg/types";
+import type { AtsMeasurement } from "@/features/simg/measure";
 
 const EMPTY: SimgActionState = {};
 
@@ -221,10 +222,13 @@ export function SimgWorklist({
   applicationId,
   evaluation,
   projection,
+  measured,
 }: {
   applicationId: string;
   evaluation: SimgEvaluation;
   projection: SimgProjection;
+  /** JSV2S1145 — the ATS lens recomputed on the current CV, or null. */
+  measured?: AtsMeasurement | null;
 }) {
   const { recommendations } = evaluation;
   const pending = recommendations.filter((r) => r.state === "pending");
@@ -273,6 +277,47 @@ export function SimgWorklist({
             </div>
           ))}
         </dl>
+
+        {/*
+          JSV2S1145 — stated as MEASURED, beside an otherwise estimated score.
+          Parse readiness and keyword coverage are both deterministic, so this
+          third of the composite is fact; the recruiter and hiring-manager
+          lenses remain the model's judgement and are labelled as such.
+        */}
+        {measured ? (
+          <div className="mt-3 rounded-md border border-line bg-surface-muted px-3 py-2">
+            <p className="text-[10px] tracking-wide text-faint uppercase">
+              ATS lens, measured on the current CV
+            </p>
+            <p className="mt-1 text-sm">
+              <span className="font-semibold tabular-nums">{measured.lensScore}</span>
+              {measured.delta !== null && measured.delta !== 0 ? (
+                <span
+                  className={
+                    measured.delta > 0 ? "ml-1.5 text-positive" : "ml-1.5 text-negative"
+                  }
+                >
+                  {measured.delta > 0 ? "+" : ""}
+                  {measured.delta} vs SimG&rsquo;s estimate
+                </span>
+              ) : (
+                <span className="ml-1.5 text-muted">matches SimG&rsquo;s estimate</span>
+              )}
+            </p>
+            <p className="mt-0.5 text-[11px] text-subtle tabular-nums">
+              Parse {measured.parseScore} · keywords {measured.mustHaveFound}/
+              {measured.mustHaveTotal}
+              {measured.recovered.length > 0
+                ? ` · recovered ${measured.recovered.join(", ")}`
+                : ""}
+            </p>
+            {measured.stillMissing.length > 0 ? (
+              <p className="mt-0.5 text-[11px] text-warning">
+                Still missing: {measured.stillMissing.join(", ")}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {projection.overflows ? (
           <p className="mt-3 rounded border border-negative/25 bg-negative-bg px-2 py-1.5 text-[11.5px] text-negative">
