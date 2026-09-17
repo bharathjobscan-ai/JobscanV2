@@ -32,6 +32,8 @@ export class MockProvider implements AiProvider {
         return this.resume(context, model);
       case "cover_letter":
         return this.coverLetter(context, model);
+      case "simg":
+        return this.simg(context, model, seed);
     }
   }
 
@@ -127,6 +129,84 @@ export class MockProvider implements AiProvider {
         },
       },
       markdown,
+      model,
+      provider: this.name,
+    };
+  }
+
+  /**
+   * A SimG evaluation whose worklist actually applies (JSV2S1058).
+   *
+   * The anchors are quoted from `context.cvMarkdown` rather than hard-coded,
+   * because `validateRecommendations` drops any edit whose `before` is not
+   * present verbatim. A fixture with invented anchors would validate to an
+   * empty worklist and the mock would silently prove nothing.
+   */
+  private simg(context: TaskContext, model: string, seed: number): TaskResult {
+    const cv = context.cvMarkdown ?? "";
+    const bullets = cv
+      .split("\n")
+      .filter((line) => line.startsWith("- "))
+      .map((line) => line.trim());
+
+    const recommendations: Record<string, unknown>[] = [];
+
+    if (bullets[0]) {
+      recommendations.push({
+        id: "r1",
+        lens: "recruiter",
+        kind: "modify",
+        points: 4,
+        text: "Lead the bullet with the corridor outcome, not the activity.",
+        detail: "The six-second scan reaches the verb before the result.",
+        section: "Experience",
+        before: bullets[0],
+        after: `${bullets[0].replace(/\.$/, "")}, cutting settlement failures by a third.`,
+        anchorAfter: null,
+        requiresConfirmation: false,
+        confirm: null,
+      });
+    }
+
+    if (bullets[1]) {
+      recommendations.push({
+        id: "r2",
+        lens: "hiring_manager",
+        kind: "insert",
+        points: 3,
+        text: "Name the coaching responsibility explicitly.",
+        detail: "Weighted in the brief and absent from the CV.",
+        section: "Experience",
+        before: null,
+        after: "- Coached and grew a team of six product managers.",
+        anchorAfter: bullets[1],
+        // Deliberately set: exercises the confirmation gate in the UI, which is
+        // the one path that must never be auto-accepted.
+        requiresConfirmation: true,
+        confirm: "Confirm you have line-managed or coached PMs.",
+      });
+    }
+
+    return {
+      payload: {
+        simg: {
+          baseline: { ats: 70, recruiter: 64, hiringManager: 62 },
+          current: {
+            ats: { score: 82, note: "Two must-have keywords absent." },
+            recruiter: { score: 74, note: "Impact is below the fold." },
+            hiringManager: { score: 68, note: "No competitor-analysis evidence." },
+          },
+          keywords: {
+            mustHaveFound: 8 + (seed % 3),
+            mustHaveTotal: 12,
+            goodToHaveFound: 4,
+            goodToHaveTotal: 9,
+            missing: ["multi-currency accounts", "transaction banking"],
+          },
+          recommendations,
+        },
+      },
+      markdown: "Mock SimG evaluation. No provider usage was consumed.",
       model,
       provider: this.name,
     };

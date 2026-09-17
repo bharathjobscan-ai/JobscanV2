@@ -11,6 +11,10 @@ import { AnthropicProvider } from "@/lib/ai/anthropic";
 import { GeminiProvider } from "@/lib/ai/gemini";
 import { MockProvider } from "@/lib/ai/mock";
 import { buildPrompt, flattenPrompt } from "@/lib/ai/prompts";
+import { applyAtsHygiene, type AtsReport } from "@/lib/documents/ats";
+import { lineBudgetFor, settleSimgEvaluation } from "@/features/simg/settle";
+import { SIMG_AUTOMATIC } from "@/config/simg";
+import { lookupSponsor, sponsorPromptBlock } from "@/features/sponsors/lookup";
 import { parseTaskResponse, type AiProvider, type TaskContext } from "@/lib/ai/types";
 import {
   AI_TASK_DOCUMENT,
@@ -65,7 +69,14 @@ function providerFor(taskType: AiTaskType): AiProvider {
   const env = getEnv();
   if (env.AI_PROVIDER === "mock") return new MockProvider();
 
-  const choice = taskType === "score" ? env.PROVIDER_SCORING : env.PROVIDER_CV;
+  // SimG falls back to the CV provider, which is what it inherited implicitly
+  // before this was made explicit (JSV2S1058).
+  const choice =
+    taskType === "score"
+      ? env.PROVIDER_SCORING
+      : taskType === "simg"
+        ? (env.PROVIDER_SIMG ?? env.PROVIDER_CV)
+        : env.PROVIDER_CV;
   return choice === "gemini_api" ? new GeminiProvider() : new AnthropicProvider();
 }
 
@@ -74,7 +85,17 @@ function modelFor(taskType: AiTaskType, provider: string): string {
   if (provider === "gemini_api") {
     return taskType === "score" ? env.MODEL_SCORING_GEMINI : env.MODEL_CV_GEMINI;
   }
-  return taskType === "score" ? env.MODEL_SCORING : env.MODEL_CV;
+  if (taskType === "score") return env.MODEL_SCORING;
+  // Opus 5 by default — a deliberate starting point. Move it to Sonnet 5 with
+  // MODEL_SIMG once the cost card shows what the evaluation is actually costing.
+  if (taskType === "simg") return env.MODEL_SIMG ?? env.MODEL_CV;
+  return env.MODEL_CV;
+}
+
+/** SimG may reason at a different effort from document generation. */
+function effortFor(taskType: AiTaskType): string {
+  const env = getEnv();
+  return taskType === "simg" ? (env.AI_EFFORT_SIMG ?? env.AI_EFFORT) : env.AI_EFFORT;
 }
 
 /**
@@ -88,8 +109,6 @@ export async function enqueueTask(
   applicationId: string,
   taskType: AiTaskType,
 ): Promise<{ id: string; status: "succeeded" }> {
-  const env = getEnv();
-
   const [row] = await db
     .select({ application: applications, job: rawJobs })
     .from(applications)
@@ -123,6 +142,45 @@ export async function enqueueTask(
     inboundSourceDetail: row.job.inboundSourceDetail,
   };
 
+  /**
+   * JSV2S1127 — resolve the sponsor licence before scoring, not during.
+   *
+   * Fixes a measured failure: ScoreG searched "Visa Inc" while the register
+   * lists "VISA EUROPE LIMITED", found nothing, and dropped the visa pillar
+   * 60 -> 30, taking the score 75 -> 59. The lookup is free, instant and
+   * deterministic, and an `unknown` result is passed through as "not checked"
+   * rather than "not a sponsor" so an unloaded register cannot fabricate an
+   * absence.
+   */
+  if (taskType === "score") {
+    const match = await lookupSponsor(row.job.company);
+    context.sponsorBlock = sponsorPromptBlock(match);
+  }
+
+  // SimG evaluates a document rather than a job, so its context carries the
+  // generated CV and the two figures the application already knows (JSV2S1058).
+  if (taskType === "simg") {
+    const [resume] = await db
+      .select({ contentMd: applicationDocuments.contentMd, summary: applicationDocuments.summary })
+      .from(applicationDocuments)
+      .where(
+        and(
+          eq(applicationDocuments.applicationId, applicationId),
+          eq(applicationDocuments.docType, "resume"),
+        ),
+      )
+      .orderBy(desc(applicationDocuments.version))
+      .limit(1);
+
+    if (!resume?.contentMd) {
+      throw new TaskBlocked("Generate the CV before evaluating it.");
+    }
+
+    context.cvMarkdown = resume.contentMd;
+    context.atsParseScore = resume.summary?.ats?.parseScore;
+    context.lineBudget = lineBudgetFor(resume.contentMd);
+  }
+
   const provider = providerFor(taskType);
   const model = modelFor(taskType, provider.name);
   const isMock = provider.name === "mock";
@@ -140,7 +198,7 @@ export async function enqueueTask(
       status: "succeeded",
       provider: provider.name,
       model,
-      effort: env.AI_EFFORT,
+      effort: effortFor(taskType),
       allowedTools:
         provider.name === "gemini_api" && taskType === "score"
           ? "GoogleSearch"
@@ -165,6 +223,23 @@ export async function enqueueTask(
     .returning({ id: aiJobs.id });
 
   await settleAiJobs(applicationId);
+
+  /**
+   * Mandatory Pass G (JSV2S1058).
+   *
+   * Runs after the CV has settled, so SimG evaluates the stored markdown — the
+   * text the user will actually see, after the ATS hygiene pass — rather than
+   * the raw model output. Isolated deliberately: a failed evaluation must never
+   * cost the user the CV that was just generated and paid for.
+   */
+  if (taskType === "tailor_cv" && SIMG_AUTOMATIC) {
+    try {
+      await enqueueTask(applicationId, "simg");
+    } catch (error) {
+      console.error("[simg] evaluation failed, CV is unaffected", error);
+    }
+  }
+
   return { id: created.id, status: "succeeded" };
 }
 
@@ -220,16 +295,51 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
       continue;
     }
 
+    // SimG is the one task that produces no document (JSV2S1058). It evaluates
+    // the resume it was given, so its result is written onto that document row
+    // rather than creating one, and it never reaches the versioning path below.
+    if (job.taskType === "simg") {
+      await settleSimgEvaluation(job, parsed);
+      settled += 1;
+      continue;
+    }
+
     // One CVG call returns both documents, delimited. Split them so each is
     // stored, versioned and downloadable on its own.
+    const docType = AI_TASK_DOCUMENT[job.taskType];
+    if (!docType) {
+      await db
+        .update(aiJobs)
+        .set({
+          status: "failed",
+          error: `No document mapping for task ${job.taskType}`,
+          settledAt: sql`now()`,
+        })
+        .where(eq(aiJobs.id, job.id));
+      continue;
+    }
+
     const parts: { docType: DocumentType; markdown: string }[] =
       job.taskType === "tailor_cv"
         ? splitDocuments(parsed.markdown)
-        : [{ docType: AI_TASK_DOCUMENT[job.taskType], markdown: parsed.markdown }];
+        : [{ docType, markdown: parsed.markdown }];
 
     await db.transaction(async (tx) => {
       for (const part of parts) {
         const docType = part.docType;
+
+        // JSV2S1057 — the ATS pass runs here, on the single write path, so the
+        // stored markdown is the repaired markdown and the .docx, the screen
+        // and the download can never disagree. A score report is narrative, not
+        // a deliverable an ATS ever reads, so it is left alone.
+        let markdown = part.markdown;
+        let ats: AtsReport | undefined;
+        if (docType === "resume" || docType === "cover_letter") {
+          const hygiene = applyAtsHygiene(markdown);
+          markdown = hygiene.markdown;
+          ats = hygiene.report;
+        }
+
         const [previous] = await tx
           .select({ version: applicationDocuments.version })
           .from(applicationDocuments)
@@ -248,9 +358,13 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
           applicationId: job.applicationId,
           docType,
           version,
-          contentMd: part.markdown,
-          // The generation summary describes the pair, so both carry it.
-          summary: parsed.payload.summary ?? null,
+          contentMd: markdown,
+          // The generation summary describes the pair, so both carry it — but
+          // the ATS report is per document, since the CV and the letter fail in
+          // different ways.
+          summary: ats
+            ? { ...(parsed.payload.summary ?? {}), ats }
+            : (parsed.payload.summary ?? null),
           generatedBy: job.provider,
           model: job.model,
           generatedAt: job.finishedAt ?? sql`now()`,
@@ -265,6 +379,8 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
             model: job.model,
             version,
             score: parsed.payload.score ?? null,
+            atsRepairs: ats?.repairs.length ?? 0,
+            atsParseScore: ats?.parseScore ?? null,
           },
         });
       }

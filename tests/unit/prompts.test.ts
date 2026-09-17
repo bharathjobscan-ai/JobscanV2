@@ -23,7 +23,7 @@ describe("buildPrompt", () => {
     expect(system).not.toContain("<<<CV>>>");
     expect(system).not.toContain("<<<COVER_LETTER>>>");
     // The CVG output-summary schema belongs to the document tasks only.
-    expect(system).not.toContain("emailSubject");
+    expect(system).not.toContain("interviewPrep");
     expect(system).toContain('"visaSignal"');
   });
 
@@ -32,7 +32,23 @@ describe("buildPrompt", () => {
 
     expect(system).toContain("<<<CV>>>");
     expect(system).toContain("<<<COVER_LETTER>>>");
-    expect(system).toContain("emailSubject");
+    expect(system).toContain("interviewPrep");
     expect(system).not.toContain('"visaSignal"');
+  });
+
+  it("no longer asks for an email subject", async () => {
+    // Dropped 2026-09-05: applications go through portals, not email, so this
+    // was output nobody read. Asserted so it cannot creep back into the prompt.
+    const { system } = await buildPrompt({ ...base, taskType: "tailor_cv" });
+    expect(system).not.toContain("emailSubject");
+    expect(system).not.toContain("Email Subject");
+  });
+
+  it("does not ask CVG to grade its own work", async () => {
+    // Score, verdict, match % and keyword coverage moved to SimG (JSV2S1058).
+    const { system } = await buildPrompt({ ...base, taskType: "tailor_cv" });
+    expect(system).not.toContain('"verdict"');
+    expect(system).not.toContain('"matchBefore"');
+    expect(system).not.toContain('"mustHaveFound"');
   });
 });

@@ -26,6 +26,9 @@ const { listApplications, countByView, getApplicationDetail } = await import(
 );
 const { changeStatus, createAttempt } = await import("@/features/applications/mutations");
 const { enqueueTask } = await import("@/features/ai/tasks");
+const { currentResumeMarkdown, setRecommendationState } = await import(
+  "@/features/simg/mutations"
+);
 
 /**
  * Fixture companies are deliberately fictional and suffixed "QA".
@@ -401,6 +404,51 @@ describe("step 7 — AI generation on the mock provider", () => {
 
     const generated = detail!.timeline.filter((e) => e.eventType === "document_generated");
     expect(generated).toHaveLength(3);
+  });
+
+  /**
+   * Mandatory Pass G (JSV2S1058). Asserts the whole chain: SimG ran without
+   * being asked, its worklist survived validation against the stored CV, and
+   * accepting an item actually changes the document the user downloads.
+   */
+  it("evaluates the CV automatically and applies an accepted edit", async () => {
+    const [target] = await db
+      .select({ id: applications.id })
+      .from(applications)
+      .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
+      .where(eq(rawJobs.company, "Vandermeer Acquiring QA"))
+      .limit(1);
+
+    const detail = await getApplicationDetail(target.id);
+    const evaluation = detail!.latestDocuments.resume?.simg;
+
+    // Nobody asked for it — generateAction only ever requested tailor_cv.
+    expect(evaluation).toBeTruthy();
+    expect(evaluation!.current.recruiter.score).toBeGreaterThan(0);
+    expect(evaluation!.recommendations.length).toBeGreaterThan(0);
+
+    // Every surviving recommendation must be applicable to the stored CV;
+    // an unapplicable one would raise the score on screen and change nothing.
+    const original = detail!.latestDocuments.resume!.contentMd!;
+    for (const rec of evaluation!.recommendations) {
+      const anchor = rec.kind === "insert" ? rec.anchorAfter : rec.before;
+      expect(original).toContain(anchor!);
+      expect(rec.state).toBe("pending");
+    }
+
+    const first = evaluation!.recommendations[0];
+    await setRecommendationState(target.id, first.id, "accepted");
+
+    const applied = await currentResumeMarkdown(target.id);
+    expect(applied!.markdown).not.toBe(original);
+
+    // contentMd itself is never mutated — that is what makes undo a recompute.
+    const after = await getApplicationDetail(target.id);
+    expect(after!.latestDocuments.resume!.contentMd).toBe(original);
+
+    await setRecommendationState(target.id, first.id, "pending");
+    const reverted = await currentResumeMarkdown(target.id);
+    expect(reverted!.markdown).toBe(original);
   });
 
   it("versions a regenerated document rather than overwriting it", async () => {

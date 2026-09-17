@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { applicationDocuments, applications, rawJobs } from "@/db/schema";
 import { docxFilename, renderDocx } from "@/lib/documents/docx";
+import { applyAccepted } from "@/features/simg/apply";
 import type { LetterMeta } from "@/lib/documents/letter";
 import { db } from "@/lib/db/client";
 
@@ -69,11 +70,24 @@ export async function GET(
     return new Response("Not found", { status: 404 });
   }
 
+  /**
+   * What the user downloads must be what the user sees (JSV2S1126).
+   *
+   * `contentMd` is the CV as generated and is never mutated; accepted SimG
+   * edits are replayed over it to derive the current text. Downloading the
+   * stored column instead would hand back a document without the edits that
+   * are shown as applied on screen.
+   */
+  const contentMd =
+    row.doc.docType === "resume" && row.doc.simg
+      ? applyAccepted(row.doc.contentMd, row.doc.simg.recommendations)
+      : row.doc.contentMd;
+
   const slug = (value: string) =>
     value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
   if (format === "md") {
-    return new Response(row.doc.contentMd, {
+    return new Response(contentMd, {
       headers: {
         "Content-Type": "text/markdown; charset=utf-8",
         "Content-Disposition": `attachment; filename="${slug(row.company)}-${slug(
@@ -86,7 +100,7 @@ export async function GET(
   // The score report is an analysis document, not an application deliverable,
   // so it has no .docx template — markdown is the right shape for it.
   if (row.doc.docType === "score_report") {
-    return new Response(row.doc.contentMd, {
+    return new Response(contentMd, {
       headers: {
         "Content-Type": "text/markdown; charset=utf-8",
         "Content-Disposition": `attachment; filename="ScoreAnalysis_${slug(
@@ -112,7 +126,7 @@ export async function GET(
     };
   }
 
-  const buffer = await renderDocx(row.doc.contentMd, kind, meta);
+  const buffer = await renderDocx(contentMd, kind, meta);
   const filename = docxFilename({
     kind,
     company: row.company,

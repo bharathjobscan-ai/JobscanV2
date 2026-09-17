@@ -18,6 +18,10 @@ const SKILL_FILES: Record<AiTaskType, string> = {
   score: "scoreg/SKILL.md",
   tailor_cv: "cvg/SKILL.md",
   cover_letter: "cvg/SKILL.md",
+  // SimG is its own method and carries its own output contract (JSV2S1058).
+  // It deliberately does NOT get cvg/SKILL.md: the generator's instructions
+  // would tell the evaluator how to write a CV, and it is not here to write one.
+  simg: "cvg/SIMG.md",
 };
 
 const PROMPTS_DIR = path.join(process.cwd(), "prompts");
@@ -132,21 +136,20 @@ Put the output summary in the JSON, using the method's own Output Summary items
 \`\`\`json
 {
   "summary": {
-    "emailSubject": "...",
     "companyCategory": "the category chosen, and why",
     "emphasis": "the emphasis style applied",
-    "matchBefore": 0, "matchAfter": 0,
-    "keywords": {
-      "mustHaveFound": 0, "mustHaveTotal": 0,
-      "goodToHaveFound": 0, "goodToHaveTotal": 0,
-      "missing": ["keywords not present"]
-    },
     "gaps": ["missing experience areas, with specifics"],
-    "gapBridging": ["what to learn or prepare before interview"],
-    "verdict": "Pass | Borderline | Reject, with brief reasoning"
+    "interviewPrep": ["what to prepare before interview, one line each"]
   }
 }
 \`\`\`
+
+**Do not report a score, a verdict, a match percentage or keyword coverage.**
+Those moved to SimG on 2026-09-05 (JSV2S1058), for one reason: you write this
+CV, so you cannot also be the one who grades it. SimG scores it against the
+master resume on a single scale, and two instruments reporting the same
+quantity can only disagree. Use the JD’s keywords to *write* — that is your
+job. Counting them is not.
 
 **Length budget for the CV — this is a hard constraint, not a guideline.**
 
@@ -182,6 +185,18 @@ of those, and anything you add there is discarded. Start at the opening hook
 and end at the last substantive sentence.
 
 The delimiters must appear on their own lines, spelled exactly as shown.
+
+## ATS formatting — not your job (JSV2S1057)
+
+Do not spend output on formatting hygiene. The application repairs whitespace,
+curly quotes, glyph bullets and the LinkedIn URL deterministically after you
+answer, so anything you do there is redone and only costs tokens. Write plain
+markdown and let it be tidied.
+
+Two things it cannot repair without deleting or renaming your content, so avoid
+them: **no tables, HTML or images** anywhere, and use the standard section
+headings — Profile, Experience, Education, Core Competencies, Certifications.
+An invented heading is not mapped to a field by any parser.
 `.trim();
 
 /**
@@ -223,6 +238,10 @@ function jobBlock(context: TaskContext): string {
       ? `Sponsorship mentioned in posting: ${context.visaSponsorshipMentioned}`
       : null,
     "",
+    // Resolved locally before the call (JSV2S1127). Placed before the
+    // description so the model reads the answer before it reads anything that
+    // might tempt it to go looking.
+    context.sponsorBlock ? `\n${context.sponsorBlock}\n` : null,
     "### Job description",
     context.description,
   ]
@@ -240,7 +259,31 @@ const TASK_INSTRUCTION: Record<AiTaskType, string> = {
     "Produce BOTH the tailored one-page resume AND the cover letter for this job, using the CV optimiser method above. Apply the ATS format check and call out domain gaps.",
   cover_letter:
     "Produce a tailored cover letter for this job using the method above. Keep it to one page and specific to this company and role.",
+  simg:
+    "Evaluate the generated CV below against this job using the SimG method above. Score the master resume too, so the baseline and the tailored CV come from one instrument. Return the priced worklist.",
 };
+
+/**
+ * The CV under evaluation, plus the two figures SimG must not re-derive.
+ *
+ * `atsParseScore` is already computed deterministically (JSV2S1057) and
+ * `lineBudget` comes from the same page estimator the renderer uses, so both
+ * are facts rather than opinions. Handing them over stops the model guessing at
+ * numbers the application already knows.
+ */
+function evaluationBlock(context: TaskContext): string {
+  return [
+    "## The generated CV under evaluation",
+    "",
+    context.cvMarkdown ?? "(missing)",
+    "",
+    "## Deterministic inputs — take these as fact",
+    `atsParseScore: ${context.atsParseScore ?? "not computed"}`,
+    `lineBudget: ${
+      context.lineBudget ?? "unknown"
+    } rendered lines remain on the single A4 page`,
+  ].join("\n");
+}
 
 /**
  * The prompt, split so the stable half can be cached.
@@ -258,6 +301,7 @@ export async function buildPrompt(context: TaskContext): Promise<BuiltPrompt> {
   const masterResume = await readRequired("master-resume.md");
   const profile = await readOptional("candidate-profile.md");
   const isScore = context.taskType === "score";
+  const isSimg = context.taskType === "simg";
 
   const system = [
     "You are executing a saved JobScan workflow. Follow the method exactly.",
@@ -269,12 +313,14 @@ export async function buildPrompt(context: TaskContext): Promise<BuiltPrompt> {
     masterResume,
     profile ? `\n# Candidate profile\n${profile}` : "",
     "",
-    // Only CV/CL output is parsed into a .docx; a score report stays markdown.
-    isScore ? "" : DELIVERY_OVERRIDE,
+    // Only CV/CL output is parsed into a .docx; a score report and a SimG
+    // evaluation both stay markdown.
+    isScore || isSimg ? "" : DELIVERY_OVERRIDE,
     "",
     // Task-specific: the shared contract used to ask every run for a CV, which
-    // is how a resume ended up inside a score report.
-    isScore ? SCORE_CONTRACT : DOCUMENT_CONTRACT,
+    // is how a resume ended up inside a score report. SimG needs neither — its
+    // own contract is part of the method file.
+    isSimg ? "" : isScore ? SCORE_CONTRACT : DOCUMENT_CONTRACT,
   ]
     .filter(Boolean)
     .join("\n");
@@ -283,7 +329,10 @@ export async function buildPrompt(context: TaskContext): Promise<BuiltPrompt> {
     `# Task\n${TASK_INSTRUCTION[context.taskType]}`,
     "",
     jobBlock(context),
-  ].join("\n");
+    context.taskType === "simg" ? `\n${evaluationBlock(context)}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return { system, user };
 }
@@ -298,7 +347,12 @@ export async function promptsAvailable(): Promise<{
   ok: boolean;
   missing: string[];
 }> {
-  const required = ["scoreg/SKILL.md", "cvg/SKILL.md", "master-resume.md"];
+  const required = [
+    "scoreg/SKILL.md",
+    "cvg/SKILL.md",
+    "cvg/SIMG.md",
+    "master-resume.md",
+  ];
   const missing: string[] = [];
   for (const file of required) {
     if ((await readOptional(file)) === null) missing.push(file);

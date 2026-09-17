@@ -1,3 +1,4 @@
+import type { AtsReport } from "@/lib/documents/ats";
 import type { JobScoreAnalysis } from "@/db/schema";
 import type { AiTaskType, MatchCategory } from "@/lib/config/constants";
 
@@ -20,6 +21,23 @@ export type TaskContext = {
   /** ScoreG's Reachability component (3D) is manual input by design. */
   reachability?: string | null;
   inboundSourceDetail?: string | null;
+
+  /**
+   * SimG only (JSV2S1058) — the generated CV it evaluates, plus the two figures
+   * the application already knows deterministically and will not let the model
+   * re-derive: ATS parse readiness and the rendered lines left on the page.
+   */
+  cvMarkdown?: string;
+  atsParseScore?: number;
+  lineBudget?: number;
+
+  /**
+   * JSV2S1127 — the UK sponsor register result, resolved deterministically
+   * before the call. Injected as a fact so ScoreG stops trying to establish it
+   * by web search, which it could not do: the register is a CSV, not indexed
+   * pages.
+   */
+  sponsorBlock?: string;
 };
 
 /**
@@ -37,10 +55,18 @@ export type TaskContext = {
  * reading on screen; the .docx is the deliverable.
  */
 export type GenerationSummary = {
+  /**
+   * LEGACY — dropped 2026-09-05. Applications go through portals, not email,
+   * so this was output nobody read. Kept so older documents still parse.
+   */
   emailSubject?: string;
   companyCategory?: string;
   emphasis?: string;
-  /** Match percentage before and after tailoring. */
+  /**
+   * LEGACY — CVG stopped reporting these on 2026-09-05 (JSV2S1058). SimG owns
+   * scoring and keyword coverage now: the author of a document cannot also be
+   * its judge. Kept so documents generated before that date still render.
+   */
   matchBefore?: number;
   matchAfter?: number;
   keywords?: {
@@ -51,11 +77,23 @@ export type GenerationSummary = {
     missing?: string[];
   };
   gaps?: string[];
+  /** Renamed from `gapBridging` — surfaced as its own section (JSV2S1063). */
+  interviewPrep?: string[];
+  /** LEGACY, superseded by `interviewPrep`. */
   gapBridging?: string[];
+  /** LEGACY — SimG owns the verdict. See `matchBefore`. */
   verdict?: string;
+  /**
+   * JSV2S1057 — what the deterministic ATS pass repaired and what it could
+   * only flag. Not asked of the model: it is measured after the fact, so it
+   * describes the document that was actually stored.
+   */
+  ats?: AtsReport;
 };
 
 export type TaskPayload = {
+  /** SimG's evaluation block (JSV2S1058). Shaped in features/simg/settle.ts. */
+  simg?: Record<string, unknown>;
   score?: number;
   matchCategory?: MatchCategory;
   visaSignal?: string;
@@ -157,6 +195,10 @@ export function parseTaskResponse(text: string): {
   try {
     const parsed = JSON.parse(fence[1]) as Record<string, unknown>;
     payload = {
+      simg:
+        typeof parsed.simg === "object" && parsed.simg !== null
+          ? (parsed.simg as Record<string, unknown>)
+          : undefined,
       summary:
         typeof parsed.summary === "object" && parsed.summary !== null
           ? (parsed.summary as TaskPayload["summary"])

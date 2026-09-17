@@ -9,6 +9,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import type { SimgEvaluation } from "@/features/simg/types";
 import type { GenerationSummary } from "@/lib/ai/types";
 import type { DocumentType } from "@/lib/config/constants";
 import { applications } from "./applications";
@@ -47,6 +48,21 @@ export const applicationDocuments = pgTable(
      * the deliverable, so the screen should show what changed and why.
      */
     summary: jsonb("summary").$type<GenerationSummary>(),
+
+    /**
+     * SimG's evaluation of THIS version of the document (JSV2S1058).
+     *
+     * Stored here rather than in its own table because the user asked for no
+     * revision history: accepted edits are replayed over `contentMd` to derive
+     * the current CV, so the only durable state is which recommendations were
+     * accepted. Hanging it off the document row also gives invalidation for
+     * free — regenerate the CV and you get a new row with a null evaluation, so
+     * a worklist can never be applied to a document it did not read.
+     *
+     * Only ever populated on a `resume` row. The cover letter is deliberately
+     * not evaluated (decided 2026-09-05).
+     */
+    simg: jsonb("simg").$type<SimgEvaluation>(),
 
     /** Null in Phase 1 — reserved for Supabase Storage. */
     storagePath: text("storage_path"),

@@ -344,21 +344,45 @@ export const DOCUMENT_LABELS: Record<DocumentType, string> = {
   score_report: "Score Analysis",
 };
 
-export const AI_TASK_TYPES = ["score", "tailor_cv", "cover_letter"] as const;
+export const AI_TASK_TYPES = [
+  "score",
+  "tailor_cv",
+  "cover_letter",
+  "simg",
+] as const;
 export type AiTaskType = (typeof AI_TASK_TYPES)[number];
 
 export const AI_TASK_LABELS: Record<AiTaskType, string> = {
   score: "Job Score",
   tailor_cv: "Tailored Resume",
   cover_letter: "Cover Letter",
+  simg: "CV Evaluation",
 };
 
-/** Which document a completed AI task produces. */
-export const AI_TASK_DOCUMENT: Record<AiTaskType, DocumentType> = {
+/**
+ * Which document a completed AI task produces.
+ *
+ * Partial since JSV2S1058: `simg` is the first task that produces no document.
+ * It evaluates one — its output is a worklist stored against the resume it
+ * read, not a deliverable of its own. Code that settles a result must treat a
+ * missing entry as "no document", not as a bug.
+ */
+export const AI_TASK_DOCUMENT: Partial<Record<AiTaskType, DocumentType>> = {
   score: "score_report",
   tailor_cv: "resume",
   cover_letter: "cover_letter",
 };
+
+/**
+ * Tasks the user starts from the workspace. `simg` is deliberately absent: it
+ * is mandatory and automatic (JSV2S1058), triggered after a CV generation
+ * rather than offered as a button.
+ */
+export const MANUAL_AI_TASKS: readonly AiTaskType[] = [
+  "score",
+  "tailor_cv",
+  "cover_letter",
+];
 
 export const AI_JOB_STATUSES = [
   "queued",
