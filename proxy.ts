@@ -30,5 +30,13 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  /**
+   * `artwork` is excluded deliberately (JSV2S1143): the location backdrops are
+   * public-domain paintings with nothing private in them, and every job page
+   * loads one. Routing them through the gate would spend a middleware
+   * invocation per image on Vercel to protect a Hokusai.
+   *
+   * Everything that carries the user's data stays behind the gate.
+   */
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|artwork/).*)"],
 };

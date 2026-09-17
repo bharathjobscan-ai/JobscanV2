@@ -17,13 +17,24 @@ import {
 import { AiCostCard } from "@/components/applications/ai-cost";
 import { GenerationSummary } from "@/components/applications/generation-summary";
 import { ScoreBreakdown } from "@/components/applications/score-breakdown";
+import { SimgWorklist } from "@/components/applications/simg-worklist";
+import { RawJdDialog } from "@/components/applications/raw-jd-dialog";
+import {
+  ArtworkBackdrop,
+  ArtworkCredit,
+} from "@/components/applications/artwork-backdrop";
+import { ScoreLedgerTable } from "@/components/applications/score-ledger";
 import { Badge, buttonClass, Card, CardHeader, EmptyState } from "@/components/ui/base";
 import { Markdown } from "@/components/ui/markdown";
 import { getApplicationCost } from "@/features/ai/queries";
+import { getGroundingUsage } from "@/features/ai/budget-queries";
 import { getTaskStates, settleAiJobs } from "@/features/ai/tasks";
 import { getApplicationDetail } from "@/features/applications/queries";
 import { DOCUMENT_LABELS, STATUS_LABELS } from "@/lib/config/constants";
 import { pageFit } from "@/lib/documents/parse";
+import { applyAccepted, project } from "@/features/simg/apply";
+import { resolveArtwork } from "@/features/artwork/resolve";
+import { buildLedger } from "@/features/scoring/ledger";
 
 function formatDate(value: Date | string | null): string {
   if (!value) return "—";
@@ -56,17 +67,47 @@ export default async function ApplicationDetailPage({
   // died between recording and settling. Issued alongside the reads rather
   // than before them: a sequential wave costs a full round trip, which is
   // ~220ms with the database on another continent.
-  const [, application, tasks, cost] = await Promise.all([
+  const [, application, tasks, cost, grounding] = await Promise.all([
     settleAiJobs(id),
     getApplicationDetail(id),
     getTaskStates(id),
     getApplicationCost(id),
+    // Month-wide, not per application: the grounding allowance is shared.
+    getGroundingUsage(),
   ]);
 
   if (!application) notFound();
 
   const { job } = application;
   const resume = application.latestDocuments.resume;
+
+  /**
+   * The location's painting (JSV2S1143) and the deduction ledger (JSV2S1140).
+   * Both are pure functions of data already loaded — no extra query, no AI.
+   */
+  const artwork = resolveArtwork({ location: job.location, country: job.country });
+  const ledger = buildLedger(application.jobScoreAnalysis, application.jobScore);
+
+  /** Terms the pre-qualification gate matched, for the Raw JD view. */
+  const matchedDomainTerms =
+    (
+      job.prequalificationDetail as
+        | { domain?: { matchedTerms?: string[] } }
+        | null
+    )?.domain?.matchedTerms ?? [];
+
+  /**
+   * SimG's worklist for this CV version (JSV2S1058).
+   *
+   * The projection is computed here, on the server, over the *derived* CV — the
+   * generated markdown with accepted edits replayed — so the page-fit warning
+   * reflects the document as it now stands rather than as it was written.
+   */
+  const evaluation = resume?.simg ?? null;
+  const simgProjection =
+    evaluation && resume?.contentMd
+      ? project(evaluation, applyAccepted(resume.contentMd, evaluation.recommendations))
+      : null;
   const coverLetter = application.latestDocuments.cover_letter;
   const scoreReport = application.latestDocuments.score_report;
   const blockedReason = application.isIncomplete
@@ -76,9 +117,10 @@ export default async function ApplicationDetailPage({
   const taskFor = (type: string) => tasks.find((t) => t.taskType === type);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="relative flex flex-col gap-4">
+      <ArtworkBackdrop artwork={artwork} />
       {/* -- Header: what is it, where is it, what next -------------------- */}
-      <div>
+      <div className="relative z-10">
         <Link href="/applications" className="text-xs text-muted hover:text-foreground">
           ← Applications
         </Link>
@@ -123,7 +165,7 @@ export default async function ApplicationDetailPage({
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      <div className="relative z-10 grid gap-4 lg:grid-cols-[1fr_320px]">
         {/* -- Left column ------------------------------------------------ */}
         <div className="flex flex-col gap-4">
           {application.isIncomplete ? (
@@ -217,6 +259,11 @@ export default async function ApplicationDetailPage({
                     </summary>
 
                     <div className="mt-3 flex flex-col gap-4">
+                      {/* JSV2S1140 — the deduction ledger leads, because "what
+                          did this cost me" is the actionable reading. The raw
+                          rubric stays underneath for the full detail. */}
+                      {ledger ? <ScoreLedgerTable ledger={ledger} /> : null}
+
                       {application.jobScoreAnalysis ? (
                         <ScoreBreakdown analysis={application.jobScoreAnalysis} />
                       ) : null}
@@ -319,12 +366,21 @@ export default async function ApplicationDetailPage({
                   <GenerationSummary summary={resume.summary} />
                 ) : (
                   <p className="px-4 py-3 text-xs text-muted">
-                    No summary captured — regenerate to see the match uplift and gaps.
+                    No summary captured — regenerate to see the classification and gaps.
                   </p>
                 )}
               </>
             )}
           </Card>
+
+          {/* SimG — mandatory Pass G and its worklist (JSV2S1058, JSV2S1126) */}
+          {evaluation && simgProjection ? (
+            <SimgWorklist
+              applicationId={application.id}
+              evaluation={evaluation}
+              projection={simgProjection}
+            />
+          ) : null}
 
           {/* Timeline (JSV2S1084 + JSV2S1097) */}
           <Card>
@@ -372,6 +428,21 @@ export default async function ApplicationDetailPage({
                 </>
               ) : null}
             </dl>
+            {/* JSV2S1152 — the posting as ingested, with the gate's matched
+                domain terms highlighted, so its verdict can be audited against
+                the actual words rather than taken on trust. */}
+            <div className="border-t border-line px-4 py-2.5">
+              <RawJdDialog
+                description={job.description}
+                matchedTerms={matchedDomainTerms}
+                title={job.title}
+                company={job.company}
+              />
+              {/* JSV2S1143 — the backdrop is unattributed otherwise. */}
+              <div className="mt-2.5 border-t border-line pt-2.5">
+                <ArtworkCredit artwork={artwork} />
+              </div>
+            </div>
             <div className="flex flex-wrap gap-3 border-t border-line px-4 py-2.5 text-xs">
               <a
                 href={job.jobUrl}
@@ -484,7 +555,7 @@ export default async function ApplicationDetailPage({
             )}
           </Card>
 
-          <AiCostCard cost={cost} />
+          <AiCostCard cost={cost} grounding={grounding} />
         </aside>
       </div>
     </div>
