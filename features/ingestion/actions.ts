@@ -40,7 +40,15 @@ export async function uploadJobsAction(
         const outcome = await ingestRows(rows, { runId: run.id });
 
         run.count("fetched", rows.length);
-        run.count("inserted", outcome.inserted);
+        /**
+         * `ingestion_runs.inserted` means rows PERSISTED to raw_jobs, which is
+         * not what `IngestResult.inserted` means: there it counts rows that
+         * landed AND qualified, with screened-out rows tallied separately even
+         * though their raw_jobs row was created just the same. Stamping the
+         * narrower number made "fetched 10, inserted 1" read as though six jobs
+         * had vanished.
+         */
+        run.count("inserted", outcome.inserted + outcome.screenedOut);
         run.count("duplicates", outcome.duplicate);
         // Rows the validator refused. Derivation cannot see these later —
         // they have no raw_jobs row — which is why they are counted here.

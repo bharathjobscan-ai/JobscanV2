@@ -59,6 +59,21 @@ export const FETCH_DEFAULTS = {
 } as const;
 
 /**
+ * The first live fetch (JSV2S1020, decided 2026-09-17).
+ *
+ * One location, ten results — roughly half a cent. Proves the whole chain
+ * against real actor output (input schema, mapping, the gate, run attribution,
+ * the per-run metrics table) before any of it is trusted with volume. The
+ * actor's input field names were wrong until today and nothing caught it,
+ * which is the argument for proving before scaling.
+ */
+export const PROBE_FETCH = {
+  locations: ["London, United Kingdom"],
+  limit: 10,
+  postedWithinDays: 7,
+} as const;
+
+/**
  * Locations searched each night.
  *
  * The eleven preferred cities, plus region-level remote searches so a job
@@ -82,13 +97,23 @@ export const FETCH_LOCATIONS: readonly string[] = [
 ];
 
 /**
- * Search terms.
+ * Search terms — titles only, no domain words. Re-confirmed 2026-09-17.
  *
- * Deliberately titles only, not domain keywords. The domain filter reads the
- * whole job description and does it better than a search box can; asking
- * LinkedIn for "payments" as well would narrow the funnel before
- * pre-qualification ever sees it, and the point of a cheap deterministic gate
- * is that it can afford to look at everything the role search returns.
+ * The owner wants payments roles rather than generic PM roles, which is an
+ * argument for putting "payments" in the query. It stays out anyway, for one
+ * reason: a term in the SEARCH filters at the SOURCE, and anything dropped
+ * there never reaches the review queue, so it can be neither audited nor
+ * recovered. The domain gate filters afterwards, reads the whole description,
+ * and shows its working.
+ *
+ * The price of that choice is known rather than assumed — roughly 82% of
+ * fetched jobs are screened out — and is accepted in exchange for being able to
+ * see what was rejected and why.
+ *
+ * `titleExclude` is deliberately left empty. Mining the 95-job corpus for title
+ * words that appear only in rejects produced seven candidates, all ambiguous
+ * ("core", "products", "enterprise"). Excluding on that evidence would lose
+ * jobs silently, at source, where nothing can show you what went.
  */
 export const FETCH_KEYWORDS: readonly string[] = [
   "Product Manager",
