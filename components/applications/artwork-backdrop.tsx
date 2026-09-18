@@ -20,9 +20,27 @@ export function ArtworkBackdrop({ artwork }: { artwork: ResolvedArtwork }) {
       <img
         src={artwork.src}
         alt=""
-        className="h-full w-full object-cover opacity-[0.11] mix-blend-luminosity"
+        /**
+         * Tuned for BOTH themes, after the first attempt was invisible.
+         *
+         * It carried `mix-blend-luminosity` at 11% opacity, borrowed from the
+         * dark Nocturnal design. Over this app's near-white background that
+         * blend yields greyscale, 11% of which is nothing — and a 70-100%
+         * background gradient then finished the job. The painting was loading
+         * correctly the whole time and simply could not be seen.
+         *
+         * Light needs more opacity because the image is competing with white;
+         * dark needs less, and luminosity earns its place there by keeping the
+         * painting from tinting the page.
+         */
+        className="h-full w-full object-cover opacity-[0.16] [filter:sepia(0.35)_saturate(1.1)_contrast(1.02)] dark:opacity-[0.13] dark:mix-blend-luminosity dark:[filter:none]"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-background/70 via-background/85 to-background" />
+      {/*
+        Weighted to the bottom. The hero text sits in the upper third, so the
+        wash is lightest where the painting is and heaviest where the reading
+        happens — rather than uniformly erasing it as the first version did.
+      */}
+      <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/65 to-background" />
     </div>
   );
 }
