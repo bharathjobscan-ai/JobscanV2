@@ -29,18 +29,20 @@ export function ArtworkBackdrop({ artwork }: { artwork: ResolvedArtwork }) {
          * background gradient then finished the job. The painting was loading
          * correctly the whole time and simply could not be seen.
          *
-         * Light needs more opacity because the image is competing with white;
-         * dark needs less, and luminosity earns its place there by keeping the
+         * Light needs far more opacity because the image is competing with
+         * white, and the sepia wash was costing it colour it could not spare —
+         * so light now runs at 38% unsepiaed under a much lighter top gradient.
+         * Dark needs less, and luminosity earns its place there by keeping the
          * painting from tinting the page.
          */
-        className="h-full w-full object-cover opacity-[0.16] [filter:sepia(0.35)_saturate(1.1)_contrast(1.02)] dark:opacity-[0.13] dark:mix-blend-luminosity dark:[filter:none]"
+        className="h-full w-full object-cover opacity-[0.38] [filter:saturate(1.15)_contrast(1.04)] dark:opacity-[0.16] dark:mix-blend-luminosity dark:[filter:none]"
       />
       {/*
         Weighted to the bottom. The hero text sits in the upper third, so the
         wash is lightest where the painting is and heaviest where the reading
         happens — rather than uniformly erasing it as the first version did.
       */}
-      <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/65 to-background" />
+      <div className="absolute inset-0 bg-gradient-to-b from-background/5 via-background/55 to-background dark:from-background/30 dark:via-background/65" />
     </div>
   );
 }

@@ -25,8 +25,16 @@
   --info-bg: #eff6ff;
 }
 
+/*
+ * Three theme states, not two (JSV2S1160).
+ *
+ * The system preference is the default and needs no attribute. An explicit
+ * choice stamps `data-theme` on <html>, which must win in BOTH directions:
+ * without the `:not([data-theme="light"])` guard below, a user on a dark OS who
+ * chooses light would stay dark, because the media query would still match.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #0c0a09;
     --surface: #1c1917;
     --surface-muted: #292524;
@@ -44,6 +52,45 @@
     --negative-bg: #2a1010;
     --info: #93c5fd;
     --info-bg: #10203a;
+  }
+}
+
+:root[data-theme="dark"] {
+    --background: #0c0a09;
+    --surface: #1c1917;
+    --surface-muted: #292524;
+    --foreground: #f5f5f4;
+    --muted: #a8a29e;
+    --subtle: #78716c;
+    --border: #292524;
+    --border-strong: #44403c;
+    --accent: #f5f5f4;
+    --positive: #4ade80;
+    --positive-bg: #14261a;
+    --warning: #fbbf24;
+    --warning-bg: #2a1f08;
+    --negative: #f87171;
+    --negative-bg: #2a1010;
+    --info: #93c5fd;
+    --info-bg: #10203a;
+}
+
+/*
+ * `dark:` utilities must follow the toggle, not just the OS.
+ *
+ * Tailwind 4's built-in dark variant is `prefers-color-scheme` alone, so
+ * without this an explicit choice would recolour the tokens above while every
+ * `dark:` class stayed on the OS setting — half the page switching and half
+ * not. The two arms mirror the token rules exactly.
+ */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]) *, :root:not([data-theme="light"])) {
+      @slot;
+    }
+  }
+  &:where(:root[data-theme="dark"] *, :root[data-theme="dark"]) {
+    @slot;
   }
 }
 

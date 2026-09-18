@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { countAwaitingReview } from "@/features/prequalification/queries";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { getEnv } from "@/lib/config/env";
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
@@ -50,6 +51,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
                   env.PROVIDER_CV === "gemini_api" ? "Gemini" : "Claude"
                 } docs`}
           </span>
+          <ThemeToggle />
         </div>
       </header>
 
