@@ -21,28 +21,28 @@ export function ArtworkBackdrop({ artwork }: { artwork: ResolvedArtwork }) {
         src={artwork.src}
         alt=""
         /**
-         * Tuned for BOTH themes, after the first attempt was invisible.
+         * Tuned per theme, by eye, after two attempts that could not be seen.
          *
-         * It carried `mix-blend-luminosity` at 11% opacity, borrowed from the
-         * dark Nocturnal design. Over this app's near-white background that
-         * blend yields greyscale, 11% of which is nothing — and a 70-100%
-         * background gradient then finished the job. The painting was loading
-         * correctly the whole time and simply could not be seen.
+         * The original borrowed `mix-blend-luminosity` at 11% from the dark
+         * Nocturnal design. That blend takes the painting's luminance and the
+         * page's colour, so on ANY background it returns greyscale — and 11% of
+         * greyscale over a near-black page is black. Raising the opacity under
+         * the blend did not help, because the blend was the problem: it is gone
+         * from both themes now.
          *
-         * Light needs far more opacity because the image is competing with
-         * white, and the sepia wash was costing it colour it could not spare —
-         * so light now runs at 38% unsepiaed under a much lighter top gradient.
-         * Dark needs less, and luminosity earns its place there by keeping the
-         * painting from tinting the page.
+         * Dark also needs the painting lifted, not dimmed. Compositing at 50%
+         * over #0c0a09 halves every value, and most of these canvases are dark
+         * to begin with, so brightness is pushed back up rather than the
+         * opacity being driven toward opaque.
          */
-        className="h-full w-full object-cover opacity-[0.38] [filter:saturate(1.15)_contrast(1.04)] dark:opacity-[0.16] dark:mix-blend-luminosity dark:[filter:none]"
+        className="h-full w-full object-cover opacity-[0.52] [filter:saturate(1.15)_contrast(1.04)] dark:opacity-[0.55] dark:mix-blend-normal dark:[filter:saturate(1.1)_brightness(1.35)]"
       />
       {/*
         Weighted to the bottom. The hero text sits in the upper third, so the
         wash is lightest where the painting is and heaviest where the reading
         happens — rather than uniformly erasing it as the first version did.
       */}
-      <div className="absolute inset-0 bg-gradient-to-b from-background/5 via-background/55 to-background dark:from-background/30 dark:via-background/65" />
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/50 to-background dark:via-background/45" />
     </div>
   );
 }
