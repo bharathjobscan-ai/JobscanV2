@@ -59,7 +59,7 @@ polling, and `ai_jobs` is a run ledger rather than a work queue.
 
 ## Phase 1.5 — in progress
 
-**55 stories: 22 Completed · 15 `Review` · 12 `Ready` · 6 `Blocked`.**
+**59 stories: 29 Completed · 19 `Review` · 5 `Ready` · 6 `Blocked`** (2026-09-18).
 Marked in `project-management/backlog/product-backlog.csv` with `Phase = Phase 1.5`.
 
 Scope decisions taken: scoring is automated but **document generation stays
