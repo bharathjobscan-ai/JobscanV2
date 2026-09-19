@@ -193,10 +193,24 @@ generic "Senior Product Manager" posting at Adyen or Checkout.com frequently
 contains no payments vocabulary at all, because there it goes without saying —
 so domain-first rejects roles at the highest-priority companies.
 
-**Domain FAIL at a payments-core company routes to review, never to a pass.**
-The gate cannot tell a payments role with implicit language from a genuinely
-unrelated one; that judgement is a click, and the list is the only thing that
-gets the job in front of the click.
+The list has two tiers, along the line ScoreG already draws between a company
+whose core business *is* payments (+10) and one with a significant payments arm
+(+5), because a domain miss means something different at each:
+
+| Tier | Domain FAIL | Why |
+|---|---|---|
+| A — payments is the business | **Passes, marked** | A miss is the rare exception; the role is almost certainly payments-adjacent and an application is the better default |
+| B — significant payments arm | **Review** | A miss is the normal case — a large marketplace posts far more unrelated PM roles than payments ones |
+
+A Tier A pass is recorded like any other verdict, under its own rule
+(`DOMAIN_UNEVIDENCED_COMPANY_AFFINITY`) with the company as its evidence, so
+every application admitted this way can be found and the rule audited against
+what it actually let through.
+
+**The override is scoped to the domain filter, not to the gate.** An Adyen
+posting in Texas still rejects on location, and one asking for fifteen years
+still routes to review on experience. A whole-gate bypass would be the
+short-circuit this ADR already refuses elsewhere.
 
 ### Passing the gate no longer triggers a score
 
