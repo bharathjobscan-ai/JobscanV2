@@ -25,6 +25,9 @@ framing decides the arguments below.
 each returning PASS, FAIL or UNKNOWN. Any FAIL rejects; all PASS qualifies;
 anything else needs a human.
 
+> **Amended 2026-09-19.** There are now five filters and a watchlist signal, and
+> FAIL rejects on only three of them. See the revision at the end of this file.
+
 No AI, no network, no embeddings. Every decision is a rule you can read, and
 every verdict records the rule and the evidence that produced it. A gate you
 cannot audit is one you stop trusting and then stop using.
@@ -103,3 +106,124 @@ keyword and geography rules would have misfired in production — most seriously
 sponsorship, and Portugal missing from the target countries while Lisbon was a
 preferred city. Each correction is commented at the point of change in
 `config/prequalification/`.
+
+---
+
+## Revision, 2026-09-19 — five filters, one signal, and FAIL no longer always rejects
+
+**Status:** Accepted · **Backlog:** JSV2S1156, 1162, 1165, 1166, 1167, 1168
+
+The gate above has four filters and one rule: any FAIL rejects. Both change.
+
+### A fifth filter: visa language in the JD
+
+A deterministic classifier reads the description for **explicit** sponsorship
+language in both directions. It is not an inference engine: the question it
+answers is *"does this JD contain sufficiently strong evidence that sponsorship
+is unavailable"*, never *"can I find the word visa"*.
+
+Three outcomes, and the asymmetry is the whole design:
+
+| Outcome | Meaning | Gate effect |
+|---|---|---|
+| `REMOVE` | Explicit refusal, or the role is stated as not sponsorable | Reject |
+| `KEEP` | Explicit offer of sponsorship | Pass, recorded |
+| `REVIEW` | Conditional, generic, contradictory, or **silent** | Pass, recorded |
+
+**Silence passes.** Most postings in London, Amsterdam and Berlin say nothing
+about visas at all, and a filter that read silence as refusal would reject
+almost the entire intake — the Axon failure one pillar over. Generic
+right-to-work language passes too: "must have the right to work in the UK" is
+compatible with a candidate the company can later sponsor.
+
+The cost asymmetry is what sets the threshold. A false REMOVE deletes a genuinely
+sponsorable job and we never learn of it. A false REVIEW costs one click. So the
+classifier optimises for recall of possible sponsorship, not for tidiness.
+
+This also **retires `mentionsSponsorship()`** in
+`features/ingestion/sources/apify-linkedin.ts`, which flags on bare "right to
+work" and "work permit" — exactly the generic terms this filter must never act
+on. Two sponsorship detectors with opposite thresholds can only disagree.
+
+### A signal, not a sixth filter: the sponsorship watchlist
+
+Companies known to have sponsored international candidates. It is deliberately
+**not** a pillar: it can never reject, and a miss is simply no bump. Calling it
+a pillar would make "all pillars passed" mean something different from what it
+means for the other five.
+
+It is the third company list and answers a third question. Keeping them apart
+is what stops each from being quietly wrong:
+
+| List | Question | Source |
+|---|---|---|
+| Sponsor register | Holds a licence today? | UK register, refreshed on schedule |
+| **Watchlist** | **Has actually sponsored?** | **Curated, append-only** |
+| **Payments-core** | **Is payments their core business?** | **Curated, ~25 names** |
+
+The watchlist is append-only: a company is added when sponsorship is confirmed,
+never removed on absence of evidence. Because a watchlist miss does not block
+conversion to an application, off-list companies keep being applied to, so the
+list can still learn rather than ossifying around what it already contains.
+
+### FAIL no longer always rejects
+
+The original rule was uniform because four filters of equal confidence made it
+uniform. With five filters of unequal confidence it over-rejects.
+
+| Filter | FAIL | UNKNOWN |
+|---|---|---|
+| Domain | **Reject** | Review |
+| Visa language (`REMOVE`) | **Reject** | Review |
+| Location, recognised non-target country | **Reject** | Review |
+| Location, unrecognised | — | Review |
+| Role / title | Review | Review |
+| Experience | Review | Review |
+
+Role and experience are the arguable ones — a title reads senior but states no
+years, a range is open-ended — and the Axon rejection was exactly this shape.
+Location is not arguable in the same way: a recognised non-target country is a
+confident fact, and sending every Texas posting to review would flood the queue
+the gate exists to keep small.
+
+### Domain FAIL is softened by the payments-core list
+
+Domain is the one straight-reject pillar, and it reads keywords from the JD. A
+generic "Senior Product Manager" posting at Adyen or Checkout.com frequently
+contains no payments vocabulary at all, because there it goes without saying —
+so domain-first rejects roles at the highest-priority companies.
+
+**Domain FAIL at a payments-core company routes to review, never to a pass.**
+The gate cannot tell a payments role with implicit language from a genuinely
+unrelated one; that judgement is a click, and the list is the only thing that
+gets the job in front of the click.
+
+### Passing the gate no longer triggers a score
+
+A job that passes all five filters **and** hits the watchlist is not scored
+automatically. Its match category is the enum `gate_qualified`, and ScoreG runs
+only when asked, from a button.
+
+Not a flat number, and not a blank. `matchCategoryFor` derives the band as a
+pure function of the score, so stamping a placeholder like 80 would manufacture
+an "Apply" verdict and a referral recommendation out of a number nobody
+calculated, then sort it against real scores and average it into spend
+reporting. The enum cannot be arithmetic'd by accident.
+
+The pattern is already in the skill — *"Source = Recruiter Inbound → skip
+scoring entirely, auto-classify as PRIORITY"* — and note what it assigns: a
+category, never a score.
+
+**The gate does not compute a substitute score.** Measured against
+`prompts/scoreg/SKILL.md`, roughly 30 of the final 100 points are not derivable
+in code at all — Functional PM Match (30 raw points of the resume pillar) is
+semantic extraction from free text, and company size, reachability and
+community sentiment are not facts we hold. A deterministic number claiming to be
+a ScoreG score would be a second instrument reporting one quantity, which is the
+anomaly we already removed from CVG.
+
+### What did not change
+
+No AI, no network, no embeddings in `features/prequalification/`. Every new
+rule is readable, every verdict still records the rule and the evidence. The
+visa classifier stores the matched sentence, not just its verdict.
