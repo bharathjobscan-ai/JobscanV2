@@ -88,3 +88,43 @@ export function groundingUsage(used: number): GroundingUsage {
     marginalUsd: remaining > 0 ? 0 : GROUNDING_COST_PER_REQUEST,
   };
 }
+
+/**
+ * Countries whose sponsor register we hold locally (JSV2S1146).
+ *
+ * Grounding exists on the scoring call mainly to establish sponsorship. Where
+ * the register is local that question is already answered deterministically,
+ * for free, from a source a web search cannot read anyway — the UK register is
+ * a CSV, not indexed pages. Searching there pays ~$0.09 a run to rediscover a
+ * fact we already hold, badly.
+ *
+ * Everywhere else there is no local register yet, so the search still earns its
+ * place and stays on. The owner made exactly this distinction on 2026-09-19.
+ *
+ * NEXT ONE TO FALL: the Netherlands. IND publishes its recognised-sponsor
+ * register publicly — the owner's own watchlist file cites it — so Amsterdam
+ * could join this list and take a second city off grounding.
+ */
+const LOCAL_REGISTER_COUNTRIES = new Set([
+  "united kingdom",
+  "uk",
+  "great britain",
+  "gb",
+  "england",
+  "scotland",
+  "wales",
+  "northern ireland",
+]);
+
+/**
+ * Should this scoring run search the web?
+ *
+ * Deliberately errs towards grounding ON. An unknown or missing country is
+ * almost always a badly-formatted posting rather than a UK one, and scoring a
+ * non-UK job with no register and no search would leave the visa pillar — half
+ * the score — resting on nothing at all.
+ */
+export function shouldGroundScoring(country: string | null | undefined): boolean {
+  if (!country) return true;
+  return !LOCAL_REGISTER_COUNTRIES.has(country.trim().toLowerCase());
+}

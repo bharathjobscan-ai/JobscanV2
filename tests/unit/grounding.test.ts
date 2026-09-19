@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { billableGroundedRunIds, groundingUsage } from "@/features/ai/grounding";
+import { billableGroundedRunIds, groundingUsage,
+  shouldGroundScoring,
+} from "@/features/ai/grounding";
 import { GROUNDING_COST_PER_REQUEST, GROUNDING_FREE_PER_MONTH } from "@/lib/ai/pricing";
 
 /**
@@ -93,5 +95,34 @@ describe("billableGroundedRunIds", () => {
       { id: "x", finishedAt: null },
     ]);
     expect([...past]).toEqual(["x"]);
+  });
+});
+
+/**
+ * JSV2S1146. Grounding is the one cost that is not a function of tokens, and
+ * this is the switch that decides whether a run pays it.
+ */
+describe("grounding is skipped only where the register is local", () => {
+  it("skips the search for UK postings, in every spelling", () => {
+    for (const c of ["United Kingdom", "uk", "England", "  Scotland  ", "GB"]) {
+      expect(shouldGroundScoring(c)).toBe(false);
+    }
+  });
+
+  it("keeps the search everywhere without a local register", () => {
+    for (const c of ["Netherlands", "Germany", "United Arab Emirates", "Ireland", "Portugal", "Luxembourg"]) {
+      expect(shouldGroundScoring(c)).toBe(true);
+    }
+  });
+
+  /**
+   * Errs towards grounding ON. A missing country is a badly-formatted posting
+   * far more often than a UK one, and scoring a non-UK job with neither a
+   * register nor a search leaves half the score resting on nothing.
+   */
+  it("grounds when the country is unknown", () => {
+    expect(shouldGroundScoring(null)).toBe(true);
+    expect(shouldGroundScoring(undefined)).toBe(true);
+    expect(shouldGroundScoring("")).toBe(true);
   });
 });

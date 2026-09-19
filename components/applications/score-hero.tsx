@@ -14,10 +14,10 @@ import { MATCH_HINTS, MATCH_LABELS, type MatchCategory } from "@/lib/config/cons
  */
 
 const VERDICT: Record<MatchCategory, string> = {
-  priority_apply: "Apply now",
-  apply: "Worth applying",
+  priority_apply: "Strong apply",
+  apply: "Apply",
   referral_only: "Only with a referral",
-  reject: "Do not apply",
+  reject: "Skip it",
   gate_qualified: "Worth applying",
 };
 

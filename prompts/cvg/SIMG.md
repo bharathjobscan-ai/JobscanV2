@@ -128,6 +128,14 @@ recommending an **insert**:
 The user reviews these by eye before accepting, so `confirm` must state exactly
 what they are being asked to vouch for.
 
+**The target score never overrides this rule (JSV2S1060).** The pass bar is 90,
+and it is a target rather than a gate: reporting a document at 86 is a correct
+outcome. Inserting an achievement the master resume does not evidence in order
+to reach 90 is not — it produces a CV that scores well and cannot survive the
+interview it wins. If the recommendations you can honestly make do not reach
+the bar, say so and stop. Never close the gap with something the candidate
+would have to explain away.
+
 ## Applying an edit — why the text must be exact
 
 Edits are applied by **literal string substitution**, with no model involved.

@@ -15,6 +15,8 @@ import { applyAtsHygiene, type AtsReport } from "@/lib/documents/ats";
 import { lineBudgetFor, settleSimgEvaluation } from "@/features/simg/settle";
 import { SIMG_AUTOMATIC } from "@/config/simg";
 import { lookupSponsor, sponsorPromptBlock } from "@/features/sponsors/lookup";
+import { lookupWatchlist } from "@/features/companies/lookup";
+import { gatePromptBlock, watchlistPromptBlock } from "@/features/companies/prompt";
 import { parseTaskResponse, type AiProvider, type TaskContext } from "@/lib/ai/types";
 import {
   AI_TASK_DOCUMENT,
@@ -155,6 +157,19 @@ export async function enqueueTask(
   if (taskType === "score") {
     const match = await lookupSponsor(row.job.company);
     context.sponsorBlock = sponsorPromptBlock(match);
+
+    /*
+     * JSV2S1051 / JSV2S1156 — everything the gate already established, handed
+     * over as fact.
+     *
+     * The scorer's visa pillar is half the score, and until now most of it was
+     * re-derived by web search on every run: whether the posting refuses
+     * sponsorship (the gate read that deterministically) and whether the
+     * company has actually sponsored (the watchlist records it). Supplying both
+     * is what lets the prompt drop its blocker list and skip four searches.
+     */
+    context.watchlistBlock = watchlistPromptBlock(lookupWatchlist(row.job.company));
+    context.gateBlock = gatePromptBlock(row.job.prequalificationDetail);
   }
 
   // SimG evaluates a document rather than a job, so its context carries the

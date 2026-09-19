@@ -59,12 +59,58 @@ polling, and `ai_jobs` is a run ledger rather than a work queue.
 
 ## Phase 1.5 — in progress
 
-**71 stories: 29 Completed · 28 `Review` · 6 `Ready` · 7 `Blocked` · 1 `Deferred`** (2026-09-19).
+**72 stories: 29 Completed · 36 `Review` · 5 `Ready` · 1 `Blocked` · 1 `Deferred`** (2026-09-19).
 Marked in `project-management/backlog/product-backlog.csv` with `Phase = Phase 1.5`.
 
 Scope decisions taken: scoring is automated but **document generation stays
 manual**; execution is **GitHub Actions cron**, not Vercel; the multi-source
 adapter framework and Application Analytics are deliberately out.
+
+### 2026-09-19, later — six decisions closed, and ScoreG stopped paying twice
+
+The owner settled 1161, 1053, 1050, 1051, 1164 and 1060 in one pass. Only
+JSV2S1164's prose trimming is still open.
+
+| Decision | What changed |
+|---|---|
+| 1161 | 8 city-level fetches, **200 per location**, $0.648/night worst case |
+| 1053 | One domain vocabulary, injected — ScoreG's copy is gone |
+| 1050 | Three location tiers, because fetch ⊂ gate |
+| 1051 | Registry 25 → 10; the freed weight goes to the watchlist, not to search |
+| 1164 | Strong Apply / Apply / Referral Only / Skip it |
+| 1060 | 90 is a target, never a gate |
+
+**The two banks had already drifted, and nobody knew.** ScoreG carried its own
+Domain Match Bank: 43 terms against the gate's 100. The gate's was the corrected
+one — its comments record removing bare `risk` (it admitted "Senior PM (IT/Cyber
+Risk)") and demoting `apple pay` (every consumer app accepts it), both found
+against a real 100-job London sample. None of that ever reached the skill. Two
+banks answering one question can only disagree; there is now one.
+
+**1051 nearly moved the weight to the most expensive signal.** The owner's
+reasoning — actual sponsorship outranks a licence — is right, but "community
+signal" and "recency evidence" are Step 3, which is *entirely web search*.
+Growing it would have made grounding mandatory and fought 1146, 1149 and 1150 at
+once. The evidence he wanted is already deterministic: the watchlist *is*
+curated community and recency evidence. It moved there instead.
+
+**And it had to be a maximum, not a sum.** A tier-4 watchlist hit now skips
+scoring entirely, so ScoreG mostly sees *off-list* companies — where an additive
+watchlist component scores zero. Additive would have pushed the whole
+distribution below the Apply band. Evidence-tiered, take the maximum, and
+absence costs nothing.
+
+**The retired Visa Blocker List was itself a hazard.** Four of its eleven
+entries were phrases like "Must have right to work in [country]" — generic
+boilerplate on a large share of sponsorable postings, which it scored to zero.
+
+1161 reverses the 2026-09-18 total-cap decision deliberately. `fetchWithinBudget()`
+now guards what the total cap was really protecting, so a ninth location fails a
+test rather than surfacing on an invoice.
+
+**Storage is the next thing to bite:** 48,000 `raw_jobs` rows a month, mostly JD
+text, against Supabase's 500MB free tier. It needs a retention rule inside the
+first month, not in Phase 3.
 
 ### 2026-09-19 — the gate grew a fifth filter, and stopped rejecting uniformly
 

@@ -38,6 +38,25 @@ export type TaskContext = {
    * pages.
    */
   sponsorBlock?: string;
+
+  /**
+   * JSV2S1051 — the curated sponsorship watchlist result.
+   *
+   * The evidence tier's top band rests on this, so it has to arrive as fact.
+   * It is also what makes Step 3's searches skippable: the watchlist IS the
+   * curated form of what those searches go looking for, and paying to
+   * rediscover it badly is the cost this removes.
+   */
+  watchlistBlock?: string;
+
+  /**
+   * JSV2S1156 — the deterministic visa-language verdict, with its evidence.
+   *
+   * ScoreG's own blocker list is retired; this replaces it. Supplied rather
+   * than re-derived because the filter already ran, on the same text, before
+   * anything was billed.
+   */
+  gateBlock?: string;
 };
 
 /**

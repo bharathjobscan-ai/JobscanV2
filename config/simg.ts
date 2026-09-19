@@ -29,9 +29,23 @@ export const LENS_LABELS: Record<LensKey, string> = {
 };
 
 /**
- * The pass bar. **JSV2S1060 is still Blocked on your decision** — 90 is the
- * aspiration stated in the backlog, used here as a working default so SimG can
- * ship. Changing it changes only which verdict is reported, never a document.
+ * The pass bar (JSV2S1060, decided 2026-09-19).
+ *
+ * **A target, not a gate.** Nothing in the system blocks, retries or
+ * regenerates against this number — it changes which verdict is reported and
+ * nothing else, and the owner approves every edit before it is merged.
+ *
+ * That distinction is the decision, not a detail. A hard 90 would create two
+ * problems it cannot solve: SimG would be under pressure to INVENT experience
+ * to clear the bar, against its own standing rule that recommendations are
+ * fixes grounded in the master resume; and the bar sits above the demonstrated
+ * ceiling anyway — the Console skill scored the GoCardless CV 84 after seven
+ * accepted recommendations and called that a borderline pass. A target above
+ * the reference implementation's best result is a target most runs will miss,
+ * and a system that auto-regenerated against it would be an unbounded spend
+ * loop chasing a number.
+ *
+ * So: aim at 90, report the gap, stop.
  */
 export const TARGET_DOCUMENT_SCORE = 90;
 

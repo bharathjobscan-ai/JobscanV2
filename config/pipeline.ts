@@ -47,29 +47,71 @@ export const SPEND_CEILING = {
 } as const;
 
 /**
- * What the daily fetch asks for (JSV2S1020, decided 2026-09-04).
+ * What the daily fetch asks for (JSV2S1161, decided 2026-09-19).
  *
- * One fetch per location, jobs posted in the last 24 hours, capped at 30
- * results each. The cap is a cost control on two axes at once: the actor bills
- * per result, and every result is a candidate for a billed scoring call.
+ * Jobs posted in the last 24 hours, capped PER LOCATION rather than in total.
+ *
+ * This reverses the 2026-09-18 decision, deliberately and at the owner's
+ * request. A total cap divided across locations meant adding a location
+ * silently shrank every other location's share; a per-location cap means each
+ * city gets a guaranteed look, which is the point of searching eight of them —
+ * a shared cap would be consumed by whichever city posts most, and London would
+ * starve Manchester, Dublin and Luxembourg of any share at all.
+ *
+ * The bill is guarded by `estimatedFetchCostUsd` below instead, which is the
+ * property the total cap was really protecting.
  */
 export const FETCH_DEFAULTS = {
   postedWithinDays: 1,
-  /**
-   * A TOTAL ceiling across all locations, not a per-location one (decided
-   * 2026-09-18).
-   *
-   * The owner asked for "max 100 product roles", and the actor's `limit` is
-   * per run. Expressing the cap as a total and dividing it means adding a
-   * location does not silently raise the bill — which is exactly how the
-   * 11 x 30 plan would have grown to 1,100 jobs a night.
-   */
-  totalLimit: 100,
+  /** Per location, per run. 200 x 8 locations = 1,600 results a night. */
+  limitPerLocation: 200,
 } as const;
 
-/** Per-location share of the total cap, rounded up so the cap is never under-used. */
-export function limitPerLocation(locations = FETCH_LOCATIONS.length): number {
-  return Math.max(1, Math.ceil(FETCH_DEFAULTS.totalLimit / Math.max(1, locations)));
+/**
+ * Apify pay-per-event pricing, as the actor bills it.
+ *
+ * Held here rather than inline so the guard below and the run ledger cannot
+ * disagree about what a fetch costs.
+ */
+export const APIFY_PRICING = {
+  perResultUsd: 0.0004,
+  perActorStartUsd: 0.001,
+} as const;
+
+/** The owner's stated ceiling for ingestion: under $1 a day (JSV2S1161). */
+export const FETCH_DAILY_BUDGET_USD = 1;
+
+/**
+ * Worst case for one night: every location returning a full page.
+ *
+ * At 200 x 8 that is $0.648 — 1,600 results at $0.0004 plus eight actor starts
+ * at $0.001. Real runs come in well under it, because a 24-hour window rarely
+ * yields 200 product roles in Luxembourg.
+ */
+export function estimatedFetchCostUsd(
+  locations = FETCH_LOCATIONS.length,
+  limit = FETCH_DEFAULTS.limitPerLocation,
+): number {
+  return locations * (limit * APIFY_PRICING.perResultUsd + APIFY_PRICING.perActorStartUsd);
+}
+
+/**
+ * The guard the total cap used to be.
+ *
+ * A per-location cap makes a ninth location free to add and invisible in the
+ * bill until the invoice arrives. This makes it loud instead: adding a location
+ * or raising the cap past the daily budget fails the build, not the wallet.
+ */
+export function fetchWithinBudget(
+  locations = FETCH_LOCATIONS.length,
+  limit = FETCH_DEFAULTS.limitPerLocation,
+): boolean {
+  return estimatedFetchCostUsd(locations, limit) <= FETCH_DAILY_BUDGET_USD;
+}
+
+/** Per-location cap. Kept as a function so callers need not know the shape. */
+export function limitPerLocation(): number {
+  return FETCH_DEFAULTS.limitPerLocation;
 }
 
 /**
@@ -88,20 +130,30 @@ export const PROBE_FETCH = {
 } as const;
 
 /**
- * Locations searched each night (narrowed 2026-09-18 by the owner).
+ * Locations searched each night (JSV2S1161, decided 2026-09-19).
  *
- * Three cities rather than eleven, to start. Deliberately kept explicit rather
- * than derived from `config/prequalification/locations.ts`: that file lists
- * everywhere a job is *acceptable*, which is far wider than everywhere worth
- * paying to search.
+ * Eight, each with its own cap. Deliberately city-level rather than
+ * country-level: at country level a limit is consumed by whichever city posts
+ * most, so "United Kingdom, 200" would return London 200 times over and
+ * Manchester never.
  *
- * Widening this raises the bill in proportion, which is why the result cap is
- * expressed as a total rather than per location.
+ * Deliberately kept explicit rather than derived from
+ * `config/prequalification/locations.ts`: that file lists everywhere a job is
+ * *acceptable*, which is far wider than everywhere worth paying to search. The
+ * gate still accepts a job from Munich or Stockholm that arrives another way.
+ *
+ * Adding one raises the bill by up to $0.081 a night. `fetchWithinBudget`
+ * is what stops that being discovered on an invoice.
  */
 export const FETCH_LOCATIONS: readonly string[] = [
   "London, United Kingdom",
+  "Manchester, United Kingdom",
   "Amsterdam, Netherlands",
   "Berlin, Germany",
+  "Dubai, United Arab Emirates",
+  "Dublin, Ireland",
+  "Lisboa, Portugal",
+  "Luxembourg",
 ];
 
 /**

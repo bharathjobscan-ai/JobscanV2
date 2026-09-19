@@ -150,10 +150,10 @@ export const MATCH_CATEGORIES = [
 export type MatchCategory = (typeof MATCH_CATEGORIES)[number];
 
 export const MATCH_LABELS: Record<MatchCategory, string> = {
-  priority_apply: "Priority Apply",
+  priority_apply: "Strong Apply",
   apply: "Apply",
   referral_only: "Referral Only",
-  reject: "Reject",
+  reject: "Skip it",
   gate_qualified: "Gate qualified",
 };
 

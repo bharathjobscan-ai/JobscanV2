@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 import { getEnv } from "@/lib/config/env";
+import { shouldGroundScoring } from "@/features/ai/grounding";
 import { parseTaskResponse, type AiProvider, type TaskContext, type TaskResult } from "./types";
 
 /**
@@ -32,9 +33,20 @@ export class GeminiProvider implements AiProvider {
 
     const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
 
-    // Scoring needs live evidence; CV and cover letter work from the JD and
-    // master resume alone, and granting tools there only adds latency.
-    const tools = context.taskType === "score" ? [{ googleSearch: {} }] : undefined;
+    /*
+     * Scoring needs live evidence; CV and cover letter work from the JD and
+     * master resume alone, and granting tools there only adds latency.
+     *
+     * JSV2S1146 — and scoring needs it only where we have no local register.
+     * For a UK posting the sponsor licence is already resolved deterministically
+     * and supplied in the prompt, so a grounded search pays roughly $0.09 to
+     * rediscover it from pages that do not contain it. Non-UK countries keep
+     * grounding until their registers are local too.
+     */
+    const tools =
+      context.taskType === "score" && shouldGroundScoring(context.country)
+        ? [{ googleSearch: {} }]
+        : undefined;
 
     // Gemini has no equivalent cache breakpoint here, so the split halves are
     // simply concatenated.

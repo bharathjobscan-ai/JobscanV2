@@ -6,6 +6,7 @@ import {
   type AiTaskType,
   type ReachabilityLevel,
 } from "@/lib/config/constants";
+import { DOMAIN_TIERS } from "@/config/prequalification/domains";
 import type { TaskContext } from "./types";
 
 /**
@@ -25,6 +26,35 @@ const SKILL_FILES: Record<AiTaskType, string> = {
 };
 
 const PROMPTS_DIR = path.join(process.cwd(), "prompts");
+
+/**
+ * The domain vocabulary, rendered for the scoring prompt (JSV2S1053).
+ *
+ * ScoreG carried its own copy of this bank until 2026-09-19, and the two had
+ * already drifted: 100 terms in the gate against 43 in the skill, with the
+ * gate's corrections — made against a real 100-job sample — absent from the
+ * skill entirely. Two banks answering one question can only disagree, which is
+ * the same anomaly that took scoring out of CVG.
+ *
+ * Injected rather than duplicated, so a keyword change moves the gate and the
+ * scorer in one edit and `CONFIG_VERSION` marks the affected verdicts.
+ */
+function domainBankBlock(): string {
+  const tiers = DOMAIN_TIERS.map(
+    (tier) =>
+      `**Tier ${tier.priority} — ${tier.label}** (${tier.keywords.length} terms, ` +
+      `weight x${tier.multiplier})\n${tier.keywords.join(", ")}`,
+  );
+  return [
+    "# DOMAIN MATCH BANK",
+    "",
+    "The same vocabulary the deterministic gate uses. A job only reaches you if",
+    "it already passed that gate, so treat these as the terms worth recognising,",
+    "not as a filter to re-apply.",
+    "",
+    ...tiers,
+  ].join("\n");
+}
 
 export class MissingPromptError extends Error {
   constructor(relativePath: string) {
@@ -238,10 +268,13 @@ function jobBlock(context: TaskContext): string {
       ? `Sponsorship mentioned in posting: ${context.visaSponsorshipMentioned}`
       : null,
     "",
-    // Resolved locally before the call (JSV2S1127). Placed before the
-    // description so the model reads the answer before it reads anything that
-    // might tempt it to go looking.
+    // Resolved locally before the call (JSV2S1127, JSV2S1051). Placed before
+    // the description so the model reads the answer before it reads anything
+    // that might tempt it to go looking — and so a curated fact is never
+    // re-derived by a billed search.
     context.sponsorBlock ? `\n${context.sponsorBlock}\n` : null,
+    context.watchlistBlock ? `\n${context.watchlistBlock}\n` : null,
+    context.gateBlock ? `\n${context.gateBlock}\n` : null,
     "### Job description",
     context.description,
   ]
@@ -308,6 +341,9 @@ export async function buildPrompt(context: TaskContext): Promise<BuiltPrompt> {
     "",
     "# Method",
     skill,
+    "",
+    // Only the scorer needs the bank; CVG and SimG do not match domains.
+    isScore ? domainBankBlock() : "",
     "",
     "# Candidate master resume",
     masterResume,
