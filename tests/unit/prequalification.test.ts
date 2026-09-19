@@ -387,11 +387,25 @@ describe("prequalify", () => {
     expect(result.decidedBy).toBeNull();
   });
 
-  it("rejects on a single failing filter, naming it", () => {
+  /**
+   * ADR-0006 revision, 2026-09-19. Role FAIL used to reject; it now reviews.
+   * Only domain, visa language and a recognised non-target country reject —
+   * the Axon case was a title thrown away on an arguable filter.
+   */
+  it("reviews rather than rejects when a non-rejecting filter fails", () => {
     const result = prequalify(job({ title: "Senior Program Manager, Payments" }));
-    expect(result.decision).toBe("reject");
+    expect(result.decision).toBe("review");
     expect(result.decidedBy).toBe("role");
+    expect(result.role.status).toBe("fail");
     expect(result.reason).toContain("excluded");
+  });
+
+  it("still rejects when a rejecting filter fails", () => {
+    const result = prequalify(
+      job({ location: "Austin, Texas", country: "United States" }),
+    );
+    expect(result.decision).toBe("reject");
+    expect(result.decidedBy).toBe("location");
   });
 
   it("reviews when a filter is unknown rather than failing", () => {

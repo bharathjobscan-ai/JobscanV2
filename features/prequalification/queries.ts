@@ -232,6 +232,7 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
       domain: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'domain'->>'primaryDomain', 'none')`,
       experience: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'experience'->>'rule', 'none')`,
       location: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'location'->>'rule', 'none')`,
+      visa: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'visa'->>'reasonCode', 'none')`,
       fetch: rawJobs.ingestionRunId,
       fetchSource: ingestionRuns.source,
       fetchStartedAt: ingestionRuns.startedAt,

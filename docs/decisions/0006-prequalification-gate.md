@@ -124,11 +124,19 @@ is unavailable"*, never *"can I find the word visa"*.
 
 Three outcomes, and the asymmetry is the whole design:
 
-| Outcome | Meaning | Gate effect |
-|---|---|---|
-| `REMOVE` | Explicit refusal, or the role is stated as not sponsorable | Reject |
-| `KEEP` | Explicit offer of sponsorship | Pass, recorded |
-| `REVIEW` | Conditional, generic, contradictory, or **silent** | Pass, recorded |
+| Outcome | Meaning | Filter status | Gate effect |
+|---|---|---|---|
+| `REMOVE` | Explicit refusal, or the role stated as not sponsorable | `fail` | Reject |
+| `KEEP` | Explicit offer of sponsorship | `pass` | Pass |
+| `REVIEW` — silence, or generic boilerplate | The posting says nothing usable | `pass` | Pass |
+| `REVIEW` — substantive but ambiguous | Conditional, contradictory, citizenship preferred, local-only, existing authorisation | `unknown` | Review |
+
+The split inside `REVIEW` is the part that decides whether this filter is usable
+at all. Silence and "must have the right to work in the UK" appear on most
+postings; if they held a job for a human, the review queue would swallow the
+entire intake and the gate would have moved the problem rather than solved it.
+A posting that says something substantive but ambiguous — "sponsorship may be
+available", "local candidates only" — is rare enough to be worth a click.
 
 **Silence passes.** Most postings in London, Amsterdam and Berlin say nothing
 about visas at all, and a filter that read silence as refusal would reject

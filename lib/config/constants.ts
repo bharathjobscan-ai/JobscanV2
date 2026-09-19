@@ -131,6 +131,20 @@ export const MATCH_CATEGORIES = [
   "apply",
   "referral_only",
   "reject",
+  /**
+   * Passed the gate at a known sponsor, and deliberately not scored
+   * (JSV2S1168).
+   *
+   * An ENUM, not a placeholder number. `matchCategoryFor` derives the band as a
+   * pure function of the score, so stamping something like 80 would manufacture
+   * an "Apply" verdict and a referral recommendation out of arithmetic nobody
+   * performed, then sort it against real scores and average it into spend
+   * reporting. A category cannot be arithmetic'd by accident.
+   *
+   * The pattern is ScoreG's own: "Source = Recruiter Inbound → skip scoring
+   * entirely, auto-classify as PRIORITY" assigns a category, never a score.
+   */
+  "gate_qualified",
 ] as const;
 
 export type MatchCategory = (typeof MATCH_CATEGORIES)[number];
@@ -140,6 +154,7 @@ export const MATCH_LABELS: Record<MatchCategory, string> = {
   apply: "Apply",
   referral_only: "Referral Only",
   reject: "Reject",
+  gate_qualified: "Gate qualified",
 };
 
 /** What the band means, shown as a tooltip. */
@@ -148,9 +163,15 @@ export const MATCH_HINTS: Record<MatchCategory, string> = {
   apply: "70-84 · Apply and seek a referral in parallel",
   referral_only: "55-69 · Apply only if a referral is available",
   reject: "Below 55 · Do not apply",
+  gate_qualified: "Not scored · known sponsor, every filter passed",
 };
 
-/** ScoreG's decision bands, applied to the final weighted score. */
+/**
+ * ScoreG's decision bands, applied to the final weighted score.
+ *
+ * Never returns `gate_qualified`: that state means no score exists, and this
+ * function's whole contract is that the band follows from one.
+ */
 export function matchCategoryFor(score: number | null): MatchCategory | null {
   if (score === null || Number.isNaN(score)) return null;
   if (score >= 85) return "priority_apply";
@@ -277,28 +298,54 @@ export const PREQUALIFICATION_LABELS: Record<PrequalDecision, string> = {
 export const FILTER_STATUSES = ["pass", "fail", "unknown"] as const;
 export type FilterStatus = (typeof FILTER_STATUSES)[number];
 
-export const PREQUAL_FILTERS = ["role", "domain", "experience", "location"] as const;
+export const PREQUAL_FILTERS = [
+  "domain",
+  "visa",
+  "role",
+  "location",
+  "experience",
+] as const;
 export type PrequalFilter = (typeof PREQUAL_FILTERS)[number];
 
 export const PREQUAL_FILTER_LABELS: Record<PrequalFilter, string> = {
-  role: "Role",
   domain: "Domain",
-  experience: "Experience",
+  visa: "Visa language",
+  role: "Role",
   location: "Location",
+  experience: "Experience",
 };
+
+/**
+ * Which filters are allowed to reject on their own (ADR-0006, revised
+ * 2026-09-19).
+ *
+ * The gate's original rule was uniform — any FAIL rejects — because four
+ * filters of equal confidence made it uniform. With five of unequal confidence
+ * it over-rejects, and the Axon rejection was exactly that shape: a title
+ * reading "Senior Product Manager" thrown away on a years figure.
+ *
+ * Domain, visa language and a recognised non-target country are confident
+ * facts. Role and experience are arguable, so their FAIL is a review, not a
+ * rejection — the cost of being wrong there is one click, and the cost of being
+ * wrong the other way is a job never seen again.
+ */
+export const REJECTING_FILTERS: readonly PrequalFilter[] = [
+  "domain",
+  "visa",
+  "location",
+] as const;
 
 /**
  * Roll individual filter verdicts into one decision.
  *
- * Any FAIL rejects; all PASS qualifies; anything else needs a human. Keeping
- * this next to the vocabulary rather than inside the engine means the UI can
- * explain a decision without importing the engine.
+ * Keeping this next to the vocabulary rather than inside the engine means the
+ * UI can explain a decision without importing the engine.
  */
 export function prequalDecisionFor(
-  statuses: readonly FilterStatus[],
+  byFilter: Readonly<Record<PrequalFilter, FilterStatus>>,
 ): PrequalDecision {
-  if (statuses.includes("fail")) return "reject";
-  return statuses.every((s) => s === "pass") ? "pass" : "review";
+  if (REJECTING_FILTERS.some((f) => byFilter[f] === "fail")) return "reject";
+  return PREQUAL_FILTERS.every((f) => byFilter[f] === "pass") ? "pass" : "review";
 }
 
 /**

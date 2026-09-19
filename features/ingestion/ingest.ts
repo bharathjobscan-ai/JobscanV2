@@ -261,6 +261,8 @@ export async function ingestRows(
   const qualifies = (fingerprint: string) =>
     !gating || verdicts.get(fingerprint)?.decision === "pass";
 
+  const verdictFor = (fingerprint: string) => verdicts.get(fingerprint);
+
   // --- 6. Persist ----------------------------------------------------------
   if (fresh.length > 0) {
     const created = await db.transaction(async (tx) => {
@@ -330,6 +332,15 @@ export async function ingestRows(
             qualifying.map((row) => ({
               rawJobId: jobIdByFingerprint.get(row.fingerprint)!,
               status: "ready_to_apply" as const,
+              /*
+               * JSV2S1168 — a job that cleared every filter at a company known
+               * to sponsor is marked rather than scored. Half of ScoreG's score
+               * is the visa pillar, and re-deriving what the watchlist already
+               * records is the one part of the bill with nothing to buy.
+               */
+              ...(verdictFor(row.fingerprint)?.watchlist?.skipsScoring
+                ? { matchCategory: "gate_qualified" as const }
+                : {}),
             })),
           )
           .returning({ id: applications.id, rawJobId: applications.rawJobId });

@@ -55,7 +55,7 @@ adds **1138**.
 | Where | What |
 |---|---|
 | `config/prequalification/` | Rules as TS-as-data — roles, domains, locations, experience, thresholds |
-| `features/prequalification/` | `prequalify()`, the four filters, normalisation, the JD section splitter |
+| `features/prequalification/` | `prequalify()`, the five filters, the visa classifier, normalisation, the JD section splitter |
 | `app/(dashboard)/review/` | Review queue with promote, reject, and re-run under current rules |
 | `db/migrations/0006_flaky_owl.sql` | Verdict columns + `content_hash` |
 | `docs/decisions/0006-*.md` | The gate and the D1 amendment |

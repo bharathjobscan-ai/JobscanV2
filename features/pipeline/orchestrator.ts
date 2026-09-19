@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, ne, or } from "drizzle-orm";
 
 import { AUTOMATED_SCORING_ENABLED, MAX_SCORES_PER_RUN } from "@/config/pipeline";
 import { applications, rawJobs } from "@/db/schema";
@@ -75,6 +75,17 @@ async function selectEligible(limit: number) {
         isNull(applications.jobScore),
         eq(rawJobs.prequalification, "pass"),
         eq(applications.status, "ready_to_apply"),
+        /*
+         * JSV2S1168 — gate-qualified applications are unscored on purpose, and
+         * "unscored" is exactly what the selector above looks for. Without this
+         * the nightly pass would pick up every one of them and bill precisely
+         * the calls the mark exists to avoid. Scoring one stays possible; it
+         * just has to be asked for.
+         */
+        or(
+          isNull(applications.matchCategory),
+          ne(applications.matchCategory, "gate_qualified"),
+        ),
       ),
     )
     .orderBy(asc(applications.createdAt))

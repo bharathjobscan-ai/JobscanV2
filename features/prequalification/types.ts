@@ -5,6 +5,8 @@ import type {
   PrequalFilter,
 } from "@/lib/config/constants";
 import type { RoleTier } from "@/config/prequalification/roles";
+import type { AffinityMatch, WatchlistMatch } from "@/features/companies/lookup";
+import type { VisaResult } from "./visa";
 
 /**
  * The pre-qualification contract (PRD §13, §14, §18).
@@ -50,6 +52,13 @@ export type DomainSignal = {
 
 export type DomainResult = {
   status: FilterStatus;
+  /**
+   * Set when the company's payments affinity changed the verdict
+   * (JSV2S1167). The raw keyword result is kept in `rawStatus` so the override
+   * is auditable rather than invisible.
+   */
+  affinity?: AffinityMatch | null;
+  rawStatus?: FilterStatus;
   primaryDomain: TierId | null;
   score: number;
   matchedTerms: string[];
@@ -105,6 +114,16 @@ export type PreQualificationResult = {
   domain: DomainResult;
   experience: ExperienceResult;
   location: LocationResult;
+  visa: VisaResult;
+  /**
+   * The sponsorship watchlist (JSV2S1162).
+   *
+   * A SIGNAL, NOT A FILTER. It can never reject and a miss is simply no bump,
+   * which is why it sits beside the filters rather than among them — if it were
+   * a sixth pillar, "all pillars passed" would mean something different from
+   * what it means for the other five.
+   */
+  watchlist: WatchlistMatch | null;
   /** Config fingerprint, so stale verdicts are findable after a config change. */
   configVersion: string;
   evaluatedAt: string;
@@ -112,14 +131,22 @@ export type PreQualificationResult = {
 
 export type FilterResults = Pick<
   PreQualificationResult,
-  "role" | "domain" | "experience" | "location"
+  "role" | "domain" | "experience" | "location" | "visa"
 >;
 
+/**
+ * Evaluation order, which is the owner's priority order (2026-09-19).
+ *
+ * It does not change what is computed — every filter runs on every job — but it
+ * decides which filter is NAMED as the deciding one, and that name is what the
+ * queue is filtered and tuned by.
+ */
 export const FILTER_ORDER: readonly PrequalFilter[] = [
-  "role",
   "domain",
-  "experience",
+  "visa",
+  "role",
   "location",
+  "experience",
 ] as const;
 
 export type { FilterStatus, PrequalDecision, PrequalFilter };

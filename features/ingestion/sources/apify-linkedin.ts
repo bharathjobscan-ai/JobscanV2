@@ -60,22 +60,6 @@ function postedAt(job: ApifyLinkedInJob): string | null {
   return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null;
 }
 
-/**
- * Does the posting mention sponsorship?
- *
- * A weak, deliberately conservative signal — it feeds ScoreG's visa pillar as
- * *context*, and only `true` is asserted. Absence of the phrase is not evidence
- * of absence of sponsorship, so a miss stays null rather than false.
- */
-function mentionsSponsorship(text: string | null): boolean | null {
-  if (!text) return null;
-  return /\b(visa sponsorship|sponsor(ship)? available|we sponsor|skilled worker visa|right to work|work permit)\b/i.test(
-    text,
-  )
-    ? true
-    : null;
-}
-
 export function mapJob(job: ApifyLinkedInJob): FetchedJob | { error: string } {
   const title = job.title?.trim();
   const company = job.companyName?.trim();
@@ -104,7 +88,6 @@ export function mapJob(job: ApifyLinkedInJob): FetchedJob | { error: string } {
       employment_type: job.contractType?.trim() || undefined,
       seniority: job.experienceLevel?.trim() || undefined,
       salary_raw: job.salary?.trim() || undefined,
-      visa_sponsorship_mentioned: mentionsSponsorship(description) ?? undefined,
       source_job_id: job.id?.trim() || undefined,
       // JSV2S1022 is unmet: applyUrl is always blank. Recording the *type* at
       // least distinguishes "apply on the company site" from Easy Apply.

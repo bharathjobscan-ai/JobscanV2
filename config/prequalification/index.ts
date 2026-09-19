@@ -24,6 +24,15 @@ import {
   TITLE_ALIASES,
 } from "./roles";
 import { DOMAIN_GATE, EXPERIENCE, GATING_TRIGGERS, SECTION_WEIGHTS } from "./thresholds";
+import {
+  GENERIC_TERMS,
+  NEGATION_TERMS,
+  NEGATION_WINDOW_WORDS,
+  VISA_RULES,
+  VISA_SECTION_HEADINGS,
+} from "./visa";
+import { PAYMENTS_AFFINITY } from "@/config/companies/payments-core";
+import { WATCHLIST, WATCHLIST_SKIP_SCORING_TIER } from "@/config/companies/watchlist";
 
 /**
  * The assembled pre-qualification configuration (JSV2S1056).
@@ -63,6 +72,25 @@ export const PREQUAL_CONFIG = {
   experience: EXPERIENCE,
   sectionWeights: SECTION_WEIGHTS,
   gatingTriggers: GATING_TRIGGERS,
+  visa: {
+    rules: VISA_RULES,
+    generic: GENERIC_TERMS,
+    negations: NEGATION_TERMS,
+    negationWindow: NEGATION_WINDOW_WORDS,
+    headings: VISA_SECTION_HEADINGS,
+  },
+  /**
+   * The curated company lists are hashed here even though they live outside
+   * this directory, because they change verdicts: an addition to the affinity
+   * list turns a domain rejection into an application. A verdict fingerprint
+   * that missed that would leave the newly-admissible jobs sitting in the
+   * rejected pile with a version stamp that still looked current.
+   */
+  companies: {
+    watchlist: WATCHLIST,
+    watchlistSkipTier: WATCHLIST_SKIP_SCORING_TIER,
+    affinity: PAYMENTS_AFFINITY,
+  },
 } as const;
 
 export type PrequalConfig = typeof PREQUAL_CONFIG;
@@ -101,8 +129,12 @@ function stableStringify(value: unknown): string {
  *
  * Bump this whenever the behaviour of features/prequalification/ changes in a
  * way that could alter a verdict. It costs one re-run and nothing else.
+ *
+ * 3 — 2026-09-19: a fifth filter (visa language), the watchlist signal, the
+ * company affinity override, and FAIL no longer rejecting on role or
+ * experience. Every stored verdict predates all four.
  */
-export const ENGINE_REVISION = 2;
+export const ENGINE_REVISION = 3;
 
 export const CONFIG_VERSION = createHash("sha256")
   .update(`engine:${ENGINE_REVISION}|${stableStringify(PREQUAL_CONFIG)}`)
@@ -110,6 +142,7 @@ export const CONFIG_VERSION = createHash("sha256")
   .slice(0, 12);
 
 export * from "./domains";
+export * from "./visa";
 export * from "./locations";
 export * from "./roles";
 export * from "./thresholds";

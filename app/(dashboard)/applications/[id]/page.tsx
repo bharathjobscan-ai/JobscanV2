@@ -47,6 +47,11 @@ import { applyAccepted, project } from "@/features/simg/apply";
 import { measureAts } from "@/features/simg/measure";
 import { resolveArtwork } from "@/features/artwork/resolve";
 import { buildLedger } from "@/features/scoring/ledger";
+import { GateVerdictPanel } from "@/components/applications/gate-verdict";
+import { VISA_REASON_LABELS } from "@/features/prequalification/labels";
+import type { ComponentProps } from "react";
+
+type GateDetail = NonNullable<ComponentProps<typeof GateVerdictPanel>["detail"]>;
 
 /**
  * The application workspace, rebuilt to the approved design (JSV2S1139).
@@ -110,9 +115,15 @@ export default async function ApplicationDetailPage({
   const artwork = resolveArtwork({ location: job.location, country: job.country });
   const ledger = buildLedger(application.jobScoreAnalysis, application.jobScore);
 
-  const matchedDomainTerms =
-    (job.prequalificationDetail as { domain?: { matchedTerms?: string[] } } | null)?.domain
-      ?.matchedTerms ?? [];
+  /**
+   * The stored verdict, read once and passed down (JSV2S1165).
+   *
+   * Cast rather than parsed: it is our own jsonb, written by our own engine,
+   * and every field is read optionally so a verdict recorded before a filter
+   * existed renders as an absence rather than a crash.
+   */
+  const gate = job.prequalificationDetail as GateDetail | null;
+  const matchedDomainTerms = gate?.domain?.matchedTerms ?? [];
 
   const evaluation = resume?.simg ?? null;
   const derivedCv =
@@ -361,9 +372,21 @@ export default async function ApplicationDetailPage({
               <dd>{job.seniority ?? "—"}</dd>
               <dt className="text-subtle">Salary</dt>
               <dd>{job.salaryRaw ?? "—"}</dd>
+              {/*
+                * Reads the gate's verdict, not the old `visaSponsorshipMentioned`
+                * flag. That flag was set by a regex in the ingestion adapter
+                * which fired on bare "right to work", and it is no longer
+                * populated at all (ADR-0006 revision) — leaving it here would
+                * have printed "Not mentioned" on every job from now on, which
+                * is an assertion nothing supports.
+                */}
               <dt className="text-subtle">Sponsorship in posting</dt>
               <dd>
-                {job.visaSponsorshipMentioned === true ? "Mentioned" : "Not mentioned"}
+                {gate?.visa
+                  ? (VISA_REASON_LABELS[gate.visa.reasonCode] ?? gate.visa.reasonCode)
+                  : job.visaSponsorshipMentioned === true
+                    ? "Mentioned"
+                    : "Not recorded"}
               </dd>
               <dt className="text-subtle">Ingested</dt>
               <dd>
@@ -396,6 +419,19 @@ export default async function ApplicationDetailPage({
               >
                 Original posting ↗
               </a>
+            </div>
+
+            {/*
+              * JSV2S1165 — the gate's working, on an application that PASSED.
+              * It used to be visible only on jobs that were held or screened
+              * out, which left the one verdict that spends money as the one
+              * verdict nobody could check.
+              */}
+            <div className="mt-4 border-t border-line pt-4">
+              <p className="mb-3 text-[11px] tracking-wider text-faint uppercase">
+                Pre-qualification verdict
+              </p>
+              <GateVerdictPanel detail={gate} />
             </div>
 
             <div className="mt-3 border-t border-line pt-3">

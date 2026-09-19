@@ -6,6 +6,27 @@
 
 ## Document control
 
+**Version 1.9 — 2026-09-19 — Five filters, a watchlist signal, and gate-qualified**
+
+- **A fifth deterministic filter reads visa language from the JD**
+  ([ADR-0006 revision](../../docs/decisions/0006-prequalification-gate.md)). An
+  explicit refusal rejects before any AI spend; an explicit offer passes;
+  silence and generic right-to-work boilerplate pass, because most postings say
+  nothing about visas and treating silence as refusal would reject the intake.
+- **FAIL no longer always rejects.** Domain, visa language and a recognised
+  non-target country reject. Role and experience route to review — they are the
+  arguable filters, and the Axon rejection was exactly that shape.
+- **A sponsorship watchlist is a SIGNAL, not a filter.** It can never reject. A
+  hit at tier 4+ marks the application `gate_qualified` and skips automatic
+  scoring; the visa pillar is half of ScoreG's score and the watchlist already
+  records what it would re-derive.
+- **A payments-affinity list softens domain rejection.** At a company whose
+  business is payments, a posting with no payments vocabulary is admitted and
+  marked; at one with only a payments arm, it goes to review.
+- **`gate_qualified` is a match category, never a placeholder score.** The band
+  is a pure function of the score, so a stand-in number would manufacture an
+  "Apply" verdict from arithmetic nobody performed.
+
 **Version 1.8 — 2026-09-05 — Mandatory Pass G; scoring moved out of CVG**
 
 - **SimG is now mandatory and automatic** (JSV2S1058). It runs after every CV
@@ -232,8 +253,9 @@ rate. Filters for geography, dates and referral.
 
 1. **Discover and ingest** — fetch periodically across job boards, verified
    company career sites and manual uploads.
-2. **Pre-qualification** — deterministic filters for role, domain, experience,
-   location, freshness and duplicates.
+2. **Pre-qualification** — deterministic filters for domain, visa language,
+   role, location, experience, freshness and duplicates, plus a sponsorship
+   watchlist signal that informs but never rejects.
 3. **Job scoring and categorisation** — deep-score qualified jobs and classify
    them, with referral requirements flagged.
 4. **Material generation** — tailored resumes, cover letters and gap analysis for

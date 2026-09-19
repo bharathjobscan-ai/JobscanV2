@@ -22,6 +22,11 @@ import {
   type FilterSelections,
   type ReviewView,
 } from "@/features/prequalification/queries";
+import {
+  AffinityNote,
+  VisaSignal,
+  WatchlistSignal,
+} from "@/components/applications/gate-verdict";
 import { FilterPanel } from "@/components/ui/filter-panel";
 import { PREQUAL_FILTERS, PREQUAL_FILTER_LABELS } from "@/lib/config/constants";
 
@@ -138,7 +143,7 @@ export default async function ReviewPage({
                 ? "Widen the filters or the date range to see more."
                 : view === "stale"
                   ? "When you change the role, domain or location config, jobs judged under the old rules appear here."
-                  : "Jobs that pass all four filters go straight to Applications."
+                  : "Jobs that pass every filter go straight to Applications."
             }
           />
         </Card>
@@ -180,6 +185,7 @@ export default async function ReviewPage({
                     action={
                       <div className="flex items-center gap-1.5">
                         <PreferredCityBadge city={d?.location.preferredCity ?? null} />
+                        <WatchlistSignal watchlist={d?.watchlist} />
                         {item.stale ? (
                           <Badge tone="info" title="Judged under an older configuration">
                             Rules changed
@@ -223,13 +229,23 @@ export default async function ReviewPage({
                     {d ? (
                       <FilterStatusRow
                         statuses={{
-                          role: d.role.status,
                           domain: d.domain.status,
-                          experience: d.experience.status,
+                          visa: d.visa?.status,
+                          role: d.role.status,
                           location: d.location.status,
+                          experience: d.experience.status,
                         }}
                       />
                     ) : null}
+
+                    {/* JSV2S1166 — the sentence the visa filter acted on, and
+                        the company signals, shown rather than asserted. */}
+                    <VisaSignal visa={d?.visa} />
+
+                    <AffinityNote
+                      affinity={d?.domain.affinity}
+                      rawStatus={d?.domain.rawStatus}
+                    />
 
                     {d && d.domain.matchedTerms.length > 0 ? (
                       <p className="text-subtle">

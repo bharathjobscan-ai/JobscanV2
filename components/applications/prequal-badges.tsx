@@ -54,7 +54,13 @@ export function FilterStatusRow({
 }: {
   statuses: Partial<Record<PrequalFilter, FilterStatus>>;
 }) {
-  const entries = Object.entries(statuses) as [PrequalFilter, FilterStatus][];
+  // A filter with no recorded status is dropped rather than rendered as
+  // "visa: undefined" — verdicts stored before a filter existed simply do not
+  // have one, and that is not the same as a filter that returned nothing.
+  const entries = Object.entries(statuses).filter(([, s]) => Boolean(s)) as [
+    PrequalFilter,
+    FilterStatus,
+  ][];
   if (entries.length === 0) return null;
 
   return (

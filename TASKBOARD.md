@@ -59,12 +59,53 @@ polling, and `ai_jobs` is a run ledger rather than a work queue.
 
 ## Phase 1.5 — in progress
 
-**59 stories: 29 Completed · 19 `Review` · 5 `Ready` · 6 `Blocked`** (2026-09-18).
+**71 stories: 29 Completed · 28 `Review` · 6 `Ready` · 7 `Blocked` · 1 `Deferred`** (2026-09-19).
 Marked in `project-management/backlog/product-backlog.csv` with `Phase = Phase 1.5`.
 
 Scope decisions taken: scoring is automated but **document generation stays
 manual**; execution is **GitHub Actions cron**, not Vercel; the multi-source
 adapter framework and Application Analytics are deliberately out.
+
+### 2026-09-19 — the gate grew a fifth filter, and stopped rejecting uniformly
+
+Built against the owner's two specification files and the design agreed with him
+beforehand. [ADR-0006](docs/decisions/0006-prequalification-gate.md) carries the
+revision; the PRD is at 1.9.
+
+| What | Where |
+|---|---|
+| Visa language rules, as data | `config/prequalification/visa.ts` |
+| The classifier | `features/prequalification/visa.ts` |
+| Sponsorship watchlist, 78 companies | `config/companies/watchlist.ts` |
+| Payments affinity, 62 companies | `config/companies/payments-core.ts` |
+| Exact-match lookup, shared normalisation | `features/companies/lookup.ts` |
+| Collision and duplicate audit | `npm run companies:audit` |
+| Verdict on screen | `components/applications/gate-verdict.tsx` |
+
+**Three defects were found by testing the new code, and all three were mine.**
+
+1. **The positive patterns matched through negations.**
+   `sponsorship[^.]{0,30}available` matches "sponsorship is NOT available", and
+   an offer sitting beside a refusal is a contradiction, which resolves to
+   REVIEW. So the three clearest refusals in the whole specification were
+   precisely the ones the filter failed to act on. Fixed with a gap that refuses
+   to cross a negation or a hedge.
+2. **The proximity rule never fired.** It split on spaces, leaving `unable,` and
+   `sponsorship.` as tokens that matched neither the negation set nor the
+   sponsorship test — so §17 was dead on any sentence with punctuation in it,
+   which is most of them.
+3. **`ne(matchCategory, "gate_qualified")` would have disabled all scoring.**
+   SQL inequality is null-blind and every ordinary unscored application has a
+   NULL category, so that clause excluded all of them rather than the handful
+   intended.
+
+One false assertion was also removed: the detail screen printed "Sponsorship in
+posting: Not mentioned" from a column the ingestion adapter no longer populates,
+so it would have said that about every job from today onward.
+
+**`ENGINE_REVISION` is 3, so every stored verdict is now stale** and shows the
+"Rules changed" badge. Re-qualifying is a live-data operation and was left for
+the owner rather than run unattended.
 
 ### 2026-09-05 — the migration gate cleared
 

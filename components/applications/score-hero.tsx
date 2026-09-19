@@ -18,6 +18,7 @@ const VERDICT: Record<MatchCategory, string> = {
   apply: "Worth applying",
   referral_only: "Only with a referral",
   reject: "Do not apply",
+  gate_qualified: "Worth applying",
 };
 
 export function ScoreHero({
@@ -53,7 +54,26 @@ export function ScoreHero({
       </p>
       <h1 className="mt-3 text-3xl font-normal tracking-tight">{title}</h1>
 
-      {score === null ? (
+      {score === null && matchCategory === "gate_qualified" ? (
+        /*
+         * Deliberately not a number (JSV2S1168). The page's job is to answer
+         * "apply or not", and here that is already answered — by five
+         * deterministic filters and a company known to sponsor. A score would
+         * add a digit, not an answer.
+         */
+        <div className="mt-8">
+          <p className="text-[2rem] leading-tight font-semibold tracking-tight">
+            Worth applying
+          </p>
+          <p className="mx-auto mt-3 max-w-[38ch] text-sm text-muted">
+            Every filter passed and this company is a known sponsor, so no
+            scoring call was made.
+          </p>
+          <p className="mt-2 text-xs text-faint">
+            Generate score below if you want one anyway.
+          </p>
+        </div>
+      ) : score === null ? (
         <p className="mt-8 text-sm text-muted">
           Not scored yet. Scoring weighs sponsorship likelihood, domain
           relevance and experience fit.

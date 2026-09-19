@@ -131,15 +131,23 @@ describe("mapJob", () => {
     if (!("error" in without)) expect(without.row.reachability).toBeUndefined();
   });
 
-  /** Absence of the phrase is not evidence of absence — never assert false. */
-  it("never claims sponsorship is absent", () => {
-    const quiet = mapJob({
-      ...SAMPLE[0],
-      description: "Nothing about immigration here.",
-      descriptionHtml: "",
-    });
-    if (!("error" in quiet)) {
-      expect(quiet.row.visa_sponsorship_mentioned).toBeUndefined();
+  /**
+   * The adapter no longer guesses at sponsorship at all (ADR-0006 revision,
+   * 2026-09-19). It used to flag on bare "right to work" and "work permit" —
+   * exactly the generic phrases the visa filter must never act on — and two
+   * sponsorship detectors with opposite thresholds can only disagree. The
+   * column survives for manual uploads, where a human is asserting it.
+   */
+  it("makes no sponsorship claim of its own", () => {
+    for (const description of [
+      "Nothing about immigration here.",
+      "You must have the right to work in the UK.",
+      "Visa sponsorship is available.",
+    ]) {
+      const mapped = mapJob({ ...SAMPLE[0], description, descriptionHtml: "" });
+      if (!("error" in mapped)) {
+        expect(mapped.row.visa_sponsorship_mentioned).toBeUndefined();
+      }
     }
   });
 });

@@ -38,6 +38,18 @@ GitHub Actions cron (Phase 1.5).
   no embeddings in `features/prequalification/` — it is the step that decides
   whether to spend money, so it cannot cost money or vary between runs
   (ADR-0006). Rules live in `config/prequalification/`, never inline.
+- **Silence is not refusal.** The visa filter acts on explicit language only. A
+  posting that says nothing about sponsorship passes, and so does generic
+  "right to work" boilerplate — most postings carry it, and a filter that read
+  it as refusal would reject almost the whole intake. Only `REMOVE` rejects.
+- **The three company lists answer three different questions.** The sponsor
+  register (`features/sponsors/`) asks whether a company holds a licence; the
+  watchlist (`config/companies/watchlist.ts`) whether it has actually sponsored;
+  the affinity list (`payments-core.ts`) whether payments is its business. Do
+  not merge them — Booking.com is a five-star sponsor and payments is not its
+  core business, and conflating those hands it a bonus it has not earned.
+- **The watchlist can never reject.** It is a signal, not a pillar. If it ever
+  gains the power to fail a job, "all filters passed" stops meaning one thing.
 - **D1 is conditional now.** A scheduled run creates an application only for a
   PASS; manual uploads always create one. A `raw_jobs` row without an
   application is normal, and is invisible to every query in
@@ -89,6 +101,7 @@ npm test             # unit tests, no database needed
 npm run typecheck
 npm run build
 
+npm run companies:audit   # collisions and duplicates in the curated lists
 npm run ai:report    # measured token usage and real cost per run
 npm run ai:bench     # compare providers/models on the same job
 npm run test:integration  # needs a live database
