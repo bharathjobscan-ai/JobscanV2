@@ -31,6 +31,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             <Link href="/spend" className="text-muted hover:text-foreground">
               Cost
             </Link>
+            <Link href="/rules" className="text-muted hover:text-foreground">
+              Rules
+            </Link>
             <Link href="/upload" className="text-muted hover:text-foreground">
               Upload
             </Link>
