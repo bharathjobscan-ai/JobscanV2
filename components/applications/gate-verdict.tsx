@@ -127,6 +127,7 @@ export function GateVerdictPanel({
   detail,
 }: {
   detail: {
+    decision?: string;
     reason?: string;
     domain?: {
       status?: string;

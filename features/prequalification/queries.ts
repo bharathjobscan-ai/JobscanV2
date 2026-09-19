@@ -116,7 +116,9 @@ function viewFilter(view: ReviewView) {
  * that filter's own outcomes — "rejected on experience, below the floor" rather
  * than the coarser "rejected on experience".
  */
-export type FilterSelections = Partial<Record<PrequalFilter | "fetch", string[]>>;
+export type FilterSelections = Partial<
+  Record<PrequalFilter | "fetch" | "company", string[]>
+>;
 
 export type ReviewFilters = {
   view?: ReviewView;
@@ -173,6 +175,11 @@ function selectionFilters(selections: FilterSelections | undefined) {
   const runs = selections.fetch;
   if (runs?.length) clauses.push(inArray(rawJobs.ingestionRunId, runs));
 
+  // Company (2026-09-19). Not a pre-qualification filter — it has no verdict —
+  // so it sits beside `fetch` rather than inside the PREQUAL_FILTERS loop.
+  const companies = selections.company;
+  if (companies?.length) clauses.push(inArray(rawJobs.company, companies));
+
   return clauses;
 }
 
@@ -214,7 +221,9 @@ export async function listForReview(
 
 export type FacetValue = { value: string; label: string; count: number };
 /** One entry per pre-qualification filter, each with the values it produced. */
-export type ReviewFacets = Partial<Record<PrequalFilter | "fetch", FacetValue[]>>;
+export type ReviewFacets = Partial<
+  Record<PrequalFilter | "fetch" | "company", FacetValue[]>
+>;
 
 /**
  * What each filter actually produced, within the current view.
@@ -233,6 +242,7 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
       experience: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'experience'->>'rule', 'none')`,
       location: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'location'->>'rule', 'none')`,
       visa: sql<string>`coalesce(${rawJobs.prequalificationDetail}->'visa'->>'reasonCode', 'none')`,
+      company: rawJobs.company,
       fetch: rawJobs.ingestionRunId,
       fetchSource: ingestionRuns.source,
       fetchStartedAt: ingestionRuns.startedAt,
@@ -278,11 +288,23 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
     .map(([value, r]) => ({ value, label: r.label, count: r.count }))
     .sort((a, b) => b.count - a.count);
 
+  // Company. Exact stored string, not normalised: the facet's job is to return
+  // the rows you can see, and a label that did not match a row's own `company`
+  // verbatim would be a checkbox whose count disagreed with its result.
+  const companies = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.company) continue;
+    companies.set(row.company, (companies.get(row.company) ?? 0) + 1);
+  }
+  facets.company = [...companies.entries()]
+    .map(([value, count]) => ({ value, label: value, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
   return facets;
 }
 
 export async function countForReview(): Promise<Record<ReviewView, number>> {
-  const [row] = await db
+  const [queue] = await db
     .select({
       review: sql<number>`count(*) filter (where ${rawJobs.prequalification} = 'review')::int`,
       rejected: sql<number>`count(*) filter (where ${rawJobs.prequalification} = 'reject')::int`,
@@ -292,10 +314,25 @@ export async function countForReview(): Promise<Record<ReviewView, number>> {
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
     .where(and(isNull(applications.id), isNull(rawJobs.binnedAt)));
 
+  /**
+   * Promoted jobs are stale too (2026-09-19).
+   *
+   * They were excluded because the query is rooted at the review queue, which
+   * they have left. But the re-run button is driven by this number, so it would
+   * have disappeared the moment the queue was clean while every application
+   * still carried a verdict from the old rules — the button offering to fix the
+   * problem vanishing before the problem did.
+   */
+  const [promoted] = await db
+    .select({ stale: sql<number>`count(*)::int` })
+    .from(rawJobs)
+    .innerJoin(applications, eq(applications.rawJobId, rawJobs.id))
+    .where(sql`${rawJobs.prequalificationVersion} is distinct from ${CONFIG_VERSION}`);
+
   return {
-    review: row?.review ?? 0,
-    rejected: row?.rejected ?? 0,
-    stale: row?.stale ?? 0,
+    review: queue?.review ?? 0,
+    rejected: queue?.rejected ?? 0,
+    stale: (queue?.stale ?? 0) + (promoted?.stale ?? 0),
   };
 }
 

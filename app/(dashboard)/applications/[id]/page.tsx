@@ -49,6 +49,10 @@ import { resolveArtwork } from "@/features/artwork/resolve";
 import { buildLedger } from "@/features/scoring/ledger";
 import { GateVerdictPanel } from "@/components/applications/gate-verdict";
 import { VISA_REASON_LABELS } from "@/features/prequalification/labels";
+import {
+  PREQUALIFICATION_LABELS,
+  type PrequalDecision,
+} from "@/lib/config/constants";
 import type { ComponentProps } from "react";
 
 type GateDetail = NonNullable<ComponentProps<typeof GateVerdictPanel>["detail"]>;
@@ -362,7 +366,62 @@ export default async function ApplicationDetailPage({
             </OnNeed>
           ) : null}
 
-          <OnNeed title="Job posting & pre-qualification" meta={job.source}>
+          {/*
+            * JSV2S1165 — its own section, not a footnote inside the posting.
+            *
+            * It was nested under "Job posting", which is collapsed by default,
+            * so the verdict that decides whether a job is worth money was two
+            * clicks from view. Open by default where there is no score, because
+            * then this IS the result.
+            */}
+          <OnNeed
+            title="Pre-qualification"
+            meta={
+              gate?.decision
+                ? (PREQUALIFICATION_LABELS[gate.decision as PrequalDecision] ??
+                  gate.decision)
+                : undefined
+            }
+            open={application.jobScore === null}
+          >
+            <GateVerdictPanel detail={gate} />
+
+            {/*
+              * Out of one verdict and into the population it belongs to.
+              *
+              * A single job's verdict is only half the question — "is this
+              * right" is usually answered by looking at everything else the
+              * same rule did. These are the two axes worth one click: the
+              * company, and the sentence-level visa outcome.
+              */}
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3 text-[11px]">
+              <Link
+                href={`/applications?company=${encodeURIComponent(job.company)}`}
+                className="text-muted underline underline-offset-2 hover:text-foreground"
+              >
+                All applications at {job.company}
+              </Link>
+              {gate?.visa?.reasonCode ? (
+                <Link
+                  href={`/review?visa=${encodeURIComponent(gate.visa.reasonCode)}`}
+                  className="text-muted underline underline-offset-2 hover:text-foreground"
+                >
+                  Everything else judged “
+                  {VISA_REASON_LABELS[gate.visa.reasonCode] ?? gate.visa.reasonCode}”
+                </Link>
+              ) : null}
+              {gate?.watchlist ? (
+                <Link
+                  href={`/review?company=${encodeURIComponent(job.company)}`}
+                  className="text-muted underline underline-offset-2 hover:text-foreground"
+                >
+                  {job.company} in the queue
+                </Link>
+              ) : null}
+            </div>
+          </OnNeed>
+
+          <OnNeed title="Job posting" meta={job.source}>
             <dl className="grid grid-cols-[9rem_1fr] gap-y-1.5 text-xs">
               <dt className="text-subtle">Location</dt>
               <dd>{job.location ?? "—"}</dd>
@@ -419,19 +478,6 @@ export default async function ApplicationDetailPage({
               >
                 Original posting ↗
               </a>
-            </div>
-
-            {/*
-              * JSV2S1165 — the gate's working, on an application that PASSED.
-              * It used to be visible only on jobs that were held or screened
-              * out, which left the one verdict that spends money as the one
-              * verdict nobody could check.
-              */}
-            <div className="mt-4 border-t border-line pt-4">
-              <p className="mb-3 text-[11px] tracking-wider text-faint uppercase">
-                Pre-qualification verdict
-              </p>
-              <GateVerdictPanel detail={gate} />
             </div>
 
             <div className="mt-3 border-t border-line pt-3">

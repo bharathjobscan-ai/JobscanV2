@@ -2,7 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 
-import { AlreadyPromoted, binJobs, promoteJob, rejectJob, requalifyStale, restoreJobs } from "./mutations";
+import {
+  AlreadyPromoted,
+  binJobs,
+  promoteJob,
+  rejectJob,
+  requalifyPromoted,
+  requalifyStale,
+  restoreJobs,
+} from "./mutations";
 
 /** Server actions for the review queue (JSV2S1038). */
 
@@ -29,10 +37,20 @@ export async function rejectAction(formData: FormData): Promise<void> {
   revalidatePath("/review");
 }
 
+/**
+ * Re-run the gate over everything it is allowed to touch.
+ *
+ * Two passes, not one, because they have different rules: `requalifyStale` may
+ * promote an unpromoted job into an application, while `requalifyPromoted`
+ * updates the verdict record of a job that already has one and must never
+ * disturb the application itself.
+ */
 export async function requalifyAction(): Promise<void> {
   await requalifyStale();
+  await requalifyPromoted();
   revalidatePath("/review");
   revalidatePath("/applications");
+  revalidatePath("/pipeline");
 }
 
 /**

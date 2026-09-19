@@ -144,6 +144,107 @@ export async function backfillVerdicts(limit = 1000): Promise<{
 }
 
 /**
+ * Re-judge jobs that ALREADY have an application (2026-09-19, owner's request).
+ *
+ * Deliberately separate from `requalifyStale`, which skips promoted jobs
+ * entirely, and deliberately narrower than it: this updates the verdict record
+ * and nothing else.
+ *
+ * **It never creates, deletes, revokes or un-promotes an application.** A job
+ * that now reads `reject` keeps its application and stays in the workspace. The
+ * gate exists to decide what to spend money on, and for these jobs that
+ * decision was already taken — often by the owner, by hand. Re-running the
+ * rules is allowed to change what we *know* about a job, never to reach back
+ * and undo what was done about it.
+ *
+ * TWO SIDE EFFECTS, both intended, both worth stating because neither is
+ * visible from the call site:
+ *
+ * 1. **A job whose decision becomes `reject` stops being scored.** The nightly
+ *    pass selects `prequalification = 'pass'`. That is the right outcome — a
+ *    posting that explicitly refuses sponsorship should not be paid to score —
+ *    but it is a behaviour change, so the result reports the count.
+ * 2. **An unscored application at a watchlist company becomes
+ *    `gate_qualified`.** Only where there is no score and no category yet: an
+ *    existing score's band is real and must not be overwritten by a state that
+ *    means "no score exists".
+ */
+export async function requalifyPromoted(limit = 1000): Promise<{
+  evaluated: number;
+  changed: number;
+  nowRejecting: number;
+  markedGateQualified: number;
+  byDecision: Record<string, number>;
+}> {
+  const rows = await db
+    .select({
+      job: rawJobs,
+      applicationId: applications.id,
+      jobScore: applications.jobScore,
+      matchCategory: applications.matchCategory,
+    })
+    .from(rawJobs)
+    .innerJoin(applications, eq(applications.rawJobId, rawJobs.id))
+    .limit(limit);
+
+  const stale = rows.filter((r) => r.job.prequalificationVersion !== CONFIG_VERSION);
+
+  const byDecision: Record<string, number> = {};
+  let changed = 0;
+  let nowRejecting = 0;
+  let markedGateQualified = 0;
+
+  for (const row of stale) {
+    const job = row.job;
+    const verdict = prequalify({
+      title: job.title,
+      company: job.company,
+      location: job.location,
+      country: job.country,
+      description: job.description,
+    });
+
+    byDecision[verdict.decision] = (byDecision[verdict.decision] ?? 0) + 1;
+    if (verdict.decision !== job.prequalification) changed += 1;
+    if (verdict.decision === "reject") nowRejecting += 1;
+
+    const markable =
+      verdict.watchlist?.skipsScoring &&
+      row.jobScore === null &&
+      row.matchCategory === null;
+    if (markable) markedGateQualified += 1;
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(rawJobs)
+        .set({
+          prequalification: verdict.decision,
+          prequalificationDetail: verdict,
+          prequalifiedAt: new Date(verdict.evaluatedAt),
+          prequalificationVersion: verdict.configVersion,
+          updatedAt: new Date(),
+        })
+        .where(eq(rawJobs.id, job.id));
+
+      if (!markable) return;
+
+      await tx
+        .update(applications)
+        .set({ matchCategory: "gate_qualified", updatedAt: new Date() })
+        .where(eq(applications.id, row.applicationId));
+    });
+  }
+
+  return {
+    evaluated: stale.length,
+    changed,
+    nowRejecting,
+    markedGateQualified,
+    byDecision,
+  };
+}
+
+/**
  * Re-evaluate jobs whose verdict predates the current config.
  *
  * The reason `prequalification_version` is stored at all: widening the role list

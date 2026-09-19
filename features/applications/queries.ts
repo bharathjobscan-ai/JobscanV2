@@ -244,6 +244,9 @@ function applicationSelectionFilters(selections?: ApplicationSelections) {
   if (selections.country?.length) {
     clauses.push(inArray(rawJobs.country, selections.country));
   }
+  if (selections.company?.length) {
+    clauses.push(inArray(rawJobs.company, selections.company));
+  }
   if (selections.fetch?.length) {
     clauses.push(inArray(rawJobs.ingestionRunId, selections.fetch));
   }
@@ -463,6 +466,7 @@ export async function getApplicationFacets(
       referral: applications.referralStatus,
       source: rawJobs.source,
       country: rawJobs.country,
+      company: rawJobs.company,
       fetch: rawJobs.ingestionRunId,
       fetchSource: ingestionRuns.source,
       fetchStartedAt: ingestionRuns.startedAt,
@@ -518,6 +522,18 @@ export async function getApplicationFacets(
     ),
     country: tally(
       rows.map((r) => r.country),
+      (v) => v,
+    ),
+    /**
+     * Company (2026-09-19, owner's request).
+     *
+     * Matched on the exact stored string rather than normalised, because this
+     * facet's whole job is to return the rows you can see — a label that did
+     * not match a row's own `company` verbatim would be a checkbox whose count
+     * disagreed with its result.
+     */
+    company: tally(
+      rows.map((r) => r.company),
       (v) => v,
     ),
     fetch: [...runs.entries()]

@@ -52,7 +52,7 @@ export default async function ReviewPage({
   // JSV2S1153. Anything unrecognised is dropped rather than raised: a
   // hand-edited URL should degrade to "no filter", never to a crash.
   const selections: FilterSelections = {};
-  for (const f of [...PREQUAL_FILTERS, "fetch"] as const) {
+  for (const f of [...PREQUAL_FILTERS, "company", "fetch"] as const) {
     const values = params[f]?.split(",").filter(Boolean) ?? [];
     if (values.length > 0) selections[f] = values;
   }
@@ -84,7 +84,11 @@ export default async function ReviewPage({
         </div>
         {counts.stale > 0 ? (
           <form action={requalifyAction}>
-            <Button variant="secondary" type="submit">
+            <Button
+              variant="secondary"
+              type="submit"
+              title="Re-judges the queue and every existing application. An application is never revoked — only its verdict is refreshed."
+            >
               Re-run {counts.stale} under current rules
             </Button>
           </form>
@@ -113,6 +117,7 @@ export default async function ReviewPage({
         preserve={{ view: view === "review" ? undefined : view }}
         categories={[
           ...PREQUAL_FILTERS.map((f) => ({ key: f, label: PREQUAL_FILTER_LABELS[f] })),
+          { key: "company", label: "Company" },
           { key: "fetch", label: "Fetch" },
         ]}
         facets={facets as Record<string, { value: string; label: string; count: number }[]>}

@@ -211,13 +211,20 @@ export function OnNeed({
   title,
   meta,
   children,
+  open,
 }: {
   title: string;
   meta?: string;
   children: React.ReactNode;
+  /**
+   * Start expanded. For a section that is the page's answer rather than its
+   * footnote — a gate-qualified application has no score, so the gate's working
+   * IS the result and hiding it behind a click would hide the whole verdict.
+   */
+  open?: boolean;
 }) {
   return (
-    <details className="border-t border-line">
+    <details open={open} className="border-t border-line">
       <summary className="flex cursor-pointer items-center gap-3 py-4 text-sm font-semibold hover:text-foreground">
         <span className="text-accent">+</span>
         {title}

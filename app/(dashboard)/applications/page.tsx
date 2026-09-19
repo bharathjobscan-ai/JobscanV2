@@ -48,7 +48,7 @@ export default async function ApplicationsPage({
    * Faceted filtering (JSV2S1159). Unrecognised values from a hand-edited URL
    * are narrowed away in the query layer rather than raised here.
    */
-  const FACETS = ["match", "referral", "source", "country", "fetch"] as const;
+  const FACETS = ["match", "referral", "company", "source", "country", "fetch"] as const;
   const selections: Record<string, string[]> = {};
   for (const key of FACETS) {
     const values = params[key]?.split(",").filter(Boolean) ?? [];
@@ -121,6 +121,7 @@ export default async function ApplicationsPage({
         categories={[
           { key: "match", label: "Match" },
           { key: "referral", label: "Referral" },
+          { key: "company", label: "Company" },
           { key: "source", label: "Source" },
           { key: "country", label: "Country" },
           { key: "fetch", label: "Fetch" },
