@@ -13,8 +13,20 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
+    /*
+     * `suppressHydrationWarning` is required here, not cosmetic (JSV2S1160).
+     *
+     * The script below stamps `data-theme` on this element before React
+     * hydrates, so the client DOM deliberately differs from the server HTML —
+     * which is the entire point, and which React cannot distinguish from a real
+     * mismatch. Without this it logs a hydration error on every page load.
+     *
+     * It suppresses one level only: this element's own attributes. Nothing
+     * inside is affected, so a genuine mismatch anywhere else still reports.
+     */
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
