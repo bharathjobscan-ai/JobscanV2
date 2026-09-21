@@ -4,7 +4,7 @@ import { AUTOMATED_SCORING_ENABLED, MAX_SCORES_PER_RUN } from "@/config/pipeline
 import { applications, rawJobs } from "@/db/schema";
 import { getBudgetStatus } from "@/features/ai/budget-queries";
 import { enqueueTask, TaskBlocked } from "@/features/ai/tasks";
-import { isolate, withRetry } from "@/features/ingestion/reliability";
+import { isolate, isSpendCapError, withRetry } from "@/features/ingestion/reliability";
 import { db } from "@/lib/db/client";
 import type { BudgetStatus } from "@/features/ai/budget";
 
@@ -126,6 +126,8 @@ export async function runScoringPass(
   let scored = 0;
   let failed = 0;
   let stoppedEarly = false;
+  /** Set only when the pass ends for a reason the numbers cannot explain. */
+  let pausedReason: string | undefined;
 
   let budget = await getBudgetStatus();
 
@@ -157,6 +159,25 @@ export async function runScoringPass(
     } else {
       failed += 1;
       outcomes.push({ ...job, status: "failed", reason: result.error.message });
+
+      /*
+       * A provider spend cap ends the pass, it does not fail one job
+       * (JSV2S1148, found live 2026-09-21).
+       *
+       * Our own ceiling stops a run cleanly; a console cap returns a 429
+       * mid-call and applies to every subsequent call equally. Carrying on
+       * would attempt each remaining job and fail all of them identically,
+       * filling the digest with one error repeated N times and obscuring the
+       * single fact that matters — the allowance is gone until the month turns
+       * or the owner raises it.
+       */
+      if (isSpendCapError(result.error)) {
+        stoppedEarly = true;
+        pausedReason =
+          "The AI provider refused on its own spending cap. This is the console's limit, " +
+          "not the app's budget — raise it in the provider dashboard, or wait for the month to reset.";
+        break;
+      }
     }
 
     // Re-read after every call rather than estimating: the ceiling must reflect
@@ -183,6 +204,7 @@ export async function runScoringPass(
     deferred,
     budget,
     stoppedEarly,
+    ...(pausedReason ? { pausedReason } : {}),
     outcomes,
   };
 }
