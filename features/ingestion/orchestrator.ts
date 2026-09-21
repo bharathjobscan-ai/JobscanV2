@@ -166,7 +166,24 @@ async function fetchOneLocation(
  * while `AUTOMATED_SCORING_ENABLED` is false.
  */
 export async function runIngestionPass(
-  options: { dryRun?: boolean } = {},
+  options: {
+    dryRun?: boolean;
+    /**
+     * Widen the posting window for a one-off backfill (2026-09-21).
+     *
+     * An OPTION rather than a config edit, deliberately. Changing
+     * `FETCH_DEFAULTS.postedWithinDays` to 7 for one run leaves the nightly
+     * schedule pulling a week every night until somebody remembers to change it
+     * back — and the symptom of forgetting is a larger bill, which is exactly
+     * the class of mistake that goes unnoticed.
+     *
+     * The actor's window is an enum (24 hours, week, month), so anything
+     * between 2 and 7 resolves to a week.
+     */
+    postedWithinDays?: number;
+    /** Override the per-location cap, for a window that returns more. */
+    limitPerLocation?: number;
+  } = {},
 ): Promise<IngestionPassResult> {
   const adapter = new ApifyLinkedInAdapter();
 
@@ -182,7 +199,11 @@ export async function runIngestionPass(
     };
   }
 
-  const plan = dailyFetchPlan();
+  const plan = dailyFetchPlan().map((params) => ({
+    ...params,
+    ...(options.postedWithinDays ? { postedWithinDays: options.postedWithinDays } : {}),
+    ...(options.limitPerLocation ? { limit: options.limitPerLocation } : {}),
+  }));
   // Read once for the whole pass rather than per location: the list is the same
   // each time, and it only grows as the pass proceeds.
   const skipJobIds = options.dryRun ? [] : await knownJobIds(adapter.source);
