@@ -1,6 +1,11 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
-import { applicationEvents, applications, rawJobs } from "@/db/schema";
+import {
+  applicationDocuments,
+  applicationEvents,
+  applications,
+  rawJobs,
+} from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
 import { db } from "@/lib/db/client";
 import { prequalify } from "./engine";
@@ -141,6 +146,91 @@ export async function backfillVerdicts(limit = 1000): Promise<{
   }
 
   return { evaluated: jobs.length, byDecision, preferredCities };
+}
+
+/** Thrown when sending an application back would destroy paid work. */
+export class ApplicationHasSpend extends Error {}
+
+/**
+ * Send an application back to the review or rejected pile (2026-09-21).
+ *
+ * The inverse of promote. A job with an application is invisible to every
+ * review query — they are all rooted at `isNull(applications.id)` — so putting
+ * it back in a pile means the application row has to go.
+ *
+ * **GUARDED, because `application_documents` and `application_events` cascade
+ * on delete.** A tailored CV and cover letter cost roughly $0.35 to generate
+ * and cannot be recovered; a score is a billed call. Silently destroying either
+ * because a row moved piles would be the worst kind of data loss — invisible,
+ * and paid for. So an application carrying documents or a score refuses, and
+ * the caller is told to use the Bin instead, which keeps everything.
+ *
+ * The verdict itself is preserved and marked as a manual override, exactly as
+ * `rejectJob` does, so the audit trail says a person decided this rather than
+ * the gate.
+ */
+export async function demoteApplication(
+  applicationId: string,
+  to: "review" | "reject",
+  reason?: string,
+): Promise<{ rawJobId: string }> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        applicationId: applications.id,
+        rawJobId: applications.rawJobId,
+        jobScore: applications.jobScore,
+        title: rawJobs.title,
+        company: rawJobs.company,
+        detail: rawJobs.prequalificationDetail,
+      })
+      .from(applications)
+      .innerJoin(rawJobs, eq(rawJobs.id, applications.rawJobId))
+      .where(eq(applications.id, applicationId))
+      .limit(1);
+
+    if (!row) throw new ReviewJobNotFound(`No application ${applicationId}.`);
+
+    const [docs] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(applicationDocuments)
+      .where(eq(applicationDocuments.applicationId, applicationId));
+
+    if ((docs?.n ?? 0) > 0 || row.jobScore !== null) {
+      throw new ApplicationHasSpend(
+        `${row.title} at ${row.company} already has ${
+          (docs?.n ?? 0) > 0 ? "generated documents" : "a score"
+        }. Sending it back would delete them. Use the Bin, which keeps everything.`,
+      );
+    }
+
+    const detail = (row.detail ?? {}) as Record<string, unknown>;
+
+    await tx
+      .update(rawJobs)
+      .set({
+        prequalification: to,
+        prequalificationDetail: {
+          ...detail,
+          decision: to,
+          decidedBy: null,
+          reason:
+            reason?.trim() ||
+            (to === "review"
+              ? "Sent back to review by hand."
+              : "Discarded by hand from the applications list."),
+          manualOverride: true,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(rawJobs.id, row.rawJobId));
+
+    // Last, so a failure above leaves the application intact rather than
+    // orphaning a job that the review queue still cannot see.
+    await tx.delete(applications).where(eq(applications.id, applicationId));
+
+    return { rawJobId: row.rawJobId };
+  });
 }
 
 /**

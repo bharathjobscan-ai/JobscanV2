@@ -1,4 +1,17 @@
-import { and, desc, eq, gte, ilike, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { applications, ingestionRuns, rawJobs } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
@@ -67,19 +80,30 @@ function toItem(row: {
   };
 }
 
-export const REVIEW_VIEWS = ["review", "rejected", "stale"] as const;
+export const REVIEW_VIEWS = ["review", "rejected", "stale", "binned"] as const;
 export type ReviewView = (typeof REVIEW_VIEWS)[number];
 
 export const REVIEW_VIEW_LABELS: Record<ReviewView, string> = {
   review: "Needs review",
   rejected: "Screened out",
   stale: "Rules changed",
+  binned: "Bin",
 };
 
 function viewFilter(view: ReviewView) {
   switch (view) {
     case "review":
       return eq(rawJobs.prequalification, "review");
+    /**
+     * The Bin, finally visible (JSV2S1157, completed 2026-09-21).
+     *
+     * Binning was built as a soft delete on the promise of "a future Bin view",
+     * and until now there wasn't one — so a binned job kept its row, its verdict
+     * and its evidence, and no screen could show any of it. Nineteen jobs were
+     * sitting in a place with no door.
+     */
+    case "binned":
+      return isNotNull(rawJobs.binnedAt);
     case "rejected":
       return eq(rawJobs.prequalification, "reject");
     case "stale":
@@ -206,8 +230,9 @@ export async function listForReview(
         viewFilter(f.view ?? "review"),
         isNull(applications.id),
         // The Bin is a soft delete: binned jobs keep their row and their
-        // verdict but leave every working list (JSV2S1157).
-        isNull(rawJobs.binnedAt),
+        // verdict but leave every working list (JSV2S1157) — except the Bin
+        // itself, which is the one list that exists to show them.
+        f.view === "binned" ? undefined : isNull(rawJobs.binnedAt),
         ...selectionFilters(f.selections),
         dateFilter(f.from, f.to),
         searchFilter(f.search),
@@ -250,7 +275,13 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
     .leftJoin(ingestionRuns, eq(ingestionRuns.id, rawJobs.ingestionRunId))
-    .where(and(viewFilter(view), isNull(applications.id), isNull(rawJobs.binnedAt)));
+    .where(
+      and(
+        viewFilter(view),
+        isNull(applications.id),
+        view === "binned" ? undefined : isNull(rawJobs.binnedAt),
+      ),
+    );
 
   const facets: ReviewFacets = {};
   for (const filter of PREQUAL_FILTERS) {
@@ -329,10 +360,19 @@ export async function countForReview(): Promise<Record<ReviewView, number>> {
     .innerJoin(applications, eq(applications.rawJobId, rawJobs.id))
     .where(sql`${rawJobs.prequalificationVersion} is distinct from ${CONFIG_VERSION}`);
 
+  // Counted separately because every query above excludes binned rows — which
+  // is the correct default everywhere except the one view that shows them.
+  const [binned] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(rawJobs)
+    .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
+    .where(and(isNotNull(rawJobs.binnedAt), isNull(applications.id)));
+
   return {
     review: queue?.review ?? 0,
     rejected: queue?.rejected ?? 0,
     stale: (queue?.stale ?? 0) + (promoted?.stale ?? 0),
+    binned: binned?.n ?? 0,
   };
 }
 

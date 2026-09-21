@@ -48,6 +48,7 @@ import { measureAts } from "@/features/simg/measure";
 import { resolveArtwork } from "@/features/artwork/resolve";
 import { buildLedger } from "@/features/scoring/ledger";
 import { GateVerdictPanel } from "@/components/applications/gate-verdict";
+import { DemoteForm } from "@/components/applications/demote-form";
 import { VISA_REASON_LABELS } from "@/features/prequalification/labels";
 import {
   PREQUALIFICATION_LABELS,
@@ -483,6 +484,10 @@ export default async function ApplicationDetailPage({
             <div className="mt-3 border-t border-line pt-3">
               <ArtworkCredit artwork={artwork} />
             </div>
+          </OnNeed>
+
+          <OnNeed title="Remove from applications" meta="Sends it back to a pile">
+            <DemoteForm applicationId={application.id} />
           </OnNeed>
 
           <OnNeed

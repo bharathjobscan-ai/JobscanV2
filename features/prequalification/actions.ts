@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 
 import {
   AlreadyPromoted,
+  ApplicationHasSpend,
   binJobs,
+  demoteApplication,
   promoteJob,
   rejectJob,
   requalifyPromoted,
@@ -45,6 +47,33 @@ export async function rejectAction(formData: FormData): Promise<void> {
  * updates the verdict record of a job that already has one and must never
  * disturb the application itself.
  */
+/**
+ * Send an application back to a pile (2026-09-21).
+ *
+ * Returns the refusal as a string rather than throwing it at the user: an
+ * application carrying a generated CV is a legitimate thing to have, and being
+ * told why the button declined is more useful than an error page.
+ */
+export async function demoteApplicationAction(
+  data: FormData,
+): Promise<{ error?: string }> {
+  const id = String(data.get("applicationId") ?? "");
+  const to = data.get("to") === "reject" ? "reject" : "review";
+  if (!id) return {};
+
+  try {
+    await demoteApplication(id, to, String(data.get("reason") ?? ""));
+  } catch (error) {
+    if (error instanceof ApplicationHasSpend) return { error: error.message };
+    throw error;
+  }
+
+  revalidatePath("/applications");
+  revalidatePath("/review");
+  revalidatePath("/pipeline");
+  return {};
+}
+
 export async function requalifyAction(): Promise<void> {
   await requalifyStale();
   await requalifyPromoted();

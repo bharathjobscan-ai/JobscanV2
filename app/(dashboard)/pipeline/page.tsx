@@ -72,6 +72,41 @@ function Pile({
  * next run going to spend. Every query here is rooted at `raw_jobs`, because a
  * screened-out job has no application and is invisible to the other board.
  */
+
+/**
+ * A count that navigates to the rows it counts (2026-09-21).
+ *
+ * The per-run metrics answer "what became of last night's fetch" and then leave
+ * you to reconstruct the filter by hand to see WHICH jobs. Every destination
+ * already accepts a `fetch` selection, so the number is one `href` away from
+ * being the query.
+ *
+ * Zero is deliberately not a link: a filter that is guaranteed to return
+ * nothing is a dead end, and an em dash says so more honestly than a link would.
+ */
+function DrillDown({
+  count,
+  href,
+  title,
+  className = "",
+}: {
+  count: number;
+  href: string;
+  title: string;
+  className?: string;
+}) {
+  if (!count) return <span className={`text-faint ${className}`}>—</span>;
+  return (
+    <Link
+      href={href}
+      title={title}
+      className={`underline decoration-dotted underline-offset-2 hover:decoration-solid ${className}`}
+    >
+      {count}
+    </Link>
+  );
+}
+
 export default async function PipelinePage() {
   // Three round trips, not seven. On a one-connection serverless pool each
   // query is sequential, so fan-out is latency and connection pressure.
@@ -262,19 +297,43 @@ export default async function PipelinePage() {
                       {o.landed || "—"}
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums text-positive">
-                      {o.autoQualified || "—"}
+                      <DrillDown
+                        count={o.autoQualified}
+                        href={`/applications?fetch=${o.runId}`}
+                        title="Applications created by this fetch"
+                        className="text-positive"
+                      />
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums">
-                      {o.forceQualified || "—"}
+                      <DrillDown
+                        count={o.forceQualified}
+                        href={`/applications?fetch=${o.runId}`}
+                        title="Promoted by hand from this fetch"
+                      />
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums text-warning">
-                      {o.needsReview || "—"}
+                      <DrillDown
+                        count={o.needsReview}
+                        href={`/review?fetch=${o.runId}`}
+                        title="Waiting on a decision from this fetch"
+                        className="text-warning"
+                      />
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums text-muted">
-                      {o.screenedOut || "—"}
+                      <DrillDown
+                        count={o.screenedOut}
+                        href={`/review?view=rejected&fetch=${o.runId}`}
+                        title="Screened out by the gate on this fetch"
+                        className="text-muted"
+                      />
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums text-faint">
-                      {o.binned || "—"}
+                      <DrillDown
+                        count={o.binned}
+                        href={`/review?view=binned&fetch=${o.runId}`}
+                        title="Moved to the Bin from this fetch"
+                        className="text-faint"
+                      />
                     </td>
                     <td className="border-l border-line px-2 py-2 text-right tabular-nums">
                       {o.costUsd === null ? (

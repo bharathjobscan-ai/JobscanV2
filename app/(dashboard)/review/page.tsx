@@ -8,6 +8,7 @@ import {
 import { Badge, Button, Card, CardHeader, EmptyState, buttonClass } from "@/components/ui/base";
 import {
   binAction,
+  restoreAction,
   promoteAction,
   rejectAction,
   requalifyAction,
@@ -153,7 +154,16 @@ export default async function ReviewPage({
           />
         </Card>
       ) : (
-        <BinSelection action={binAction}>
+        /*
+         * The Bin is the one view where the bulk action reverses: selecting
+         * there means "put these back", not "throw these away" (JSV2S1157).
+         * `BinSelection` already takes both, so the pipeline's binned count
+         * now links somewhere that can undo itself rather than to a dead end.
+         */
+        <BinSelection
+          action={view === "binned" ? restoreAction : binAction}
+          label={view === "binned" ? "Restore from Bin" : "Move to Bin"}
+        >
         <ul className="space-y-2">
           {items.map((item) => {
             const d = item.detail;
