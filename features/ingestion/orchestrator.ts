@@ -133,7 +133,15 @@ async function fetchOneLocation(
       duplicates: 0,
       qualified: 0,
       costUsd: 0,
-      reason: "the fetch threw; see the run's error",
+      /*
+       * Deliberately does NOT say "the fetch threw" (corrected 2026-09-21).
+       *
+       * It said exactly that when Berlin and Dublin failed, and every Apify run
+       * had in fact succeeded — the throw was our own insert. The wording cost
+       * an hour of looking in the wrong system, so it now points at the run
+       * record rather than naming a stage it cannot actually know.
+       */
+      reason: "the run threw — fetch or persist; see the run's error",
     };
   }
 

@@ -26,7 +26,8 @@
     "artwork:fetch": "tsx scripts/fetch-artwork.mts",
     "jobs:attribute": "tsx scripts/attribute-historical-jobs.mts",
     "runs:backfill-cost": "tsx scripts/backfill-run-cost.mts",
-    "companies:audit": "tsx scripts/audit-company-lists.mts"
+    "companies:audit": "tsx scripts/audit-company-lists.mts",
+    "ingest:replay": "tsx scripts/replay-apify-run.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
