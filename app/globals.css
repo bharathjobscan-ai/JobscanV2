@@ -168,3 +168,48 @@ body {
   color: var(--muted);
   font-style: italic;
 }
+
+/*
+ * The city workspace palette (JSV2S1172).
+ *
+ * SCOPED, not global. The app has a three-state light/dark theme that works;
+ * this design is dark throughout and replacing the theme wholesale to get it
+ * would be a one-way change made as a side effect. Everything here hangs off
+ * `[data-surface="nocturne"]`, so the redesign can be looked at, kept or
+ * dropped without touching a single existing screen.
+ *
+ * Values are the owner's design specification, transcribed exactly rather than
+ * approximated — his artifact and his spec sheet disagreed (Cormorant Garamond
+ * against Playfair Display, #090B0C against #0B0B0F) and the spec sheet is the
+ * one he chose.
+ */
+[data-surface="nocturne"] {
+  --n-bg: #0b0b0f;
+  --n-surface: #121318;
+  --n-card: #1a1f27;
+  --n-border: #2a2f3a;
+  --n-text: #e5e4e2;
+  --n-text-dim: #9aa3af;
+  --n-gold: #d4af37;
+  --n-gold-soft: #c9a227;
+  --n-emerald: #18a859;
+  --n-blue: #3b82f6;
+  --n-amber: #f59e0b;
+  --n-red: #ef4444;
+
+  background: var(--n-bg);
+  color: var(--n-text);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Playfair for anything that is a name or a number worth reading as one. */
+[data-surface="nocturne"] .n-display {
+  font-family: var(--font-playfair), Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+[data-surface="nocturne"] .n-mono {
+  font-family: var(--font-mono-city), ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+}

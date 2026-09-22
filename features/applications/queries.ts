@@ -247,6 +247,21 @@ function applicationSelectionFilters(selections?: ApplicationSelections) {
   if (selections.company?.length) {
     clauses.push(inArray(rawJobs.company, selections.company));
   }
+  /*
+   * City (JSV2S1172). Mirrors `cityForJob`: the gate's resolved preferred city
+   * first, falling back to the raw location string. Expressed here rather than
+   * filtering in code because the table is paginated at 200 and a code-side
+   * filter would narrow a page that SQL had already truncated.
+   */
+  if (selections.city?.length) {
+    const city = selections.city[0].toLowerCase();
+    clauses.push(
+      or(
+        sql`lower(${rawJobs.prequalificationDetail}->'location'->>'preferredCity') = ${city}`,
+        ilike(rawJobs.location, `%${city}%`),
+      )!,
+    );
+  }
   if (selections.fetch?.length) {
     clauses.push(inArray(rawJobs.ingestionRunId, selections.fetch));
   }

@@ -9,6 +9,9 @@ import {
 import { PreferredCityBadge } from "@/components/applications/prequal-badges";
 import { Badge, Card, EmptyState, LinkButton } from "@/components/ui/base";
 import { getApplicationCosts } from "@/features/ai/queries";
+import { cityById } from "@/config/cities";
+import { CityGrid } from "@/components/applications/city-grid";
+import { getCitySummaries } from "@/features/applications/cities";
 import { FilterPanel } from "@/components/ui/filter-panel";
 import { formatUsd } from "@/lib/ai/pricing";
 import {
@@ -37,6 +40,21 @@ export default async function ApplicationsPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const params = await searchParams;
+
+  /*
+   * No city chosen means the front door (JSV2S1172).
+   *
+   * The table is unchanged and still does the work; it is now reached THROUGH a
+   * city rather than instead of one. Returned before any of the filter parsing
+   * below, because none of it applies to a grid of eight photographs and doing
+   * the queries anyway would cost a round trip per visit for nothing.
+   */
+  const city = cityById(params.city);
+  if (!city) {
+    const summaries = await getCitySummaries();
+    return <CityGrid summaries={summaries} />;
+  }
+
   const view = (
     APPLICATION_VIEWS.includes(params.view as ApplicationView)
       ? params.view
@@ -54,6 +72,9 @@ export default async function ApplicationsPage({
     const values = params[key]?.split(",").filter(Boolean) ?? [];
     if (values.length > 0) selections[key] = values;
   }
+  // The city is a route, not a facet — it is not offered in the panel and
+  // cannot be unticked, so it is applied separately from the user's selections.
+  selections.city = [city.id];
   const isDate = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
   const from = isDate(params.from);
   const to = isDate(params.to);
@@ -80,7 +101,13 @@ export default async function ApplicationsPage({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Applications</h1>
+          <Link
+            href="/applications"
+            className="text-[11px] text-muted underline-offset-2 hover:underline"
+          >
+            ← All cities
+          </Link>
+          <h1 className="text-lg font-semibold tracking-tight">{city.name}</h1>
           <p className="text-xs text-muted">
             {counts.all} tracked
             {incomplete > 0 ? ` · ${incomplete} missing a job description` : ""}
@@ -98,7 +125,13 @@ export default async function ApplicationsPage({
           return (
             <Link
               key={key}
-              href={key === "all" ? "/applications" : `/applications?view=${key}`}
+              /* The city has to survive a tab change, or every tab is a door
+                 back out to the grid. */
+              href={
+                key === "all"
+                  ? `/applications?city=${city.id}`
+                  : `/applications?city=${city.id}&view=${key}`
+              }
               className={`-mb-px border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
                 active
                   ? "border-accent text-foreground"
@@ -117,7 +150,7 @@ export default async function ApplicationsPage({
           needs a referral, and which fetch did they come from". */}
       <FilterPanel
         basePath="/applications"
-        preserve={{ view: view === "all" ? undefined : view }}
+        preserve={{ view: view === "all" ? undefined : view, city: city.id }}
         categories={[
           { key: "match", label: "Match" },
           { key: "referral", label: "Referral" },

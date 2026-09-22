@@ -28,7 +28,8 @@
     "runs:backfill-cost": "tsx scripts/backfill-run-cost.mts",
     "companies:audit": "tsx scripts/audit-company-lists.mts",
     "ingest:replay": "tsx scripts/replay-apify-run.mts",
-    "ingest:backfill": "tsx scripts/backfill-fetch.mts"
+    "ingest:backfill": "tsx scripts/backfill-fetch.mts",
+    "cities:build": "tsx scripts/build-city-images.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
