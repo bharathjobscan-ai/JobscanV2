@@ -25,16 +25,16 @@ export function CityBackdrop({ city }: { city: City }) {
       <img
         src={city.hero || city.card}
         alt=""
-        className="h-full w-full object-cover opacity-[0.30]"
+        className="h-full w-full object-cover opacity-[0.55]"
       />
       {/*
-        Two layers, not one. The vertical wash keeps the top readable under the
-        title; the flat scrim underneath holds contrast constant further down,
-        where a fixed image would otherwise sit at full strength behind dense
-        rows of small text.
+        ONE wash, not two. The first attempt stacked a 70-100% gradient AND a
+        flat 45% scrim over an image already at 30% opacity, which left roughly
+        2% of the photograph visible — the third time in this project I have
+        dimmed a backdrop out of existence by layering. The gradient alone
+        carries the contrast; anything further is how it disappears.
       */}
-      <div className="absolute inset-0 bg-gradient-to-b from-background/70 via-background/85 to-background" />
-      <div className="absolute inset-0" style={{ background: "rgba(11, 11, 15, 0.45)" }} />
+      <div className="absolute inset-0 bg-gradient-to-b from-background/35 via-background/72 to-background/88" />
     </div>
   );
 }

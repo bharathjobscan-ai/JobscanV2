@@ -40,11 +40,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const monthSpend = spend?.totalUsd ?? 0;
 
   return (
-    /* `overflow-x-clip` is what makes `.n-bleed` safe: a full-bleed child is
-       100vw wide, which exceeds 100% by the scrollbar's width. Clip rather than
-       hidden — hidden would create a scroll container and break `position:
-       sticky` on the header above. */
-    <div className="flex min-h-full flex-1 flex-col overflow-x-clip">
+    <div className="flex min-h-full flex-1 flex-col">
       {/*
         Chrome transcribed from the design project's own header: 1248px column,
         56px gutters, 62px tall, translucent over a blur. The nav is the app's

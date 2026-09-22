@@ -155,18 +155,4 @@ body {
 
 
 
-/*
- * Full bleed, out of the 6xl column.
- *
- * The workspace is a fixed 1152px column, which is right for a table and wrong
- * for eight photographs — the design is edge to edge. `margin-inline` against
- * the viewport escapes the container without the layout needing to know which
- * route is rendering, which a server component cannot easily find out anyway.
- *
- * `100vw` includes the scrollbar, so this overflows by its width unless an
- * ancestor clips — hence `overflow-x: clip` on the shell below.
- */
-.n-bleed {
-  margin-inline: calc(50% - 50vw);
-  width: 100vw;
-}
+

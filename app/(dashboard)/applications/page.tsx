@@ -103,7 +103,7 @@ export default async function ApplicationsPage({
     <div className="flex flex-col gap-5">
       <CityBackdrop city={city} />
 
-      <div className="relative z-10 flex flex-col gap-5">
+      <div className="relative flex flex-col gap-5">
       <div>
         <Link
           href="/applications"
