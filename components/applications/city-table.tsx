@@ -3,14 +3,14 @@ import Link from "next/link";
 import type { ApplicationListItem } from "@/features/applications/queries";
 import { VISA_LABELS, visaStatusOf } from "@/features/applications/visa";
 import { MATCH_LABELS, type MatchCategory } from "@/lib/config/constants";
+import { StarButton } from "./star-button";
 
 /**
  * The per-city table (JSV2S1172), transcribed from the design project.
  *
- * Ten columns in the design; nine here. The design opens with a star for
- * favouriting, and there is no such thing in the data model — inventing a
- * feature to fill a column would be the wrong way round, so the column is
- * omitted rather than faked with a control that does nothing.
+ * The design's ten columns, all of them. The star was omitted while nothing
+ * backed it — a control that does nothing is worse than a missing one — and
+ * restored once `applications.starred_at` existed (JSV2S1173).
  *
  * The two score columns are the point of the layout: JOB is what ScoreG said
  * about the posting, RESUME is what SimG said about the CV written for it.
@@ -93,6 +93,9 @@ export function CityTable({ items }: { items: ApplicationListItem[] }) {
       <table className="w-full border-collapse text-[13px]">
         <thead>
           <tr className="border-b border-line text-left">
+            <th className="px-2 py-2.5">
+              <span className="sr-only">Starred</span>
+            </th>
             {["Job", "Resume", "Role", "Company", "Posted", "Visa", "Status", "Action"].map(
               (h, i) => (
                 <th
@@ -122,6 +125,13 @@ export function CityTable({ items }: { items: ApplicationListItem[] }) {
                 className="border-b transition-colors hover:bg-surface"
                 style={{ borderColor: "var(--hair)" }}
               >
+                <td className="px-2 py-3 text-center">
+                  <StarButton
+                    applicationId={item.id}
+                    starred={item.starred}
+                    title={item.title}
+                  />
+                </td>
                 <td className="px-3 py-3 text-center">
                   <Score value={item.jobScore} />
                 </td>

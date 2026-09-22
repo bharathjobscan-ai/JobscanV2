@@ -62,7 +62,15 @@ export default async function ApplicationsPage({
   const MULTI = ["match", "referral", "company", "source", "country", "fetch"] as const;
   // Taken whole, never split: a location is "London Area, United Kingdom", and
   // comma-splitting it produced a filter that could never match anything.
-  const SINGLE = ["location", "posted", "visa", "tier", "minJob", "minResume"] as const;
+  const SINGLE = [
+    "location",
+    "posted",
+    "visa",
+    "tier",
+    "minJob",
+    "minResume",
+    "starred",
+  ] as const;
   const selections: Record<string, string[]> = {};
   for (const key of MULTI) {
     const values = params[key]?.split(",").filter(Boolean) ?? [];

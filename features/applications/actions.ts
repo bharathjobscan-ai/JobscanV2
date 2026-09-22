@@ -1,6 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { eq, sql } from "drizzle-orm";
+
+import { applications } from "@/db/schema";
+import { db } from "@/lib/db/client";
 
 import { enqueueTask, TaskBlocked } from "@/features/ai/tasks";
 import {
@@ -34,6 +38,33 @@ function field(data: FormData, name: string): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed === "" ? undefined : trimmed;
+}
+
+/**
+ * Star or unstar an application (JSV2S1173).
+ *
+ * Toggles from the row's CURRENT value read inside the statement rather than
+ * from one the client sent: two clicks landing together would otherwise both
+ * write the same value, and the second would silently undo nothing.
+ *
+ * Deliberately not an event on the timeline. A star is a private bookmark, not
+ * a change to the application — filling the activity log with it would bury
+ * the things that actually happened.
+ */
+export async function toggleStarAction(data: FormData): Promise<void> {
+  const id = field(data, "applicationId");
+  if (!id) return;
+
+  await db
+    .update(applications)
+    .set({
+      starredAt: sql`case when ${applications.starredAt} is null then now() else null end`,
+      updatedAt: new Date(),
+    })
+    .where(eq(applications.id, id));
+
+  revalidatePath("/applications");
+  revalidatePath(`/applications/${id}`);
 }
 
 export async function changeStatusAction(

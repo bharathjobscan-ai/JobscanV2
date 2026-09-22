@@ -198,6 +198,8 @@ export type ApplicationListItem = {
   resumeScore: number | null;
   /** 1-5 when the company is on the sponsorship watchlist, else null. */
   watchlistTier: number | null;
+  /** JSV2S1173 — marked to revisit. */
+  starred: boolean;
   nextAction: string;
   /** JSV2S1158 — the ingestion run this job arrived in, if it has one. */
   ingestionRunId: string | null;
@@ -315,6 +317,10 @@ function applicationSelectionFilters(selections?: ApplicationSelections) {
   if (selections.country?.length) {
     clauses.push(inArray(rawJobs.country, selections.country));
   }
+  // JSV2S1173 — "show me only what I flagged" is the whole point of a star.
+  if (selections.starred?.[0] === "yes") {
+    clauses.push(isNotNull(applications.starredAt));
+  }
   if (selections.company?.length) {
     clauses.push(inArray(rawJobs.company, selections.company));
   }
@@ -401,6 +407,7 @@ export async function listApplications(
       hasResume,
       resumeScore,
       watchlistTier,
+      starredAt: applications.starredAt,
     })
     .from(applications)
     .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
@@ -440,6 +447,7 @@ export async function listApplications(
       hasResume: Boolean(row.hasResume),
       resumeScore: row.resumeScore ?? null,
       watchlistTier: row.watchlistTier ?? null,
+      starred: row.starredAt !== null,
       ingestionRunId: row.ingestionRunId,
       // Prefer the gate's timestamp; fall back to first sighting for jobs that
       // predate pre-qualification.
