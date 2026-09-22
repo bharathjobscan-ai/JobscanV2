@@ -12,7 +12,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const awaiting = await countAwaitingReview().catch(() => 0);
 
   return (
-    <div className="flex min-h-full flex-1 flex-col">
+    /* `overflow-x-clip` is what makes `.n-bleed` safe: a full-bleed child is
+       100vw wide, which exceeds 100% by the scrollbar's width. Clip rather than
+       hidden — hidden would create a scroll container and break `position:
+       sticky` on the header above. */
+    <div className="flex min-h-full flex-1 flex-col overflow-x-clip">
       <header className="sticky top-0 z-10 border-b border-line bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-12 max-w-6xl items-center gap-5 px-5">
           <Link href="/applications" className="text-sm font-semibold tracking-tight">

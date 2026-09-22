@@ -213,3 +213,45 @@ body {
   font-family: var(--font-mono-city), ui-monospace, SFMono-Regular, monospace;
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * A nocturne page takes the chrome with it (2026-09-23).
+ *
+ * Scoping the palette to `[data-surface="nocturne"]` kept the theme toggle
+ * working, which was right, but it left a dark page sitting inside light
+ * chrome — a white header bar above an obsidian grid, which reads as a bug
+ * rather than as a design.
+ *
+ * `:has()` fixes it without giving up the scoping: the page opts in, and the
+ * root tokens follow. Everything in the header already paints from these
+ * variables, so nothing there needs to know the nocturne view exists. Pages
+ * that do not opt in are untouched, and the light/dark/system toggle still
+ * governs them.
+ */
+:root:has([data-surface="nocturne"]) {
+  --background: #0b0b0f;
+  --surface: #121318;
+  --surface-muted: #1a1f27;
+  --foreground: #e5e4e2;
+  --muted: #9aa3af;
+  --subtle: #6b7280;
+  --border: #2a2f3a;
+  --border-strong: #3a4150;
+  --accent: #d4af37;
+}
+
+/*
+ * Full bleed, out of the 6xl column.
+ *
+ * The workspace is a fixed 1152px column, which is right for a table and wrong
+ * for eight photographs — the design is edge to edge. `margin-inline` against
+ * the viewport escapes the container without the layout needing to know which
+ * route is rendering, which a server component cannot easily find out anyway.
+ *
+ * `100vw` includes the scrollbar, so this overflows by its width unless an
+ * ancestor clips — hence `overflow-x: clip` on the shell below.
+ */
+.n-bleed {
+  margin-inline: calc(50% - 50vw);
+  width: 100vw;
+}

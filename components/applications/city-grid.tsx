@@ -156,7 +156,10 @@ export function CityGrid({ summaries }: { summaries: CitySummary[] }) {
   const tracked = summaries.reduce((n, s) => n + s.total, 0);
 
   return (
-    <div data-surface="nocturne" className="-mx-5 -my-6 min-h-screen px-5 py-8">
+    <div
+      data-surface="nocturne"
+      className="n-bleed -my-6 min-h-screen px-8 py-10 xl:px-14"
+    >
       <header className="mb-8">
         <h1 className="n-display text-5xl leading-none" style={{ color: "var(--n-text)" }}>
           Applications
@@ -167,7 +170,7 @@ export function CityGrid({ summaries }: { summaries: CitySummary[] }) {
         </p>
       </header>
 
-      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {summaries.map((s, i) => (
           <CityCard key={s.city.id} summary={s} priority={i === 0} />
         ))}
