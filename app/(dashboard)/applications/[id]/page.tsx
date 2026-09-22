@@ -2,11 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
-  MatchBadge,
-  ReferralBadge,
-  StatusBadge,
-} from "@/components/applications/badges";
-import {
   AttemptForm,
   DescriptionForm,
   GenerateButton,
@@ -24,13 +19,18 @@ import {
   ArtworkCredit,
 } from "@/components/applications/artwork-backdrop";
 import { ScoreLedgerTable } from "@/components/applications/score-ledger";
+import { OnNeed, ScoreHero } from "@/components/applications/score-hero";
 import {
-  Basis,
   FigureRow,
-  OnNeed,
-  ScoreHero,
   type Figure,
-} from "@/components/applications/score-hero";
+} from "@/components/applications/detail/overview/figure-row";
+import { VerdictBlock } from "@/components/applications/detail/overview/verdict";
+import { StrategyPanel } from "@/components/applications/detail/overview/strategy";
+import { Basis } from "@/components/applications/detail/analysis/basis";
+import {
+  AnalysisEmpty,
+  AnalysisHead,
+} from "@/components/applications/detail/analysis/head";
 import { DetailTabs, type DetailTab } from "@/components/applications/detail/tabs";
 import {
   Fact,
@@ -46,6 +46,9 @@ import { getTaskStates, settleAiJobs } from "@/features/ai/tasks";
 import { getApplicationDetail } from "@/features/applications/queries";
 import {
   DOCUMENT_LABELS,
+  MATCH_HINTS,
+  type MatchCategory,
+  MATCH_LABELS,
   REFERRAL_LABELS,
   STATUS_LABELS,
 } from "@/lib/config/constants";
@@ -61,6 +64,7 @@ import {
   PREQUALIFICATION_LABELS,
   type PrequalDecision,
 } from "@/lib/config/constants";
+import type { ScoreLineItem } from "@/db/schema";
 import type { ComponentProps } from "react";
 
 type GateDetail = NonNullable<ComponentProps<typeof GateVerdictPanel>["detail"]>;
@@ -88,6 +92,36 @@ function formatDate(value: Date | string | null): string {
     month: "short",
     day: "numeric",
   });
+}
+
+/**
+ * "3 days old", from whichever date the posting actually has.
+ *
+ * `postedAt` where the source gave one, otherwise the day we first saw it —
+ * labelled differently, because "first seen" is a fact about us and "posted" is
+ * a fact about the job, and conflating them would overstate what we know.
+ */
+function postingAge(
+  postedAt: string | null,
+  firstSeenAt: Date | null,
+): string | null {
+  const from = postedAt ? new Date(`${postedAt}T00:00:00Z`) : firstSeenAt;
+  if (!from || Number.isNaN(from.getTime())) return null;
+  const days = Math.max(0, Math.floor((Date.now() - from.getTime()) / 86_400_000));
+  const age = days === 0 ? "today" : days === 1 ? "1 day old" : `${days} days old`;
+  return postedAt ? age : days === 0 ? "seen today" : `seen ${days} days ago`;
+}
+
+/**
+ * The band's own advice, as the strategy row's "Approach".
+ *
+ * `MATCH_HINTS` reads "70-84 · Apply and seek a referral in parallel"; the
+ * range belongs to the masthead pill, so only the advice half is taken, with
+ * its first letter raised to start a sentence.
+ */
+function bandAdvice(category: MatchCategory): string {
+  const advice = MATCH_HINTS[category].split(" · ")[1] ?? MATCH_HINTS[category];
+  return advice.charAt(0).toUpperCase() + advice.slice(1);
 }
 
 function formatDateTime(value: Date | null): string {
@@ -153,15 +187,68 @@ export default async function ApplicationDetailPage({
 
   const analysis = application.jobScoreAnalysis;
 
-  /** The four figures: the facts the score rests on, at a glance. */
+  /**
+   * The four figures: the facts the score rests on, at a glance.
+   *
+   * The design's row is Visa signal / Document score / Reachability / AI cost.
+   * Three of those are figures this system measures. Reachability is a real
+   * ScoreG line item — it is scored inside Job Relevance — so it is read out of
+   * the breakdown by name rather than invented; where a run did not produce one
+   * the column falls back to the referral record, which is the only other
+   * reachability fact stored.
+   */
+  const lineItems: ScoreLineItem[] = Array.isArray(analysis?.breakdown)
+    ? analysis.breakdown
+    : [];
+  const reachability = lineItems.find((item) => /reachab/i.test(item.component));
+  const visaScore = ledger?.pillars.find((p) => p.key === "visa")?.score ?? null;
+  const models = new Set(cost.runs.map((r) => r.model).filter(Boolean)).size;
+
+  const reachabilityFigure: Figure = reachability
+    ? {
+        label: "Reachability",
+        value:
+          reachability.max <= 0 || reachability.awarded / reachability.max >= 0.8
+            ? "Strong"
+            : reachability.awarded / reachability.max >= 0.4
+              ? "Partial"
+              : reachability.awarded > 0
+                ? "Weak"
+                : "None",
+        hint: `${reachability.awarded} of ${reachability.max}`,
+        tone:
+          reachability.max > 0 && reachability.awarded / reachability.max >= 0.8
+            ? "positive"
+            : reachability.awarded > 0
+              ? "warning"
+              : "negative",
+        to: "analysis",
+      }
+    : {
+        label: "Referral",
+        value: REFERRAL_LABELS[application.referralStatus],
+        hint: application.referrerName ?? undefined,
+        tone: application.referralStatus === "needed" ? "warning" : undefined,
+      };
+
   const figures: Figure[] = [
     {
       label: "Visa signal",
       value: application.visaSignal ?? "Not established",
       hint: analysis?.visaSignals?.length
-        ? `${analysis.visaSignals.length} signal${analysis.visaSignals.length === 1 ? "" : "s"}`
+        ? `${analysis.visaSignals.length} source${analysis.visaSignals.length === 1 ? "" : "s"}`
         : undefined,
-      tone: application.visaSignal ? undefined : "negative",
+      tone:
+        visaScore === null
+          ? application.visaSignal
+            ? undefined
+            : "negative"
+          : visaScore >= 70
+            ? "positive"
+            : visaScore >= 40
+              ? "warning"
+              : "negative",
+      to: analysis ? "analysis" : undefined,
     },
     {
       label: "Document score",
@@ -169,19 +256,23 @@ export default async function ApplicationDetailPage({
         ? `${simgProjection.baseline} → ${simgProjection.current}`
         : "—",
       hint: simgProjection
-        ? `${simgProjection.acceptedCount} edit${simgProjection.acceptedCount === 1 ? "" : "s"} applied`
+        ? `${simgProjection.acceptedCount} SimG edit${simgProjection.acceptedCount === 1 ? "" : "s"}`
         : "No CV generated",
+      hintTone: simgProjection && simgProjection.acceptedCount > 0 ? "positive" : undefined,
+      to: simgProjection ? "simg" : undefined,
     },
+    reachabilityFigure,
     {
-      label: "Referral",
-      value: REFERRAL_LABELS[application.referralStatus],
-      hint: application.referrerName ?? undefined,
-      tone: application.referralStatus === "needed" ? "warning" : undefined,
-    },
-    {
-      label: "Next action",
-      value: application.nextAction,
-      hint: resume ? `Resume v${resume.version} ready` : "Nothing generated",
+      label: "AI cost",
+      value: cost.runs.length === 0 ? "—" : `$${cost.totalUsd.toFixed(2)}`,
+      hint:
+        cost.runs.length === 0
+          ? "Nothing spent yet"
+          : `${cost.runs.length} run${cost.runs.length === 1 ? "" : "s"} · ${models} model${
+              models === 1 ? "" : "s"
+            }`,
+      tone: cost.runs.length === 0 ? undefined : "accent",
+      to: "activity",
     },
   ];
 
@@ -208,38 +299,56 @@ export default async function ApplicationDetailPage({
     </>
   );
 
+  /**
+   * The design's "Application strategy" block, filled from what this app
+   * actually knows.
+   *
+   * No invented approach or outreach copy: "Approach" is the band's own advice
+   * from `MATCH_HINTS`, "Outreach" is the referral record plus whatever the
+   * scorer wrote about reachability, and "Next action" is the derived next
+   * action with the status behind it.
+   */
+  const strategyRows = [
+    {
+      label: "Approach",
+      value: application.matchCategory ? bandAdvice(application.matchCategory) : null,
+    },
+    {
+      label: "Outreach",
+      value: [
+        REFERRAL_LABELS[application.referralStatus],
+        application.referrerName,
+        reachability?.reason,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    },
+    {
+      label: "Next action",
+      value: [
+        application.nextAction,
+        `${STATUS_LABELS[application.status]}${application.isPending ? ", deemed pending" : ""}`,
+        application.appliedAt ? `applied ${formatDate(application.appliedAt)}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    },
+  ];
+
   const overview = (
     <>
-      <FigureRow figures={figures} />
+      <VerdictBlock
+        matchCategory={application.matchCategory}
+        summary={analysis?.summary}
+        hasAnalysis={Boolean(analysis || ledger || scoreReport?.contentMd)}
+        hasMaterial={Boolean(resume || coverLetter)}
+      />
 
-      {/*
-        The design's "Application strategy" block, filled from what this app
-        actually knows. No invented approach or outreach copy — the three rows
-        are the stored next action, the referral state and the status, which is
-        the whole of what the system can say about what to do next.
-      */}
-      <div className="mt-8 rounded-lg border border-line p-6">
-        <p className="text-[10px] tracking-[0.16em] text-accent uppercase">
-          What to do next
-        </p>
-        <dl className="mt-4 grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-x-5 gap-y-2.5 text-[13.5px]">
-          <dt className="text-faint">Next action</dt>
-          <dd className="text-muted">{application.nextAction}</dd>
-          <dt className="text-faint">Referral</dt>
-          <dd className="text-muted">
-            {REFERRAL_LABELS[application.referralStatus]}
-            {application.referrerName ? ` · ${application.referrerName}` : ""}
-          </dd>
-          <dt className="text-faint">Status</dt>
-          <dd className="text-muted">
-            {STATUS_LABELS[application.status]}
-            {application.isPending ? " · deemed pending" : ""}
-            {application.appliedAt ? ` · applied ${formatDate(application.appliedAt)}` : ""}
-          </dd>
-        </dl>
+      <div className="mt-7">
+        <FigureRow figures={figures} />
       </div>
 
-      <Basis holding={analysis?.strengths ?? []} failing={analysis?.gaps ?? []} />
+      <StrategyPanel rows={strategyRows} />
     </>
   );
 
@@ -318,15 +427,55 @@ export default async function ApplicationDetailPage({
     </section>
   );
 
+  const hasAnalysisContent = Boolean(analysis || ledger || scoreReport?.contentMd);
+
   const fullAnalysis = (
     <section>
-      <SectionHead title="Full score analysis" meta="Narrative, pillars and arithmetic" />
+      <AnalysisHead />
 
-      <div className="mt-6 flex flex-col gap-7">
+      <div className="mt-7 flex flex-col gap-8">
+        {!hasAnalysisContent ? (
+          <AnalysisEmpty
+            gateQualified={application.matchCategory === "gate_qualified"}
+            isIncomplete={application.isIncomplete}
+          />
+        ) : null}
+
         {analysis ? <ScoreBreakdown analysis={analysis} /> : null}
 
         {/* The arithmetic. A score you cannot audit is one you cannot argue with. */}
-        {ledger ? <ScoreLedgerTable ledger={ledger} /> : null}
+        {ledger ? (
+          <ScoreLedgerTable
+            ledger={ledger}
+            finalCalculation={analysis?.finalCalculation}
+            aside={
+              <>
+                <p className="text-[10px] tracking-[0.16em] text-accent uppercase">
+                  What that means
+                </p>
+                <p className="n-display mt-2.5 text-[21px] leading-tight font-semibold">
+                  {application.matchCategory
+                    ? MATCH_LABELS[application.matchCategory]
+                    : "Unbanded"}
+                </p>
+                {analysis?.summary ? (
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted">
+                    {analysis.summary}
+                  </p>
+                ) : null}
+                {application.matchCategory ? (
+                  <p className="mt-3 text-[11.5px] text-faint">
+                    {MATCH_HINTS[application.matchCategory]}
+                  </p>
+                ) : null}
+              </>
+            }
+          />
+        ) : null}
+
+        {analysis?.strengths?.length || analysis?.gaps?.length ? (
+          <Basis holding={analysis.strengths ?? []} failing={analysis.gaps ?? []} />
+        ) : null}
 
         {analysis?.visaSignals?.length ? (
           <div
@@ -651,9 +800,14 @@ export default async function ApplicationDetailPage({
     });
   }
 
-  if (analysis || scoreReport?.contentMd || ledger) {
-    tabs.push({ id: "analysis", label: "Analysis", content: fullAnalysis });
-  }
+  /*
+   * Always present, even with nothing to show (2026-09-23).
+   *
+   * A gate-qualified application has no score and therefore no breakdown, and
+   * the tab disappearing left the reader wondering whether the arithmetic was
+   * hidden or never run. It says which.
+   */
+  tabs.push({ id: "analysis", label: "Analysis", content: fullAnalysis });
 
   tabs.push({ id: "on-need", label: "On need", content: onNeed });
   tabs.push({
@@ -705,17 +859,10 @@ export default async function ApplicationDetailPage({
         <ScoreHero
           score={application.jobScore}
           matchCategory={application.matchCategory}
-          summary={analysis?.summary}
           company={job.company}
           location={job.location}
+          age={postingAge(job.postedAt, job.firstSeenAt)}
           title={job.title}
-          meta={
-            <>
-              <MatchBadge category={application.matchCategory} />
-              <ReferralBadge status={application.referralStatus} />
-              <StatusBadge status={application.status} isPending={application.isPending} />
-            </>
-          }
           actions={generateButtons}
         />
 

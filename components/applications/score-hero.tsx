@@ -1,21 +1,27 @@
 import type { ReactNode } from "react";
 
-import { MATCH_HINTS, MATCH_LABELS, type MatchCategory } from "@/lib/config/constants";
+import { MATCH_HINTS, type MatchCategory } from "@/lib/config/constants";
 
 /**
- * The score as the single result on the page (JSV2S1139, restyled JSV2S1172).
+ * The masthead: the posting on the left, the score on the right (JSV2S1139,
+ * restyled JSV2S1172, brought to the design 2026-09-23).
  *
- * Nocturnal puts the posting on the left and the number on the right of one
- * masthead, rather than centring both. The reading order is then the one the
- * decision is made in — what the job is, then what it scored — and the number
- * keeps its own column instead of pushing the title down the page.
+ * The reading order is the one the decision is made in — what the job is, then
+ * what it scored — and the number keeps its own column instead of pushing the
+ * title down the page.
  *
  * The verdict is stated in words as well as a number. "54" invites arithmetic;
  * "Do not apply" is a decision, and the band is derived in code from the score
  * so it cannot drift from what the model said.
+ *
+ * Everything below the masthead — the verdict sentence, the figures, the
+ * strategy — belongs to the Overview tab, not here. The masthead is the one
+ * thing that stays on screen whichever tab is open, so it carries only what is
+ * true of the application on every tab.
  */
 
-const VERDICT: Record<MatchCategory, string> = {
+/** The band in words, spoken as a decision rather than a label. */
+export const VERDICT: Record<MatchCategory, string> = {
   priority_apply: "Strong apply",
   apply: "Apply",
   referral_only: "Only with a referral",
@@ -28,54 +34,104 @@ function band(category: MatchCategory): string {
   return MATCH_HINTS[category].split(" · ")[0];
 }
 
+export function toneFor(matchCategory: MatchCategory | null): string {
+  if (matchCategory === "priority_apply") return "var(--emerald)";
+  if (matchCategory === "reject") return "var(--negative)";
+  if (matchCategory === "referral_only") return "var(--warning)";
+  return "var(--gold)";
+}
+
+/**
+ * The three small glyphs on the meta line.
+ *
+ * Inline rather than an icon dependency: three 12px marks do not justify a
+ * package, and `currentColor` keeps them on the same ink as the text they sit
+ * beside in both themes.
+ */
+function Glyph({ name }: { name: "company" | "place" | "age" }) {
+  const common = {
+    width: 12,
+    height: 12,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+    className: "shrink-0 opacity-70",
+  };
+  if (name === "company") {
+    return (
+      <svg {...common}>
+        <path d="M2.5 13.5V3.2a.7.7 0 0 1 .7-.7h5.6a.7.7 0 0 1 .7.7v10.3M9.5 13.5V6.8h3.3a.7.7 0 0 1 .7.7v6M1 13.5h14M5 5.2h1.5M5 7.7h1.5M5 10.2h1.5" />
+      </svg>
+    );
+  }
+  if (name === "place") {
+    return (
+      <svg {...common}>
+        <path d="M8 14.5s5-4.2 5-8a5 5 0 0 0-10 0c0 3.8 5 8 5 8Z" />
+        <circle cx="8" cy="6.4" r="1.8" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 4.4V8l2.4 1.6" />
+    </svg>
+  );
+}
+
 export function ScoreHero({
   score,
   matchCategory,
-  summary,
   company,
   location,
+  age,
   title,
-  meta,
   actions,
 }: {
   score: number | null;
   matchCategory: MatchCategory | null;
-  /** One line of prose on why it reads this way. */
-  summary?: string | null;
   company: string;
   location: string | null;
+  /** "3 days old", or null where nothing dates the posting. */
+  age?: string | null;
   title: string;
-  /** Status, match and referral badges, above the title. */
-  meta?: ReactNode;
   /** The generate buttons, under the posting's facts. */
   actions?: ReactNode;
 }) {
-  const tone =
-    matchCategory === "priority_apply"
-      ? "var(--emerald)"
-      : matchCategory === "reject"
-        ? "var(--negative)"
-        : matchCategory === "referral_only"
-          ? "var(--warning)"
-          : "var(--gold)";
+  const tone = toneFor(matchCategory);
 
   return (
     <section className="flex flex-wrap items-end justify-between gap-x-10 gap-y-6 pt-2 pb-8">
       <div className="min-w-0 flex-1 basis-[22rem]">
-        {meta ? <div className="mb-3 flex flex-wrap items-center gap-1.5">{meta}</div> : null}
+        <p className="text-[10px] tracking-[0.18em] text-faint uppercase">Application</p>
 
-        <h1 className="n-display text-[clamp(2rem,4vw,2.875rem)] leading-[1.05] font-normal tracking-[-0.02em]">
+        <h1 className="n-display mt-2.5 text-[clamp(2rem,4vw,2.875rem)] leading-[1.05] font-normal tracking-[-0.02em]">
           {title}
         </h1>
 
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13.5px] text-muted">
-          <span>{company}</span>
-          {location ? <span className="text-faint">{location}</span> : null}
+        <div className="mt-3 flex flex-wrap items-center gap-x-[18px] gap-y-1.5 text-[13.5px] text-muted">
+          <span className="flex items-center gap-1.5">
+            <Glyph name="company" />
+            {company}
+          </span>
+          {location ? (
+            <span className="flex items-center gap-1.5 text-faint">
+              <Glyph name="place" />
+              {location}
+            </span>
+          ) : null}
+          {age ? (
+            <span className="flex items-center gap-1.5 text-faint">
+              <Glyph name="age" />
+              {age}
+            </span>
+          ) : null}
         </div>
-
-        {summary ? (
-          <p className="mt-4 max-w-[62ch] text-[15px] leading-relaxed text-muted">{summary}</p>
-        ) : null}
 
         {actions ? <div className="mt-6 flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
@@ -96,13 +152,15 @@ export function ScoreHero({
             >
               Worth applying
             </p>
-            <p className="mt-3 max-w-[34ch] text-[12.5px] text-muted sm:ml-auto">
-              Every filter passed and this company is a known sponsor, so no
-              scoring call was made.
-            </p>
-            <p className="mt-1 text-[11.5px] text-faint">
-              Generate a score if you want one anyway.
-            </p>
+            <span
+              className="mt-2.5 inline-block rounded-full border px-3 py-1 text-[11.5px] whitespace-nowrap"
+              style={{
+                color: "var(--gold)",
+                borderColor: "color-mix(in srgb, var(--gold) 50%, transparent)",
+              }}
+            >
+              Not scored · known sponsor
+            </span>
           </>
         ) : score === null ? (
           <>
@@ -144,110 +202,6 @@ export function ScoreHero({
   );
 }
 
-export type Figure = {
-  label: string;
-  value: string;
-  hint?: string;
-  tone?: "positive" | "warning" | "negative";
-};
-
-/**
- * The four figures, calm and evenly weighted.
- *
- * Deliberately not cards: hairlines between columns rather than boxes, so they
- * read as one row of facts underneath the score rather than four competing
- * claims beside it.
- */
-export function FigureRow({ figures }: { figures: Figure[] }) {
-  return (
-    <div className="grid grid-cols-1 border-y border-line sm:grid-cols-2 lg:grid-cols-4">
-      {figures.map((f, i) => (
-        <div
-          key={f.label}
-          className={`px-4 py-5 first:pl-0 ${
-            i % 2 === 1 ? "sm:border-l sm:border-line" : ""
-          } ${i > 0 ? "lg:border-l lg:border-line" : ""} ${
-            i >= 2 ? "border-t border-line sm:border-t lg:border-t-0" : ""
-          }`}
-        >
-          <p className="text-[10px] tracking-[0.14em] text-faint uppercase">{f.label}</p>
-          <p
-            className={`n-display mt-1.5 text-[21px] leading-tight font-semibold ${
-              f.tone === "negative"
-                ? "text-negative"
-                : f.tone === "warning"
-                  ? "text-warning"
-                  : f.tone === "positive"
-                    ? "text-positive"
-                    : ""
-            }`}
-          >
-            {f.value}
-          </p>
-          {f.hint ? (
-            <p className="n-mono mt-0.5 text-[11.5px] text-faint">{f.hint}</p>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Why it reads this way — what holds, and what fails.
- *
- * Two columns rather than one list, because "strong domain match" and "no visa
- * evidence" are not the same kind of fact and reading them interleaved makes
- * neither land.
- */
-export function Basis({
-  holding,
-  failing,
-}: {
-  holding: string[];
-  failing: string[];
-}) {
-  if (holding.length === 0 && failing.length === 0) return null;
-
-  return (
-    <div className="mt-8 grid gap-x-10 gap-y-7 sm:grid-cols-2">
-      {holding.length > 0 ? (
-        <div>
-          <p className="border-b border-line pb-2 text-[10px] tracking-[0.14em] text-positive uppercase">
-            What carries this application
-          </p>
-          {holding.map((item, i) => (
-            <p
-              key={i}
-              className="border-b py-3 text-[13.5px] text-muted"
-              style={{ borderColor: "var(--hair)" }}
-            >
-              {item}
-            </p>
-          ))}
-        </div>
-      ) : null}
-
-      {failing.length > 0 ? (
-        <div>
-          <p className="border-b border-line pb-2 text-[10px] tracking-[0.14em] text-warning uppercase">
-            What holds it back
-          </p>
-          {failing.map((item, i) => (
-            <p
-              key={i}
-              className="border-b py-3 text-[13.5px] text-muted"
-              style={{ borderColor: "var(--hair)" }}
-            >
-              {item}
-            </p>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 /** Low-frequency detail, behind a disclosure. Read once, then in the way. */
 export function OnNeed({
   title,
@@ -282,5 +236,3 @@ export function OnNeed({
     </details>
   );
 }
-
-export { MATCH_LABELS };
