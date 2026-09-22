@@ -1,6 +1,7 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
-import { Badge, Card, CardHeader, EmptyState } from "@/components/ui/base";
+import { EmptyState } from "@/components/ui/base";
 import { getBudgetStatus } from "@/features/ai/budget-queries";
 import { getPipelineSummary } from "@/features/pipeline/dashboard-queries";
 import { getRunOutcomes } from "@/features/ingestion/run-outcomes";
@@ -19,48 +20,62 @@ function relative(date: Date | null): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-function runTone(status: IngestionRunStatus) {
+/** The design states a run's outcome as coloured words, not as a chip. */
+function runToneClass(status: IngestionRunStatus): string {
   return status === "succeeded"
-    ? "positive"
+    ? "text-positive"
     : status === "partial"
-      ? "warning"
+      ? "text-warning"
       : status === "failed"
-        ? "negative"
-        : "info";
+        ? "text-negative"
+        : "text-muted";
 }
 
+/**
+ * One pile, as a rule and a number rather than a card (JSV2S1038).
+ *
+ * The design gives each pile a coloured 2px rule and nothing else — the bar
+ * above already carries the enclosure, so a second border around each figure
+ * would be the same information drawn twice.
+ */
 function Pile({
   label,
   count,
   hint,
   href,
-  tone,
+  rule,
+  dim = false,
 }: {
   label: string;
   count: number;
   hint: string;
   href?: string;
-  tone: "positive" | "warning" | "negative" | "neutral";
+  rule: string;
+  dim?: boolean;
 }) {
-  const colour = {
-    positive: "text-positive",
-    warning: "text-warning",
-    negative: "text-negative",
-    neutral: "text-muted",
-  }[tone];
-
   const body = (
-    <div className="px-4 py-3">
-      <div className={`text-2xl font-semibold tabular-nums ${colour}`}>{count}</div>
-      <div className="mt-0.5 text-xs font-medium">{label}</div>
-      <p className="mt-1 text-[11px] text-subtle">{hint}</p>
-    </div>
+    <>
+      <div
+        className="n-display text-[30px] leading-none font-semibold tabular-nums"
+        style={dim ? { color: "var(--faint)" } : undefined}
+      >
+        {count}
+      </div>
+      <div className={`mt-2 text-[13.5px] ${dim ? "text-muted" : ""}`}>{label}</div>
+      <p className="mt-0.5 text-xs text-subtle">{hint}</p>
+    </>
   );
 
   return (
-    <Card className={href ? "transition-colors hover:bg-surface-muted" : ""}>
-      {href ? <Link href={href}>{body}</Link> : body}
-    </Card>
+    <div className="pt-3" style={{ borderTop: `2px solid ${rule}` }}>
+      {href ? (
+        <Link href={href} className="block transition-opacity hover:opacity-80">
+          {body}
+        </Link>
+      ) : (
+        body
+      )}
+    </div>
   );
 }
 
@@ -95,7 +110,7 @@ function DrillDown({
   title: string;
   className?: string;
 }) {
-  if (!count) return <span className={`text-faint ${className}`}>—</span>;
+  if (!count) return <span className="text-subtle">—</span>;
   return (
     <Link
       href={href}
@@ -104,6 +119,41 @@ function DrillDown({
     >
       {count}
     </Link>
+  );
+}
+
+/** A metric inside an opened run: label in slate, figure in platinum. */
+function Metric({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      {label} <span style={{ color: "var(--platinum)" }}>{children}</span>
+    </div>
+  );
+}
+
+/** A budget window as a hairline meter — the design's only progress element. */
+function BudgetBar({
+  label,
+  spentUsd,
+  ceilingUsd,
+}: {
+  label: string;
+  spentUsd: number;
+  ceilingUsd: number;
+}) {
+  const pct = ceilingUsd > 0 ? Math.min(100, Math.round((spentUsd / ceilingUsd) * 100)) : 0;
+  return (
+    <div>
+      <div className="n-mono flex justify-between text-[12.5px] text-muted">
+        <span>{label}</span>
+        <span>
+          {formatUsd(spentUsd)} of {formatUsd(ceilingUsd)}
+        </span>
+      </div>
+      <div className="mt-2 h-1" style={{ background: "var(--hair)" }}>
+        <div className="h-1 bg-accent" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -127,255 +177,253 @@ export default async function PipelinePage() {
   const total = piles.pass + piles.review + piles.reject + piles.unevaluated;
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight">Pipeline</h1>
-        <p className="mt-0.5 text-xs text-muted">
-          {total === 0
-            ? "No jobs ingested yet."
-            : `${total} job${total === 1 ? "" : "s"} ingested. Only qualified jobs become applications.`}
-        </p>
+    <div className="mx-auto max-w-[1060px]">
+      <h1 className="n-display text-[38px] leading-tight font-normal tracking-[-0.02em]">
+        Pipeline
+      </h1>
+      <p className="mt-1.5 text-sm text-muted">
+        {total === 0
+          ? "No jobs ingested yet. Only qualified jobs become applications."
+          : `${total} job${total === 1 ? "" : "s"} ingested. Only qualified jobs become applications.`}
+      </p>
+
+      {/* --- The piles (JSV2S1038) -------------------------------------
+          A single proportional bar first, then the four figures beneath it.
+          The bar is the only place the relative size of the piles is legible
+          at a glance; `flexGrow` carries the counts so it needs no arithmetic
+          and a zero pile simply disappears. */}
+      <div
+        className="mt-8 flex h-11 items-stretch overflow-hidden rounded"
+        style={{ background: "var(--hair)" }}
+        aria-hidden="true"
+      >
+        <div
+          style={{ flexGrow: piles.pass, background: "color-mix(in srgb, var(--positive) 55%, transparent)" }}
+        />
+        <div
+          style={{ flexGrow: piles.review, background: "color-mix(in srgb, var(--warning) 60%, transparent)" }}
+        />
+        <div
+          style={{ flexGrow: piles.reject, background: "color-mix(in srgb, var(--negative) 55%, transparent)" }}
+        />
+        <div style={{ flexGrow: piles.unevaluated, background: "var(--border)" }} />
       </div>
 
-      {/* --- The piles (JSV2S1038) ------------------------------------- */}
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-4 grid gap-x-6 sm:grid-cols-2 lg:grid-cols-4">
         <Pile
           label="Qualified"
           count={piles.pass}
           hint="Passed all four filters — these became applications"
           href="/applications"
-          tone="positive"
+          rule="var(--positive)"
         />
         <Pile
           label="Needs review"
           count={piles.review}
           hint="A filter could not be confirmed — one click to promote"
           href="/review"
-          tone="warning"
+          rule="var(--warning)"
         />
         <Pile
           label="Screened out"
           count={piles.reject}
           hint="A filter contradicted — kept, never deleted"
           href="/review?view=rejected"
-          tone="negative"
+          rule="var(--negative)"
         />
         <Pile
           label="Not evaluated"
           count={piles.unevaluated}
           hint="Ingested before the gate existed — run prequalify:backfill"
-          tone="neutral"
+          rule="var(--hair)"
+          dim
         />
       </div>
 
       {/* --- Next run --------------------------------------------------- */}
-      <Card>
-        <CardHeader
-          title="Next scoring run"
-          meta={awaiting === 0 ? "nothing waiting" : `${awaiting} job${awaiting === 1 ? "" : "s"} queued`}
-        />
-        <div className="space-y-2 px-4 py-3 text-xs">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-subtle">Today</span>
-            <span className="tabular-nums">
-              {formatUsd(budget.day.spentUsd)} of {formatUsd(budget.day.ceilingUsd)}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-subtle">This month</span>
-            <span className="tabular-nums">
-              {formatUsd(budget.month.spentUsd)} of {formatUsd(budget.month.ceilingUsd)}
-            </span>
-          </div>
-          {budget.blocked ? (
-            <p className="text-warning">{budget.reason}</p>
-          ) : awaiting > 0 ? (
-            <p className="text-subtle">
-              Estimated {formatUsd(awaiting * 0.08)} to clear the queue at ~$0.08 a score.
-            </p>
-          ) : null}
+      <section className="mt-10 rounded-[7px] bg-surface px-6 py-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
+          <h2 className="n-display text-[21px] font-semibold">Next scoring run</h2>
+          <span className="n-mono text-[12.5px] text-muted">
+            {awaiting === 0
+              ? "nothing waiting"
+              : `${awaiting} queued · about ${formatUsd(awaiting * 0.08)} to clear`}
+          </span>
         </div>
-      </Card>
+
+        <div className="mt-[18px] grid gap-[22px] sm:grid-cols-2">
+          <BudgetBar
+            label="Today"
+            spentUsd={budget.day.spentUsd}
+            ceilingUsd={budget.day.ceilingUsd}
+          />
+          <BudgetBar
+            label="This month"
+            spentUsd={budget.month.spentUsd}
+            ceilingUsd={budget.month.ceilingUsd}
+          />
+        </div>
+
+        {budget.blocked ? (
+          <p className="mt-5 text-[12.5px] text-warning">{budget.reason}</p>
+        ) : awaiting > 0 ? (
+          <p className="mt-5 text-[12.5px] text-subtle">
+            Estimated at ~$0.08 a score. The next scheduled run clears the queue.
+          </p>
+        ) : null}
+      </section>
 
       {/* A qualified job with no application means the gate and the writer
           disagreed — worth surfacing rather than leaving to be noticed. */}
       {orphaned > 0 ? (
-        <Card>
-          <div className="px-4 py-3 text-xs text-warning">
-            {orphaned} qualified job{orphaned === 1 ? " has" : "s have"} no application.
-            That should not happen — the ingest transaction creates one for every
-            pass. Worth investigating before the next run.
-          </div>
-        </Card>
+        <p className="mt-4 rounded-[7px] bg-surface px-6 py-4 text-[12.5px] text-warning">
+          {orphaned} qualified job{orphaned === 1 ? " has" : "s have"} no application.
+          That should not happen — the ingest transaction creates one for every
+          pass. Worth investigating before the next run.
+        </p>
       ) : null}
 
-      {/* --- Per-run outcomes (JSV2S1158) ------------------------------- */}
-      <Card>
-        <CardHeader
-          title="Runs"
-          meta={
-            unattributed > 0
-              ? `${outcomes.length} recorded · ${unattributed} jobs predate run tracking`
-              : `last ${outcomes.length}`
-          }
+      {/* --- Per-run outcomes (JSV2S1158) -------------------------------
+          Twelve columns became a summary line that opens. The figures are the
+          same ones; a twelve-column table at this type size was unreadable and
+          the design has no table here. The drill-through links survive inside
+          the opened row, which is where there is finally room to label them. */}
+      <div className="mt-10 flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="n-display text-2xl font-normal">Runs</h2>
+        <span className="n-mono text-[12.5px] text-subtle">
+          {unattributed > 0
+            ? `${outcomes.length} recorded · ${unattributed} jobs predate run tracking`
+            : `last ${outcomes.length}`}
+        </span>
+      </div>
+
+      {outcomes.length === 0 ? (
+        <EmptyState
+          title="No runs recorded"
+          hint="Every upload and scheduled fetch now creates a run. The next one will appear here."
         />
-        {outcomes.length === 0 ? (
-          <EmptyState
-            title="No runs recorded"
-            hint="Every upload and scheduled fetch now creates a run. The next one will appear here."
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-line text-left text-[10px] tracking-wide text-faint uppercase">
-                  <th className="px-4 py-2 font-medium">Run</th>
-                  {/* The fetch half: what the actor returned and what never
-                      became a job. These are stamped at ingest — a duplicate
-                      or a validation reject leaves no row to count later. */}
-                  <th className="px-2 py-2 text-right font-medium">Fetched</th>
-                  <th className="px-2 py-2 text-right font-medium">Duplicate</th>
-                  <th className="px-2 py-2 text-right font-medium">Rejected</th>
-                  <th className="border-l border-line px-2 py-2 text-right font-medium">
-                    Ingested
-                  </th>
-                  {/* The outcome half: derived live, because it keeps changing. */}
-                  <th className="px-2 py-2 text-right font-medium">Auto qual.</th>
-                  <th className="px-2 py-2 text-right font-medium">Force qual.</th>
-                  <th className="px-2 py-2 text-right font-medium">Review</th>
-                  <th className="px-2 py-2 text-right font-medium">Screened</th>
-                  <th className="px-2 py-2 text-right font-medium">Binned</th>
-                  {/* JSV2S1144 — what the fetch cost, and what that works out
-                      at per application it actually produced. */}
-                  <th className="border-l border-line px-2 py-2 text-right font-medium">
-                    Cost
-                  </th>
-                  <th className="px-4 py-2 text-right font-medium">Per app.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {outcomes.map((o) => (
-                  <tr key={o.runId} className="border-b border-line last:border-0">
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{o.source}</span>
-                        <Badge tone={runTone(o.status)}>
-                          {INGESTION_RUN_LABELS[o.status] ?? o.status}
-                        </Badge>
-                      </div>
-                      <div className="mt-0.5 text-subtle">
-                        {relative(o.startedAt)}
-                        {!o.reconciles ? (
-                          <span
-                            className="ml-1.5 text-warning"
-                            title="fetched does not equal ingested + duplicate + rejected"
-                          >
-                            · does not reconcile
-                          </span>
-                        ) : null}
-                      </div>
-                      <div
-                        className="mt-0.5 font-mono text-[10px] text-faint"
-                        title="Run id"
-                      >
-                        {o.runId}
-                      </div>
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-muted">
-                      {o.fetched || "—"}
-                    </td>
-                    {/* Paid for and discarded. The actor bills per result, so a
-                        high number here is money spent on jobs already held —
-                        which is what skipJobId exists to prevent. */}
-                    <td className="px-2 py-2 text-right tabular-nums text-muted">
-                      {o.duplicates || "—"}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-negative">
-                      {o.rejectedAtValidation || "—"}
-                    </td>
-                    <td className="border-l border-line px-2 py-2 text-right font-medium tabular-nums">
-                      {o.landed || "—"}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-positive">
-                      <DrillDown
-                        count={o.autoQualified}
-                        href={`/applications?fetch=${o.runId}`}
-                        title="Applications created by this fetch"
-                        className="text-positive"
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums">
-                      <DrillDown
-                        count={o.forceQualified}
-                        href={`/applications?fetch=${o.runId}`}
-                        title="Promoted by hand from this fetch"
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-warning">
-                      <DrillDown
-                        count={o.needsReview}
-                        href={`/review?fetch=${o.runId}`}
-                        title="Waiting on a decision from this fetch"
-                        className="text-warning"
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-muted">
-                      <DrillDown
-                        count={o.screenedOut}
-                        href={`/review?view=rejected&fetch=${o.runId}`}
-                        title="Screened out by the gate on this fetch"
-                        className="text-muted"
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-faint">
-                      <DrillDown
-                        count={o.binned}
-                        href={`/review?view=binned&fetch=${o.runId}`}
-                        title="Moved to the Bin from this fetch"
-                        className="text-faint"
-                      />
-                    </td>
-                    <td className="border-l border-line px-2 py-2 text-right tabular-nums">
-                      {o.costUsd === null ? (
-                        <span className="text-faint" title="This source costs nothing">
-                          free
-                        </span>
-                      ) : (
-                        formatUsd(o.costUsd)
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-muted">
-                      {o.costPerApplicationUsd === null
-                        ? "—"
-                        : formatUsd(o.costPerApplicationUsd)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      ) : (
+        <div className="mt-3.5 border-t border-line">
+          {outcomes.map((o) => (
+            <details key={o.runId} className="group border-b border-line">
+              <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-3.5 sm:grid-cols-[110px_minmax(0,1fr)_auto_auto] [&::-webkit-details-marker]:hidden">
+                <span className="text-[13.5px]">{o.source}</span>
+                <span className="n-mono hidden truncate text-[12.5px] text-muted sm:block">
+                  {o.fetched} fetched · {o.landed} ingested · {o.autoQualified + o.forceQualified}{" "}
+                  qualified
+                  {o.costUsd === null ? "" : ` · ${formatUsd(o.costUsd)}`}
+                </span>
+                <span className={`text-[12.5px] whitespace-nowrap ${runToneClass(o.status)}`}>
+                  {INGESTION_RUN_LABELS[o.status] ?? o.status}
+                </span>
+                <span className="n-mono text-[12.5px] whitespace-nowrap text-subtle">
+                  {relative(o.startedAt)}
+                </span>
+              </summary>
 
-        {/* The funnel arithmetic, spelled out once so the columns are readable
-            without guessing what adds to what. */}
-        {outcomes.length > 0 ? (
-          <p className="border-t border-line px-4 py-2 text-[11px] text-subtle">
-            Fetched = Duplicate + Rejected + Ingested. Duplicates were paid for
-            and discarded — the actor bills per result, so that column is the
-            cost of fetching jobs already held. Cost per application is the run
-            divided by the applications it produced, which is far higher than
-            the per-job cost and is the figure that matters.
-          </p>
-        ) : null}
+              <div className="n-mono grid gap-x-5 gap-y-3 pb-4 text-[12.5px] text-muted sm:grid-cols-3 lg:grid-cols-4">
+                <Metric label="Fetched">{o.fetched || "—"}</Metric>
+                {/* Paid for and discarded. The actor bills per result, so a
+                    high number here is money spent on jobs already held —
+                    which is what skipJobId exists to prevent. */}
+                <Metric label="Duplicate">{o.duplicates || "—"}</Metric>
+                <Metric label="Rejected">
+                  <span className="text-negative">{o.rejectedAtValidation || "—"}</span>
+                </Metric>
+                <Metric label="Ingested">{o.landed || "—"}</Metric>
 
-        {unattributed > 0 ? (
-          <p className="border-t border-line px-4 py-2 text-[11px] text-subtle">
-            {unattributed} jobs were ingested before runs were recorded and belong
-            to no run. They are counted in the queues above but cannot appear in
-            this table — said plainly rather than left to look like a discrepancy.
-          </p>
-        ) : null}
-      </Card>
+                <Metric label="Auto qualified">
+                  <DrillDown
+                    count={o.autoQualified}
+                    href={`/applications?fetch=${o.runId}`}
+                    title="Applications created by this fetch"
+                    className="text-positive"
+                  />
+                </Metric>
+                <Metric label="Force qualified">
+                  <DrillDown
+                    count={o.forceQualified}
+                    href={`/applications?fetch=${o.runId}`}
+                    title="Promoted by hand from this fetch"
+                  />
+                </Metric>
+                <Metric label="Review">
+                  <DrillDown
+                    count={o.needsReview}
+                    href={`/review?fetch=${o.runId}`}
+                    title="Waiting on a decision from this fetch"
+                    className="text-warning"
+                  />
+                </Metric>
+                <Metric label="Screened out">
+                  <DrillDown
+                    count={o.screenedOut}
+                    href={`/review?view=rejected&fetch=${o.runId}`}
+                    title="Screened out by the gate on this fetch"
+                    className="text-muted"
+                  />
+                </Metric>
+                <Metric label="Binned">
+                  <DrillDown
+                    count={o.binned}
+                    href={`/review?view=binned&fetch=${o.runId}`}
+                    title="Moved to the Bin from this fetch"
+                    className="text-muted"
+                  />
+                </Metric>
+
+                {/* JSV2S1144 — what the fetch cost, and what that works out
+                    at per application it actually produced. */}
+                <Metric label="Cost">
+                  {o.costUsd === null ? (
+                    <span className="text-subtle" title="This source costs nothing">
+                      free
+                    </span>
+                  ) : (
+                    formatUsd(o.costUsd)
+                  )}
+                </Metric>
+                <Metric label="Per application">
+                  {o.costPerApplicationUsd === null ? "—" : formatUsd(o.costPerApplicationUsd)}
+                </Metric>
+
+                {!o.reconciles ? (
+                  <p
+                    className="text-warning sm:col-span-3 lg:col-span-4"
+                    title="fetched does not equal ingested + duplicate + rejected"
+                  >
+                    Does not reconcile — something was lost between the actor and
+                    the database without being counted.
+                  </p>
+                ) : null}
+                <p className="text-subtle sm:col-span-3 lg:col-span-4" title="Run id">
+                  {o.runId}
+                </p>
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+
+      {/* The funnel arithmetic, spelled out once so the figures are readable
+          without guessing what adds to what. */}
+      {outcomes.length > 0 ? (
+        <p className="mt-4 max-w-[78ch] text-[11.5px] text-subtle">
+          Fetched = Duplicate + Rejected + Ingested. Duplicates were paid for and
+          discarded — the actor bills per result, so that figure is the cost of
+          fetching jobs already held. Cost per application is the run divided by
+          the applications it produced, which is far higher than the per-job cost
+          and is the figure that matters.
+        </p>
+      ) : null}
+
+      {unattributed > 0 ? (
+        <p className="mt-2 max-w-[78ch] text-[11.5px] text-subtle">
+          {unattributed} jobs were ingested before runs were recorded and belong
+          to no run. They are counted in the piles above but cannot appear in
+          this list — said plainly rather than left to look like a discrepancy.
+        </p>
+      ) : null}
     </div>
   );
 }

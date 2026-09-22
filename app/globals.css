@@ -62,6 +62,15 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-subtle: var(--subtle);
+  /*
+   * `text-faint` was used in 40 places and generated nothing.
+   *
+   * `--faint` existed as a raw variable but was never mapped here, so Tailwind
+   * emitted no utility for it and every one of those elements silently
+   * inherited full foreground colour — the exact opposite of the intent, and
+   * invisible in review because a missing utility looks like a styling choice.
+   */
+  --color-faint: var(--faint);
   --color-line: var(--border);
   --color-line-strong: var(--border-strong);
   --color-accent: var(--accent);
