@@ -29,7 +29,7 @@ function CityCard({ summary, priority }: { summary: CitySummary; priority: boole
     <Link
       href={`/applications?city=${city.id}`}
       className="group relative block overflow-hidden rounded-xl border transition-colors"
-      style={{ borderColor: "var(--n-border)", background: "var(--n-card)" }}
+      style={{ borderColor: "var(--border)", background: "var(--card)" }}
     >
       <div className="relative aspect-[3/2] w-full overflow-hidden">
         {/* The blur is inlined in the config, so the card has its colour before
@@ -67,9 +67,9 @@ function CityCard({ summary, priority }: { summary: CitySummary; priority: boole
           <span
             className="absolute top-3 left-3 rounded-full border px-2.5 py-1 text-[10px] font-semibold tracking-[0.14em] uppercase"
             style={{
-              borderColor: "var(--n-gold)",
-              color: "var(--n-gold)",
-              background: "rgba(11,11,15,0.6)",
+              borderColor: "var(--gold)",
+              color: "var(--gold)",
+              background: "rgba(11, 11, 15, 0.62)",
             }}
           >
             #1 Priority
@@ -80,7 +80,7 @@ function CityCard({ summary, priority }: { summary: CitySummary; priority: boole
           className="absolute top-3 right-3 grid size-8 place-items-center rounded-full border text-sm transition-transform group-hover:translate-x-0.5"
           style={{
             borderColor: "rgba(229,228,226,0.35)",
-            color: "var(--n-text)",
+            color: "var(--platinum)",
             background: "rgba(11,11,15,0.45)",
           }}
           aria-hidden
@@ -90,25 +90,25 @@ function CityCard({ summary, priority }: { summary: CitySummary; priority: boole
 
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between p-4">
           <div>
-            <h2 className="n-display text-3xl leading-none" style={{ color: "var(--n-text)" }}>
+            <h2 className="n-display text-3xl leading-none" style={{ color: "var(--platinum)" }}>
               {city.name}
             </h2>
             <p
               className="mt-1.5 text-[10px] font-medium tracking-[0.18em] uppercase"
-              style={{ color: "var(--n-text-dim)" }}
+              style={{ color: "var(--slate)" }}
             >
               {city.country}
             </p>
             <p className="mt-3 flex items-baseline gap-2">
               <span
                 className="n-display text-4xl leading-none"
-                style={{ color: empty ? "var(--n-text-dim)" : "var(--n-text)" }}
+                style={{ color: empty ? "var(--slate)" : "var(--platinum)" }}
               >
                 {summary.readyToday}
               </span>
               <span
                 className="text-[10px] font-medium tracking-[0.16em] uppercase"
-                style={{ color: "var(--n-text-dim)" }}
+                style={{ color: "var(--slate)" }}
               >
                 ready today
               </span>
@@ -120,8 +120,8 @@ function CityCard({ summary, priority }: { summary: CitySummary; priority: boole
               <span
                 className="n-display grid size-12 place-items-center rounded-full border text-lg"
                 style={{
-                  borderColor: "var(--n-gold)",
-                  color: "var(--n-gold)",
+                  borderColor: "var(--gold)",
+                  color: "var(--gold)",
                   background: "rgba(11,11,15,0.55)",
                 }}
               >
@@ -129,7 +129,7 @@ function CityCard({ summary, priority }: { summary: CitySummary; priority: boole
               </span>
               <span
                 className="text-[9px] font-medium tracking-[0.16em] uppercase"
-                style={{ color: "var(--n-text-dim)" }}
+                style={{ color: "var(--slate)" }}
               >
                 best
               </span>
@@ -140,12 +140,12 @@ function CityCard({ summary, priority }: { summary: CitySummary; priority: boole
 
       <div
         className="flex items-center gap-3 px-4 py-2.5 text-[11px]"
-        style={{ color: "var(--n-text-dim)", borderTop: "1px solid var(--n-border)" }}
+        style={{ color: "var(--slate)", borderTop: "1px solid var(--border)" }}
       >
         <span>{summary.inPlay} in play</span>
-        <span style={{ color: "var(--n-border)" }}>|</span>
+        <span style={{ color: "var(--border)" }}>|</span>
         <span>{summary.fresh} new</span>
-        <span style={{ color: "var(--n-border)" }}>|</span>
+        <span style={{ color: "var(--border)" }}>|</span>
         <span className="n-mono">{relative(summary.lastSeenAt)}</span>
       </div>
     </Link>
@@ -158,10 +158,10 @@ export function CityGrid({ summaries }: { summaries: CitySummary[] }) {
   return (
     <div className="-mt-8 pt-8 pb-10">
       <header className="mb-8">
-        <h1 className="n-display text-5xl leading-none" style={{ color: "var(--n-text)" }}>
+        <h1 className="n-display text-5xl leading-none" style={{ color: "var(--platinum)" }}>
           Applications
         </h1>
-        <p className="mt-3 text-sm" style={{ color: "var(--n-text-dim)" }}>
+        <p className="mt-3 text-sm" style={{ color: "var(--slate)" }}>
           {tracked} tracked across {summaries.length} target cities. Open a city to
           work its table.
         </p>
@@ -175,7 +175,7 @@ export function CityGrid({ summaries }: { summaries: CitySummary[] }) {
 
       <footer
         className="mt-10 border-t pt-4 text-[11px]"
-        style={{ borderColor: "var(--n-border)", color: "var(--n-text-dim)" }}
+        style={{ borderColor: "var(--border)", color: "var(--slate)" }}
       >
         Cities follow the nightly fetch plan — add a location and its card appears.
       </footer>

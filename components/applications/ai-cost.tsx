@@ -1,7 +1,7 @@
 import type { ApplicationCost } from "@/features/ai/queries";
 import { formatUsd, GROUNDING_COST_PER_REQUEST } from "@/lib/ai/pricing";
 import type { GroundingUsage } from "@/features/ai/grounding";
-import { Card, CardHeader } from "@/components/ui/base";
+import { Panel, PanelGrid } from "@/components/applications/detail/section";
 
 /**
  * JSV2S1132 — AI cost for one application, per run.
@@ -9,6 +9,10 @@ import { Card, CardHeader } from "@/components/ui/base";
  * Deliberately itemised rather than a single number: the point is to see which
  * task and which model the money went to, because that is the only actionable
  * form. A total alone tells you nothing you can change.
+ *
+ * Three panels (JSV2S1172): what it cost, where it went, and how close the
+ * month is to the grounding cliff — the three questions asked here, in the
+ * order they are asked.
  */
 
 const compactTokens = new Intl.NumberFormat("en-US", {
@@ -16,11 +20,14 @@ const compactTokens = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
 });
 
-function Row({ label, value }: { label: string; value: string }) {
+/** A share of the total, as a hairline bar. Zero total means no bar to draw. */
+function Bar({ ratio, tone = "var(--gold)" }: { ratio: number; tone?: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="text-subtle">{label}</span>
-      <span className="tabular-nums">{value}</span>
+    <div className="mt-2 h-[3px] rounded-sm bg-surface-muted">
+      <div
+        className="h-[3px] rounded-sm"
+        style={{ width: `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`, background: tone }}
+      />
     </div>
   );
 }
@@ -32,40 +39,26 @@ function Row({ label, value }: { label: string; value: string }) {
  * not this application's — grounding bills per request against a shared 5,000,
  * so the number that matters is how close the account is to the cliff.
  */
-function GroundingMeter({ grounding }: { grounding: GroundingUsage }) {
-  if (grounding.used === 0) return null;
-
+function GroundingPanel({ grounding }: { grounding: GroundingUsage }) {
   return (
-    <div className="border-t border-line px-4 py-2.5">
-      <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="text-subtle">Google Search grounding, this month</span>
-        <span
-          className={`tabular-nums ${
-            grounding.exhausted
-              ? "text-negative"
-              : grounding.warn
-                ? "text-warning"
-                : ""
-          }`}
-        >
-          {grounding.used.toLocaleString()} / {grounding.free.toLocaleString()}
-        </span>
-      </div>
+    <Panel label="Search grounding">
+      <p className="n-display mt-2 text-[30px] leading-none font-semibold tabular-nums">
+        {grounding.used.toLocaleString()}
+        <span className="text-[15px] text-faint"> / {grounding.free.toLocaleString()}</span>
+      </p>
 
-      <div className="mt-1.5 h-1 rounded-full bg-surface-muted">
-        <div
-          className={`h-1 rounded-full ${
-            grounding.exhausted
-              ? "bg-negative"
-              : grounding.warn
-                ? "bg-warning"
-                : "bg-positive"
-          }`}
-          style={{ width: `${Math.round(grounding.ratio * 100)}%` }}
-        />
-      </div>
+      <Bar
+        ratio={grounding.ratio}
+        tone={
+          grounding.exhausted
+            ? "var(--negative)"
+            : grounding.warn
+              ? "var(--warning)"
+              : "var(--emerald)"
+        }
+      />
 
-      <p className="mt-1.5 text-[11px] text-subtle">
+      <p className="mt-2.5 text-[12px] text-muted">
         {grounding.exhausted
           ? `Allowance spent. Each further grounded scoring run costs ${formatUsd(
               grounding.marginalUsd,
@@ -73,10 +66,10 @@ function GroundingMeter({ grounding }: { grounding: GroundingUsage }) {
           : grounding.warn
             ? `${grounding.remaining.toLocaleString()} left. Past this, each grounded run costs ${formatUsd(
                 GROUNDING_COST_PER_REQUEST,
-              )} and the totals above start understating spend.`
-            : `${grounding.remaining.toLocaleString()} left. Billed per request, not per token, so this is not in the figures above.`}
+              )} and the totals here start understating spend.`
+            : `${grounding.remaining.toLocaleString()} left. Billed per request, not per token, so this is not in the totals here.`}
       </p>
-    </div>
+    </Panel>
   );
 }
 
@@ -89,85 +82,124 @@ export function AiCostCard({
 }) {
   if (cost.runs.length === 0) {
     return (
-      <Card>
-        <CardHeader title="AI cost" />
-        <p className="px-4 py-3 text-xs text-muted">
-          Nothing generated yet, so nothing spent.
-        </p>
-      </Card>
+      <p className="text-[13.5px] text-muted">Nothing generated yet, so nothing spent.</p>
     );
   }
 
   return (
-    <Card>
-      <CardHeader
-        title="AI cost"
-        meta={`${cost.runs.length} run${cost.runs.length === 1 ? "" : "s"}`}
-        action={
-          <span className="text-sm font-semibold tabular-nums">
+    <div className="flex flex-col gap-5">
+      <PanelGrid min="250px">
+        <Panel label="This application">
+          <p
+            className="n-display mt-2 text-[44px] leading-none font-semibold tabular-nums"
+            style={{ color: "var(--gold)" }}
+          >
             {formatUsd(cost.totalUsd)}
-          </span>
-        }
-      />
+          </p>
+          <p className="mt-1.5 text-[12px] text-muted">
+            {cost.runs.length} run{cost.runs.length === 1 ? "" : "s"}
+            {cost.unratedRuns > 0
+              ? ` · ${cost.unratedRuns} with no rate on file, excluded`
+              : ""}
+            {cost.unmeasuredRuns > 0
+              ? ` · ${cost.unmeasuredRuns} reported no usage`
+              : ""}
+          </p>
 
-      {/*
-        JSV2S1142 — the split the spend decision turns on, above the per-run
-        detail. Two document lines would be a lie: one CVG call produces both
-        the CV and the letter, so they cannot be costed apart without paying
-        for the skill and master resume twice.
-      */}
-      <div className="grid grid-cols-3 gap-px border-b border-line bg-line">
-        {cost.byBucket.map((bucket) => (
-          <div key={bucket.key} className="bg-surface px-3 py-2">
-            <p className="text-[10px] tracking-wide text-faint uppercase">
-              {bucket.label}
-            </p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums">
-              {formatUsd(bucket.usd)}
-            </p>
-            <p className="text-[10.5px] text-subtle">
-              {bucket.runs} run{bucket.runs === 1 ? "" : "s"}
-            </p>
-            {/*
-              The model, next to its own cost. "Is SimG worth Opus 5?" is not a
-              question a total can answer — the price and the thing being paid
-              for have to sit together.
-            */}
-            {bucket.models.length > 0 ? (
-              <p className="truncate text-[10px] text-faint" title={bucket.models.join(", ")}>
-                {bucket.models.join(", ")}
+          {cost.byModel.length > 0 ? (
+            <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 border-t border-line pt-3 text-[12.5px] text-muted tabular-nums">
+              {cost.byModel.map((m) => (
+                <div key={m.key} className="contents">
+                  <span className="truncate">{m.label}</span>
+                  <span>{formatUsd(m.usd)}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </Panel>
+
+        {/*
+          JSV2S1142 — the split the spend decision turns on. Two document lines
+          would be a lie: one CVG call produces both the CV and the letter, so
+          they cannot be costed apart without paying for the skill and master
+          resume twice.
+        */}
+        <Panel label="Where it went">
+          {cost.byBucket.map((bucket) => (
+            <div
+              key={bucket.key}
+              className="border-b py-3 last:border-b-0"
+              style={{ borderColor: "var(--hair)" }}
+            >
+              <div className="flex items-baseline gap-3">
+                <span className="min-w-0 truncate text-[13.5px]">{bucket.label}</span>
+                <span className="n-display ml-auto text-[16px] whitespace-nowrap tabular-nums">
+                  {formatUsd(bucket.usd)}
+                </span>
+              </div>
+              <Bar ratio={cost.totalUsd > 0 ? bucket.usd / cost.totalUsd : 0} />
+              {/*
+                The model, next to its own cost. "Is SimG worth Opus 5?" is not
+                a question a total can answer — the price and the thing being
+                paid for have to sit together.
+              */}
+              <p
+                className="mt-1.5 truncate text-[11px] text-faint tabular-nums"
+                title={bucket.models.join(", ")}
+              >
+                {bucket.models.length > 0 ? bucket.models.join(", ") : "no model recorded"} ·{" "}
+                {bucket.runs} run{bucket.runs === 1 ? "" : "s"}
               </p>
-            ) : null}
-          </div>
-        ))}
-      </div>
+            </div>
+          ))}
 
-      {cost.evaluationShare > 0 ? (
-        <p className="border-b border-line px-4 py-2 text-[11.5px] text-muted">
-          SimG is{" "}
-          <span className="font-medium tabular-nums">
-            {Math.round(cost.evaluationShare * 100)}%
-          </span>{" "}
-          of this application&rsquo;s spend. Turn it off with{" "}
-          <code className="text-[11px]">SIMG_AUTOMATIC</code> in{" "}
-          <code className="text-[11px]">config/simg.ts</code> if that is not
-          buying enough.
+          {cost.evaluationShare > 0 ? (
+            <p className="mt-3 text-[11.5px] text-muted">
+              SimG is{" "}
+              <span className="font-medium tabular-nums">
+                {Math.round(cost.evaluationShare * 100)}%
+              </span>{" "}
+              of this application&rsquo;s spend. Turn it off with{" "}
+              <code className="n-mono text-[11px]">SIMG_AUTOMATIC</code> in{" "}
+              <code className="n-mono text-[11px]">config/simg.ts</code> if that is
+              not buying enough.
+            </p>
+          ) : null}
+        </Panel>
+
+        {grounding ? (
+          <GroundingPanel grounding={grounding} />
+        ) : (
+          <Panel label="Search grounding">
+            <p className="mt-2 text-[12.5px] text-muted">
+              {cost.groundedRuns > 0
+                ? `${cost.groundedRuns} grounded run${cost.groundedRuns === 1 ? "" : "s"} on this application.`
+                : "No run on this application used grounding."}
+            </p>
+          </Panel>
+        )}
+      </PanelGrid>
+
+      <div>
+        <p className="border-b border-line pb-2 text-[10px] tracking-[0.14em] text-faint uppercase">
+          Every run
         </p>
-      ) : null}
-
-      <ul className="divide-y divide-line">
         {cost.runs.map((run) => (
-          <li key={run.id} className="px-4 py-2 text-xs">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="font-medium">{run.taskLabel}</span>
-              <span className="tabular-nums">
+          <div
+            key={run.id}
+            className="border-b py-3"
+            style={{ borderColor: "var(--hair)" }}
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[13.5px]">{run.taskLabel}</span>
+              <span className="n-mono text-[13px] tabular-nums">
                 {run.cost ? formatUsd(run.cost.totalCost) : "—"}
               </span>
             </div>
-            <div className="mt-0.5 flex items-baseline justify-between gap-2 text-subtle">
+            <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2 text-[11.5px] text-faint">
               <span className="truncate">{run.model ?? "unknown model"}</span>
               {run.cost ? (
-                <span className="shrink-0 tabular-nums">
+                <span className="n-mono shrink-0 tabular-nums">
                   {compactTokens.format(run.cost.inputTokens)} in ·{" "}
                   {compactTokens.format(run.cost.outputTokens)} out
                   {run.cost.cacheCreationTokens + run.cost.cacheReadTokens > 0
@@ -179,29 +211,21 @@ export function AiCostCard({
               ) : null}
             </div>
             {run.cost && !run.cost.rated ? (
-              <p className="mt-0.5 text-warning">
+              <p className="mt-1 text-[11.5px] text-warning">
                 No rate on file for this model — excluded from the total.
               </p>
             ) : null}
             {!run.cost ? (
-              <p className="mt-0.5 text-subtle">
+              <p className="mt-1 text-[11.5px] text-subtle">
                 The provider reported no token usage for this run.
               </p>
             ) : null}
-          </li>
+          </div>
         ))}
-      </ul>
-
-      {cost.byModel.length > 1 ? (
-        <div className="space-y-1 border-t border-line px-4 py-2 text-xs">
-          {cost.byModel.map((m) => (
-            <Row key={m.key} label={m.label} value={formatUsd(m.usd)} />
-          ))}
-        </div>
-      ) : null}
+      </div>
 
       {cost.groundedRuns > 0 ? (
-        <p className="border-t border-line px-4 py-2 text-[11px] text-subtle">
+        <p className="text-[11.5px] text-subtle">
           {cost.groundedRuns} of this application&rsquo;s runs used Google Search
           grounding.{" "}
           {cost.groundingUsdBilled > 0
@@ -210,8 +234,6 @@ export function AiCostCard({
             : "Inside this month's free allowance, so it added nothing."}
         </p>
       ) : null}
-
-      {grounding ? <GroundingMeter grounding={grounding} /> : null}
-    </Card>
+    </div>
   );
 }

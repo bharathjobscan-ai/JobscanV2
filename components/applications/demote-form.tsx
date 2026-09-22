@@ -51,7 +51,7 @@ export function DemoteForm({ applicationId }: { applicationId: string }) {
         >
           Discard
         </button>
-        <span className="text-[11px] text-faint">
+        <span className="text-[11.5px] text-faint">
           Removes the application; the job keeps its row and verdict.
         </span>
       </div>
