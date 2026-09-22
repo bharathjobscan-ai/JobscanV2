@@ -278,25 +278,34 @@ export default async function ApplicationDetailPage({
 
   const fit = derivedCv ? pageFit(derivedCv) : null;
 
-  const generateButtons = (
-    <>
-      <GenerateButton
-        applicationId={application.id}
-        taskType="score"
-        label="Generate score"
-        disabled={application.isIncomplete || !!taskFor("score")}
-        disabledReason={blockedReason}
-        regenerate={application.jobScore !== null}
-      />
-      <GenerateButton
-        applicationId={application.id}
-        taskType="tailor_cv"
-        label="Generate CV + CL"
-        disabled={application.isIncomplete || !!taskFor("tailor_cv")}
-        disabledReason={blockedReason}
-        regenerate={!!resume}
-      />
-    </>
+  /*
+   * Each generate action sits where its result does (2026-09-23).
+   *
+   * Both used to sit in the masthead beside the role, where they read as two
+   * identical "Regenerate" buttons with nothing to say which was which. The
+   * score belongs to Overview and the documents to Material, and an action
+   * next to the thing it changes needs no label to disambiguate it.
+   */
+  const scoreAction = (
+    <GenerateButton
+      applicationId={application.id}
+      taskType="score"
+      label="Generate score"
+      disabled={application.isIncomplete || !!taskFor("score")}
+      disabledReason={blockedReason}
+      regenerate={application.jobScore !== null}
+    />
+  );
+
+  const materialAction = (
+    <GenerateButton
+      applicationId={application.id}
+      taskType="tailor_cv"
+      label="Generate CV + CL"
+      disabled={application.isIncomplete || !!taskFor("tailor_cv")}
+      disabledReason={blockedReason}
+      regenerate={!!resume}
+    />
   );
 
   /**
@@ -349,6 +358,11 @@ export default async function ApplicationDetailPage({
       </div>
 
       <StrategyPanel rows={strategyRows} />
+
+      {/* The score's own action, beside the verdict it produces. */}
+      <div className="mt-6 flex flex-wrap gap-2 border-t border-line pt-5">
+        {scoreAction}
+      </div>
     </>
   );
 
@@ -357,10 +371,16 @@ export default async function ApplicationDetailPage({
       <SectionHead title="Material" meta="Generated on qualification" />
 
       {!resume && !coverLetter ? (
-        <p className="mt-5 max-w-[60ch] text-[13.5px] text-muted">
-          Nothing generated yet. One pass writes the tailored CV and its cover
-          letter together.
-        </p>
+        <div className="mt-5">
+          <p className="max-w-[60ch] text-[13.5px] text-muted">
+            Nothing generated yet. One pass writes the tailored CV and its cover
+            letter together.
+          </p>
+          {/* The action, not just a description of it — a tab that explains
+              what would fill it and then makes you go elsewhere to do it is a
+              dead end. */}
+          <div className="mt-4 flex flex-wrap gap-2">{materialAction}</div>
+        </div>
       ) : (
         <>
           <PanelGrid min="210px" className="mt-5">
@@ -421,6 +441,12 @@ export default async function ApplicationDetailPage({
                 No summary captured — regenerate to see the classification and gaps.
               </p>
             )}
+          </div>
+
+          {/* Regenerating belongs here too, where the documents it replaces
+              are, rather than in a masthead two sections up. */}
+          <div className="mt-6 flex flex-wrap gap-2 border-t border-line pt-5">
+            {materialAction}
           </div>
         </>
       )}
@@ -784,21 +810,46 @@ export default async function ApplicationDetailPage({
     },
   ];
 
-  if (evaluation && simgProjection) {
-    tabs.push({
-      id: "simg",
-      label: "SimG",
-      meta: simgProjection.pendingCount > 0 ? `${simgProjection.pendingCount}` : undefined,
-      content: (
+  /*
+   * SimG is always a tab (2026-09-23).
+   *
+   * It used to appear only once an evaluation existed, so on every application
+   * in this database — none of which has a generated document — the tab was
+   * simply absent. A missing tab reads as a feature that does not exist; a tab
+   * that says what would fill it, and offers the button that fills it, reads as
+   * one that has not run yet.
+   */
+  tabs.push({
+    id: "simg",
+    label: "SimG",
+    meta:
+      evaluation && simgProjection && simgProjection.pendingCount > 0
+        ? `${simgProjection.pendingCount}`
+        : undefined,
+    content:
+      evaluation && simgProjection ? (
         <SimgWorklist
           applicationId={application.id}
           evaluation={evaluation}
           projection={simgProjection}
           measured={atsMeasured}
         />
+      ) : (
+        <section>
+          <SectionHead
+            title="SimG · three lenses on the resume"
+            meta="Runs after a CV exists"
+          />
+          <p className="mt-5 max-w-[68ch] text-[13.5px] text-muted">
+            SimG reads the resume as an ATS parser, as a recruiter with six
+            seconds, and as the hiring manager. Every edit shows the line it
+            replaces — accept and the score moves, discard and nothing changes.
+            It has nothing to read until a CV has been generated.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">{materialAction}</div>
+        </section>
       ),
-    });
-  }
+  });
 
   /*
    * Always present, even with nothing to show (2026-09-23).
@@ -863,7 +914,6 @@ export default async function ApplicationDetailPage({
           location={job.location}
           age={postingAge(job.postedAt, job.firstSeenAt)}
           title={job.title}
-          actions={generateButtons}
         />
 
         {/*
