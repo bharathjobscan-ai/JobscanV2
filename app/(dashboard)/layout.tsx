@@ -54,7 +54,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         className="sticky top-0 z-40 border-b border-line backdrop-blur-[14px]"
         style={{ background: "rgba(9, 11, 12, 0.72)" }}
       >
-        <div className="mx-auto flex min-h-[62px] max-w-[1248px] items-center gap-7 px-6 xl:px-14">
+        <div className="flex min-h-[62px] items-center gap-7 px-8 xl:px-14">
           <Link
             href="/applications"
             className="n-display flex-none text-[26px] leading-none font-semibold tracking-[-0.005em]"
@@ -89,9 +89,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1248px] flex-1 px-6 py-8 xl:px-14">
-        {children}
-      </main>
+      {/*
+        Full width, matching the header's gutter exactly. The 1248px cap put the
+        chrome's left edge well right of the page's on a wide monitor, so the
+        wordmark never lined up with the page title beneath it.
+      */}
+      <main className="w-full flex-1 px-8 py-8 xl:px-14">{children}</main>
     </div>
   );
 }

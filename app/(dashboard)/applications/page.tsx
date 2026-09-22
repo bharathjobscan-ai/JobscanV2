@@ -12,6 +12,7 @@ import { getApplicationCosts } from "@/features/ai/queries";
 import { cityById } from "@/config/cities";
 import { CityGrid } from "@/components/applications/city-grid";
 import { CityTable } from "@/components/applications/city-table";
+import { CityBackdrop } from "@/components/applications/city-backdrop";
 import { getCitySummaries } from "@/features/applications/cities";
 import { FilterPanel } from "@/components/ui/filter-panel";
 import { formatUsd } from "@/lib/ai/pricing";
@@ -83,9 +84,9 @@ export default async function ApplicationsPage({
 
   const [items, counts, incomplete, facets] = await Promise.all([
     listApplications({ view, selections, from, to, search }),
-    countByView(),
-    countIncomplete(),
-    getApplicationFacets(view),
+    countByView(city.id),
+    countIncomplete(city.id),
+    getApplicationFacets(view, city.id),
   ]);
 
   /**
@@ -100,38 +101,23 @@ export default async function ApplicationsPage({
 
   return (
     <div className="flex flex-col gap-5">
-      {/*
-        The city's photograph as a banner (JSV2S1172). The same image the card
-        carried on the way in, so arriving here confirms where you are instead
-        of making you read it.
-      */}
-      <div className="n-bleed relative -mt-8 mb-1 aspect-[2.4/1] max-h-[240px] w-full overflow-hidden">
-        {city.hero ? (
-          /* eslint-disable-next-line @next/next/no-img-element -- built to size
-             by scripts/build-city-images.mts and served locally. */
-          <img
-            src={city.hero}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        ) : null}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/55 to-background/25" />
+      <CityBackdrop city={city} />
 
-        <div className="absolute inset-0 mx-auto flex max-w-[1248px] flex-col justify-end px-6 pb-5 xl:px-14">
-          <Link
-            href="/applications"
-            className="text-[11px] text-muted underline-offset-2 hover:underline"
-          >
-            ← All cities
-          </Link>
-          <h1 className="n-display mt-1 text-5xl leading-none">{city.name}</h1>
-          <p
-            className="mt-1.5 text-[10px] font-medium tracking-[0.18em] uppercase"
-            style={{ color: "var(--slate)" }}
-          >
-            {city.country}
-          </p>
-        </div>
+      <div className="relative z-10 flex flex-col gap-5">
+      <div>
+        <Link
+          href="/applications"
+          className="text-[11px] text-muted underline-offset-2 hover:underline"
+        >
+          ← All cities
+        </Link>
+        <h1 className="n-display mt-1 text-5xl leading-none">{city.name}</h1>
+        <p
+          className="mt-1.5 text-[10px] font-medium tracking-[0.18em] uppercase"
+          style={{ color: "var(--slate)" }}
+        >
+          {city.country}
+        </p>
       </div>
 
       <div className="flex items-start justify-between gap-4">
@@ -225,6 +211,7 @@ export default async function ApplicationsPage({
       <p className="pb-4 text-[11px]" style={{ color: "var(--faint)" }}>
         {items.length} of {counts.all} shown · sorted by job score
       </p>
+      </div>
     </div>
   );
 }

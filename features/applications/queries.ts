@@ -124,6 +124,23 @@ const resumeScore = sql<number | null>`(
 /** The watchlist tier the gate recorded, for the company column's star. */
 const watchlistTier = sql<number | null>`(${rawJobs.prequalificationDetail}->'watchlist'->>'tier')::int`;
 
+/**
+ * Which applications belong to a city (JSV2S1172).
+ *
+ * Mirrors `cityForJob`: the gate's resolved preferred city first, falling back
+ * to the raw location string. Defined ONCE and shared by the list and the
+ * counts — they disagreed before this existed, with a city page reporting the
+ * global 124 above a table of 66, because the counts never filtered at all.
+ */
+export function cityPredicate(city: string | null | undefined) {
+  if (!city) return undefined;
+  const id = city.trim().toLowerCase();
+  return or(
+    sql`lower(${rawJobs.prequalificationDetail}->'location'->>'preferredCity') = ${id}`,
+    ilike(rawJobs.location, `%${id}%`),
+  );
+}
+
 const hasResume = exists(
   db
     .select({ one: sql`1` })
@@ -275,20 +292,8 @@ function applicationSelectionFilters(selections?: ApplicationSelections) {
   if (selections.company?.length) {
     clauses.push(inArray(rawJobs.company, selections.company));
   }
-  /*
-   * City (JSV2S1172). Mirrors `cityForJob`: the gate's resolved preferred city
-   * first, falling back to the raw location string. Expressed here rather than
-   * filtering in code because the table is paginated at 200 and a code-side
-   * filter would narrow a page that SQL had already truncated.
-   */
   if (selections.city?.length) {
-    const city = selections.city[0].toLowerCase();
-    clauses.push(
-      or(
-        sql`lower(${rawJobs.prequalificationDetail}->'location'->>'preferredCity') = ${city}`,
-        ilike(rawJobs.location, `%${city}%`),
-      )!,
-    );
+    clauses.push(cityPredicate(selections.city[0])!);
   }
   if (selections.fetch?.length) {
     clauses.push(inArray(rawJobs.ingestionRunId, selections.fetch));
@@ -391,8 +396,11 @@ export async function listApplications(
   });
 }
 
-export async function countByView(): Promise<Record<ApplicationView, number>> {
+export async function countByView(
+  city?: string | null,
+): Promise<Record<ApplicationView, number>> {
   const pending = pendingPredicate();
+  const where = cityPredicate(city);
   const [row] = await db
     .select({
       all: sql<number>`count(*)::int`,
@@ -401,7 +409,11 @@ export async function countByView(): Promise<Record<ApplicationView, number>> {
       active: sql<number>`count(*) filter (where ${applications.status} in ('applied','shortlisted','interview') and not ${pending})::int`,
       closed: sql<number>`count(*) filter (where ${applications.status} in ('offer','rejected_application','rejected_screening','rejected_interview','rejected_visa'))::int`,
     })
-    .from(applications);
+    .from(applications)
+    // Joined even when no city is given: the predicate reads rawJobs columns,
+    // and an inner join on a notNull unique FK cannot change the count.
+    .innerJoin(rawJobs, eq(rawJobs.id, applications.rawJobId))
+    .where(where);
 
   return {
     all: row?.all ?? 0,
@@ -482,13 +494,16 @@ export type ApplicationDetail = NonNullable<
 >;
 
 /** Jobs imported without a usable description, for the "needs attention" nudge. */
-export async function countIncomplete(): Promise<number> {
+export async function countIncomplete(city?: string | null): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(applications)
     .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
     .where(
-      sql`${rawJobs.description} is null or length(trim(${rawJobs.description})) < 50`,
+      and(
+        sql`${rawJobs.description} is null or length(trim(${rawJobs.description})) < 50`,
+        cityPredicate(city),
+      ),
     );
   return row?.n ?? 0;
 }
@@ -506,6 +521,7 @@ export const hasScoreAnalysis = isNotNull(applications.jobScoreAnalysis);
  */
 export async function getApplicationFacets(
   view: ApplicationView = "all",
+  city?: string | null,
 ): Promise<Record<string, { value: string; label: string; count: number }[]>> {
   const rows = await db
     .select({
@@ -521,7 +537,16 @@ export async function getApplicationFacets(
     .from(applications)
     .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
     .leftJoin(ingestionRuns, eq(ingestionRuns.id, rawJobs.ingestionRunId))
-    .where(viewFilter(view));
+    /*
+     * Scoped to the city as well as the view (JSV2S1172).
+     *
+     * Without this the panel offered every value in the database: London's
+     * filters listed "Netherlands (7)" and companies with no London job at
+     * all, and ticking one returned nothing — which reads as a broken filter
+     * rather than as an honest empty result. A facet must only offer what it
+     * can return.
+     */
+    .where(and(viewFilter(view), cityPredicate(city)));
 
   const tally = (
     values: (string | null)[],

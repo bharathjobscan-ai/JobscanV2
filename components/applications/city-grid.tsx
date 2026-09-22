@@ -156,10 +156,7 @@ export function CityGrid({ summaries }: { summaries: CitySummary[] }) {
   const tracked = summaries.reduce((n, s) => n + s.total, 0);
 
   return (
-    <div
-      data-surface="nocturne"
-      className="n-bleed -my-6 min-h-screen px-8 py-10 xl:px-14"
-    >
+    <div className="-mt-8 pt-8 pb-10">
       <header className="mb-8">
         <h1 className="n-display text-5xl leading-none" style={{ color: "var(--n-text)" }}>
           Applications
