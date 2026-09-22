@@ -1,40 +1,26 @@
 import Link from "next/link";
 
-import {
-  MatchBadge,
-  ReferralBadge,
-  ScoreBadge,
-  StatusBadge,
-} from "@/components/applications/badges";
-import { PreferredCityBadge } from "@/components/applications/prequal-badges";
-import { Badge, Card, EmptyState, LinkButton } from "@/components/ui/base";
+import { Card, EmptyState, LinkButton } from "@/components/ui/base";
 import { getApplicationCosts } from "@/features/ai/queries";
 import { cityById } from "@/config/cities";
 import { CityGrid } from "@/components/applications/city-grid";
 import { CityTable } from "@/components/applications/city-table";
 import { CityBackdrop } from "@/components/applications/city-backdrop";
 import { getCitySummaries } from "@/features/applications/cities";
-import { FilterPanel } from "@/components/ui/filter-panel";
+import { CityFilters } from "@/components/applications/city-filters";
 import { formatUsd } from "@/lib/ai/pricing";
 import {
   countByView,
   countIncomplete,
   getApplicationFacets,
   listApplications,
+  relativeCutoff,
 } from "@/features/applications/queries";
 import {
   APPLICATION_VIEWS,
   VIEW_LABELS,
   type ApplicationView,
 } from "@/lib/config/constants";
-
-function relative(date: Date): string {
-  const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 30) return `${days}d ago`;
-  return `${Math.floor(days / 30)}mo ago`;
-}
 
 export default async function ApplicationsPage({
   searchParams,
@@ -65,20 +51,35 @@ export default async function ApplicationsPage({
 
 
   /**
-   * Faceted filtering (JSV2S1159). Unrecognised values from a hand-edited URL
-   * are narrowed away in the query layer rather than raised here.
+   * Faceted filtering (JSV2S1159, JSV2S1172). Unrecognised values from a
+   * hand-edited URL are narrowed away in the query layer rather than raised
+   * here.
+   *
+   * The multi-value facets the generic panel used are still honoured from the
+   * URL so older links keep working, even though the city panel now writes one
+   * value per axis.
    */
-  const FACETS = ["match", "referral", "company", "source", "country", "fetch"] as const;
+  const MULTI = ["match", "referral", "company", "source", "country", "fetch"] as const;
+  // Taken whole, never split: a location is "London Area, United Kingdom", and
+  // comma-splitting it produced a filter that could never match anything.
+  const SINGLE = ["location", "posted", "visa", "tier", "minJob", "minResume"] as const;
   const selections: Record<string, string[]> = {};
-  for (const key of FACETS) {
+  for (const key of MULTI) {
     const values = params[key]?.split(",").filter(Boolean) ?? [];
     if (values.length > 0) selections[key] = values;
+  }
+  for (const key of SINGLE) {
+    const value = params[key]?.trim();
+    if (value) selections[key] = [value];
   }
   // The city is a route, not a facet — it is not offered in the panel and
   // cannot be unticked, so it is applied separately from the user's selections.
   selections.city = [city.id];
   const isDate = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
-  const from = isDate(params.from);
+  // "Date uploaded" is the relative face of the existing ingest-date range, so
+  // it resolves to the same `from` bound rather than adding a second axis that
+  // could contradict it.
+  const from = isDate(params.from) ?? relativeCutoff(params.uploaded);
   const to = isDate(params.to);
   const search = params.q?.trim() || null;
 
@@ -157,29 +158,24 @@ export default async function ApplicationsPage({
         })}
       </nav>
 
-      {/* JSV2S1159 — the same panel as the pre-qualification queue, asked of a
-          different subject: not "why was this screened out" but "which of these
-          needs a referral, and which fetch did they come from". */}
-      <FilterPanel
-        basePath="/applications"
-        preserve={{ view: view === "all" ? undefined : view, city: city.id }}
-        categories={[
-          { key: "match", label: "Match" },
-          { key: "referral", label: "Referral" },
-          { key: "company", label: "Company" },
-          { key: "source", label: "Source" },
-          { key: "country", label: "Country" },
-          { key: "fetch", label: "Fetch" },
-        ]}
+      {/* JSV2S1172 — the design's inline panel: it pushes the table down
+          rather than covering it, because a popover this tall hides the rows
+          you are filtering. */}
+      <CityFilters
+        cityId={city.id}
+        view={view === "all" ? undefined : view}
         facets={facets}
-        initial={selections}
-        initialFrom={from}
-        initialTo={to}
-        initialSearch={search}
-        resultCount={items.length}
-        searchPlaceholder="Search title or company"
-        dateLabel="Ingested between"
-        noun="application"
+        initial={{
+          q: search ?? "",
+          uploaded: params.uploaded ?? "",
+          posted: selections.posted?.[0] ?? "",
+          fetch: selections.fetch?.[0] ?? "",
+          location: selections.location?.[0] ?? "",
+          visa: selections.visa?.[0] ?? "",
+          tier: selections.tier?.[0] ?? "",
+          minJob: selections.minJob?.[0] ?? "",
+          minResume: selections.minResume?.[0] ?? "",
+        }}
       />
 
       {items.length === 0 ? (

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { ApplicationListItem } from "@/features/applications/queries";
+import { VISA_LABELS, visaStatusOf } from "@/features/applications/visa";
 import { MATCH_LABELS, type MatchCategory } from "@/lib/config/constants";
 
 /**
@@ -49,16 +50,19 @@ function age(at: Date | null): string {
  * not "no sponsorship".
  */
 function visaCell(item: ApplicationListItem): { label: string; tone: string } {
-  if (item.watchlistTier !== null && item.watchlistTier >= 4) {
-    return { label: "Confirmed", tone: "var(--positive)" };
+  switch (visaStatusOf(item)) {
+    case "confirmed":
+      return { label: VISA_LABELS.confirmed, tone: "var(--positive)" };
+    case "gate_qualified":
+      return { label: VISA_LABELS.gate_qualified, tone: "var(--gold)" };
+    case "none":
+      // A tier below 4 is still worth naming, but it is not evidence — it sits
+      // inside "no evidence" for the filter, and must not become a fourth
+      // state the select cannot offer.
+      return item.watchlistTier !== null
+        ? { label: `Watchlist ${item.watchlistTier}`, tone: "var(--gold-soft)" }
+        : { label: VISA_LABELS.none, tone: "var(--faint)" };
   }
-  if (item.matchCategory === "gate_qualified") {
-    return { label: "Gate qualified", tone: "var(--gold)" };
-  }
-  if (item.watchlistTier !== null) {
-    return { label: `Watchlist ${item.watchlistTier}`, tone: "var(--gold-soft)" };
-  }
-  return { label: "No evidence", tone: "var(--faint)" };
 }
 
 function Score({ value, dim }: { value: number | null; dim?: boolean }) {

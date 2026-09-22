@@ -8,7 +8,6 @@ import {
   ilike,
   inArray,
   isNotNull,
-  lt,
   not,
   or,
   sql,
@@ -38,6 +37,14 @@ import {
 import { getEnv } from "@/lib/config/env";
 import { db } from "@/lib/db/client";
 import { isIncomplete } from "@/features/ingestion/schema";
+import {
+  VISA_LABELS,
+  VISA_STATUSES,
+  visaStatusOf,
+  visaStatusPredicate,
+  watchlistTierSql,
+  type VisaStatus,
+} from "@/features/applications/visa";
 import type { JobScoreAnalysis } from "@/db/schema";
 
 /**
@@ -122,7 +129,7 @@ const resumeScore = sql<number | null>`(
 )`;
 
 /** The watchlist tier the gate recorded, for the company column's star. */
-const watchlistTier = sql<number | null>`(${rawJobs.prequalificationDetail}->'watchlist'->>'tier')::int`;
+const watchlistTier = watchlistTierSql;
 
 /**
  * Which applications belong to a city (JSV2S1172).
@@ -236,8 +243,28 @@ function viewFilter(view: ApplicationView) {
  *
  * Selections WITHIN a facet are OR-ed, ACROSS facets AND-ed — "priority apply
  * AND referral needed" has to mean both.
+ *
+ * Single-choice axes (`posted`, `visa`, `tier`, `minJob`, `minResume`) ride in
+ * the same shape rather than getting a parallel parameter object: the city
+ * panel reads and writes the whole set as URL parameters, and one vocabulary
+ * means one place to validate it.
  */
 export type ApplicationSelections = Record<string, string[]>;
+
+/** The relative windows the city panel's two date selects offer. */
+const RELATIVE_DAYS: Record<string, number> = {
+  today: 0,
+  "3d": 3,
+  week: 7,
+  month: 30,
+};
+
+export function relativeCutoff(key: string | undefined): string | null {
+  if (!key || !(key in RELATIVE_DAYS)) return null;
+  const at = new Date();
+  at.setDate(at.getDate() - RELATIVE_DAYS[key]);
+  return at.toISOString().slice(0, 10);
+}
 
 export type ApplicationFilters = {
   view?: ApplicationView;
@@ -248,22 +275,21 @@ export type ApplicationFilters = {
   search?: string | null;
 };
 
-/** `to` is inclusive: compared against the start of the following day. */
+/**
+ * `to` is inclusive: compared against the start of the following day.
+ *
+ * The bounds are bound as YYYY-MM-DD strings cast in SQL, not as JS `Date`s.
+ * A raw `sql` expression carries no column type, so the driver had nothing to
+ * encode a `Date` with and threw ERR_INVALID_ARG_TYPE mid-query — every date
+ * range on this page was a 500 until 2026-09-23. The regex guard is what makes
+ * the cast safe on a hand-edited URL.
+ */
 function ingestedRange(from?: string | null, to?: string | null) {
+  const at = sql`coalesce(${rawJobs.prequalifiedAt}, ${rawJobs.firstSeenAt})`;
+  const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
   const clauses = [];
-  if (from) {
-    const start = new Date(`${from}T00:00:00`);
-    if (!Number.isNaN(start.getTime())) {
-      clauses.push(gte(sql`coalesce(${rawJobs.prequalifiedAt}, ${rawJobs.firstSeenAt})`, start));
-    }
-  }
-  if (to) {
-    const end = new Date(`${to}T00:00:00`);
-    if (!Number.isNaN(end.getTime())) {
-      end.setDate(end.getDate() + 1);
-      clauses.push(lt(sql`coalesce(${rawJobs.prequalifiedAt}, ${rawJobs.firstSeenAt})`, end));
-    }
-  }
+  if (from && isDay(from)) clauses.push(sql`${at} >= ${from}::date`);
+  if (to && isDay(to)) clauses.push(sql`${at} < ${to}::date + 1`);
   return clauses.length > 0 ? and(...clauses) : undefined;
 }
 
@@ -298,6 +324,39 @@ function applicationSelectionFilters(selections?: ApplicationSelections) {
   if (selections.fetch?.length) {
     clauses.push(inArray(rawJobs.ingestionRunId, selections.fetch));
   }
+  if (selections.location?.length) {
+    clauses.push(inArray(rawJobs.location, selections.location));
+  }
+
+  // The posting's own date, which is not the ingest date `from`/`to` cover: a
+  // month-old advert can arrive in this morning's fetch.
+  const postedFrom = relativeCutoff(selections.posted?.[0]);
+  if (postedFrom) clauses.push(gte(rawJobs.postedAt, postedFrom));
+
+  const visa = selections.visa?.[0];
+  if (visa && VISA_STATUSES.includes(visa as VisaStatus)) {
+    clauses.push(visaStatusPredicate(visa as VisaStatus));
+  }
+
+  const tier = selections.tier?.[0];
+  if (tier === "none") {
+    clauses.push(sql`${watchlistTier} is null`);
+  } else if (tier && /^[1-5]$/.test(tier)) {
+    // "Tier 4 and above" — the watchlist is a confidence ordering, so a floor
+    // is the only reading that makes the higher tiers reachable at all.
+    clauses.push(sql`${watchlistTier} >= ${Number(tier)}`);
+  }
+
+  const minJob = Number(selections.minJob?.[0]);
+  if (Number.isFinite(minJob) && minJob > 0) {
+    clauses.push(gte(applications.jobScore, Math.trunc(minJob)));
+  }
+
+  const minResume = Number(selections.minResume?.[0]);
+  if (Number.isFinite(minResume) && minResume > 0) {
+    clauses.push(sql`${resumeScore} >= ${Math.trunc(minResume)}`);
+  }
+
   return clauses;
 }
 
@@ -530,6 +589,8 @@ export async function getApplicationFacets(
       source: rawJobs.source,
       country: rawJobs.country,
       company: rawJobs.company,
+      location: rawJobs.location,
+      tier: watchlistTier,
       fetch: rawJobs.ingestionRunId,
       fetchSource: ingestionRuns.source,
       fetchStartedAt: ingestionRuns.startedAt,
@@ -608,6 +669,29 @@ export async function getApplicationFacets(
       rows.map((r) => r.company),
       (v) => v,
     ),
+    /**
+     * The locations inside this city (JSV2S1172).
+     *
+     * A city is a catchment, not a point — "London" holds Canary Wharf,
+     * Shoreditch and a dozen hybrid phrasings, and the design's LOCATION select
+     * is how you get from the one to the other.
+     */
+    location: tally(
+      rows.map((r) => r.location),
+      (v) => v,
+    ),
+    /*
+     * Visa and watchlist are fixed vocabularies, so these carry counts rather
+     * than membership — the select shows every state, including the empty ones,
+     * because "Confirmed (0)" is information and a missing option is not.
+     */
+    visa: VISA_STATUSES.map((value) => ({
+      value,
+      label: VISA_LABELS[value],
+      count: rows.filter(
+        (r) => visaStatusOf({ watchlistTier: r.tier ?? null, matchCategory: r.match }) === value,
+      ).length,
+    })),
     fetch: [...runs.entries()]
       .map(([value, r]) => ({ value, label: r.label, count: r.count }))
       .sort((a, b) => b.count - a.count),
