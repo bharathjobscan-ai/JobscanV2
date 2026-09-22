@@ -316,6 +316,23 @@ export const PREQUAL_FILTER_LABELS: Record<PrequalFilter, string> = {
 };
 
 /**
+ * The queue's posted-age select (JSV2S1172).
+ *
+ * Here rather than in `features/prequalification/queries.ts` because the filter
+ * row is a client component: importing the vocabulary from the query module
+ * would drag the database client into the browser bundle.
+ */
+export const POSTED_WINDOWS = ["any", "today", "week", "month"] as const;
+export type PostedWindow = (typeof POSTED_WINDOWS)[number];
+
+export const POSTED_WINDOW_LABELS: Record<PostedWindow, string> = {
+  any: "Posted any time",
+  today: "Posted today",
+  week: "Posted this week",
+  month: "Posted this month",
+};
+
+/**
  * Which filters are allowed to reject on their own (ADR-0006, revised
  * 2026-09-19).
  *

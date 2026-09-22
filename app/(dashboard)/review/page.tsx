@@ -1,16 +1,18 @@
 import Link from "next/link";
 
 import { BinSelection } from "@/components/applications/bin-selection";
+import { DELETABLE_AFTER_DAYS } from "@/lib/config/constants";
+import { countDeletable } from "@/features/prequalification/mutations";
 import { HeldJobRow } from "@/components/review/held-job-row";
+import { ReviewFilters } from "@/components/review/review-filters";
 import { Button, Card, EmptyState } from "@/components/ui/base";
-import { FilterPanel } from "@/components/ui/filter-panel";
 import {
   binAction,
+  deleteBinnedFormAction,
   restoreAction,
   requalifyAction,
 } from "@/features/prequalification/actions";
 import {
-  getFacets,
   countForReview,
   listForReview,
   REVIEW_VIEWS,
@@ -18,9 +20,20 @@ import {
   type FilterSelections,
   type ReviewView,
 } from "@/features/prequalification/queries";
-import { PREQUAL_FILTERS, PREQUAL_FILTER_LABELS } from "@/lib/config/constants";
+import {
+  POSTED_WINDOWS,
+  PREQUAL_FILTERS,
+  type PostedWindow,
+  type PrequalFilter,
+} from "@/lib/config/constants";
 
 export const dynamic = "force-dynamic";
+
+/** A repeated param (`?decidedBy=a&decidedBy=b`) arrives as an array. */
+function values(param: string | string[] | undefined): string[] {
+  const raw = Array.isArray(param) ? param : param ? [param] : [];
+  return raw.flatMap((v) => v.split(",")).filter(Boolean);
+}
 
 /**
  * The review queue (JSV2S1038, restyled under JSV2S1172).
@@ -32,35 +45,74 @@ export const dynamic = "force-dynamic";
 export default async function ReviewPage({
   searchParams,
 }: {
-  searchParams: Promise<Record<string, string | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const view: ReviewView = REVIEW_VIEWS.includes(params.view as ReviewView)
-    ? (params.view as ReviewView)
+  const one = (key: string) => {
+    const v = params[key];
+    return Array.isArray(v) ? v[0] : v;
+  };
+
+  /**
+   * An unrecognised view degrades to the default rather than 404-ing.
+   *
+   * `?view=stale` was a real tab until JSV2S1172 and is still in browser
+   * history and in old links, so it has to land somewhere sensible.
+   */
+  const requested = one("view");
+  const view: ReviewView = REVIEW_VIEWS.includes(requested as ReviewView)
+    ? (requested as ReviewView)
     : "review";
 
   // JSV2S1153. Anything unrecognised is dropped rather than raised: a
   // hand-edited URL should degrade to "no filter", never to a crash.
+  //
+  // Value-level selections have no control on this screen any more, but the
+  // pipeline and application-detail screens deep-link with them
+  // (`/review?fetch=<runId>`, `?company=…`, `?visa=…`), so they are still read
+  // and still applied.
   const selections: FilterSelections = {};
   for (const f of [...PREQUAL_FILTERS, "company", "fetch"] as const) {
-    const values = params[f]?.split(",").filter(Boolean) ?? [];
-    if (values.length > 0) selections[f] = values;
+    const chosen = values(params[f]);
+    if (chosen.length > 0) selections[f] = chosen;
   }
-  const isDate = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
-  const from = isDate(params.from);
-  const to = isDate(params.to);
-  const search = params.q?.trim() || null;
 
-  const [items, counts, facets] = await Promise.all([
-    listForReview({ view, selections, from, to, search }),
+  const decidedBy = values(params.decidedBy).filter((v): v is PrequalFilter =>
+    PREQUAL_FILTERS.includes(v as PrequalFilter),
+  );
+  const postedParam = one("posted");
+  const posted: PostedWindow = POSTED_WINDOWS.includes(postedParam as PostedWindow)
+    ? (postedParam as PostedWindow)
+    : "any";
+
+  const isDate = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+  const from = isDate(one("from"));
+  const to = isDate(one("to"));
+  const search = one("q")?.trim() || null;
+
+  const [items, counts, deletable] = await Promise.all([
+    listForReview({ view, selections, decidedBy, postedWithin: posted, from, to, search }),
     countForReview(),
-    getFacets(view),
+    // Only the Bin offers deletion, so only the Bin pays for the count.
+    view === "binned" ? countDeletable() : Promise.resolve(0),
   ]);
 
   const filtered =
     Object.values(selections).some((v) => v.length > 0) ||
+    decidedBy.length > 0 ||
+    posted !== "any" ||
     from !== null ||
     search !== null;
+
+  // What the filter row must carry across a chip toggle, so a deep link is not
+  // thrown away by the first click on the screen it landed on.
+  const preserve: Record<string, string> = {};
+  if (view !== "review") preserve.view = view;
+  for (const [key, chosen] of Object.entries(selections)) {
+    if (chosen.length > 0) preserve[key] = chosen.join(",");
+  }
+  if (from) preserve.from = from;
+  if (to) preserve.to = to;
 
   return (
     <div>
@@ -74,6 +126,10 @@ export default async function ReviewPage({
             nothing here has cost anything.
           </p>
         </div>
+        {/*
+         * The re-run button outlived the "Rules changed" view (JSV2S1172): the
+         * stale count is worth acting on, not worth browsing.
+         */}
         {counts.stale > 0 ? (
           <form action={requalifyAction}>
             <Button
@@ -104,25 +160,13 @@ export default async function ReviewPage({
         ))}
       </nav>
 
-      <div className="mt-[18px]">
-        <FilterPanel
-          basePath="/review"
-          preserve={{ view: view === "review" ? undefined : view }}
-          categories={[
-            ...PREQUAL_FILTERS.map((f) => ({ key: f, label: PREQUAL_FILTER_LABELS[f] })),
-            { key: "company", label: "Company" },
-            { key: "fetch", label: "Fetch" },
-          ]}
-          facets={facets as Record<string, { value: string; label: string; count: number }[]>}
-          initial={selections as Record<string, string[]>}
-          initialFrom={from}
-          initialTo={to}
-          initialSearch={search}
-          resultCount={items.length}
-          searchPlaceholder="Search title or company"
-          dateLabel="Judged between"
-        />
-      </div>
+      <ReviewFilters
+        decidedBy={decidedBy}
+        posted={posted}
+        search={search}
+        preserve={preserve}
+        count={items.length}
+      />
 
       {items.length === 0 ? (
         <Card className="mt-4">
@@ -134,15 +178,13 @@ export default async function ReviewPage({
                   ? "Nothing waiting on you"
                   : view === "rejected"
                     ? "Nothing has been screened out"
-                    : "Every verdict is current"
+                    : "The Bin is empty"
             }
             hint={
               // A filtered empty result must not read as "the queue is clear".
               filtered
-                ? "Widen the filters or the date range to see more."
-                : view === "stale"
-                  ? "When you change the role, domain or location config, jobs judged under the old rules appear here."
-                  : "Jobs that pass every filter go straight to Applications."
+                ? "Clear a chip or widen the posted window to see more."
+                : "Jobs that pass every filter go straight to Applications."
             }
           />
         </Card>
@@ -156,6 +198,15 @@ export default async function ReviewPage({
         <div className="mt-3.5">
           <BinSelection
             action={view === "binned" ? restoreAction : binAction}
+            /* Only the Bin can destroy, and only there does it make sense: a
+               job in the working queues is still a decision waiting to be
+               made. */
+            destroy={view === "binned" ? deleteBinnedFormAction : undefined}
+            hint={
+              view === "binned"
+                ? `Tick a job to restore it. Deleting is permanent and only applies to jobs binned more than ${DELETABLE_AFTER_DAYS} days ago — ${deletable} qualify today.`
+                : undefined
+            }
             label={view === "binned" ? "Restore from Bin" : "Move to Bin"}
           >
             <div className="border-t border-line">

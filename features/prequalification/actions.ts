@@ -97,6 +97,21 @@ export async function deleteBinnedAction(
   };
 }
 
+/**
+ * The form's entry point.
+ *
+ * A `<form action>` must return void, and `deleteBinnedAction` deliberately
+ * returns a per-reason summary so callers and tests can see that asking for ten
+ * and getting three is the age guard working rather than a failure. This thin
+ * wrapper keeps both: the summary stays available, and the form gets its void.
+ *
+ * The user-visible feedback is the revalidated count — "N qualify today" drops
+ * by exactly what was destroyed.
+ */
+export async function deleteBinnedFormAction(data: FormData): Promise<void> {
+  await deleteBinnedAction(data);
+}
+
 export async function requalifyAction(): Promise<void> {
   await requalifyStale();
   await requalifyPromoted();

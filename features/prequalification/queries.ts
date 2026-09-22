@@ -8,7 +8,6 @@ import {
   isNotNull,
   isNull,
   lt,
-  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -17,6 +16,7 @@ import { applications, ingestionRuns, rawJobs } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
 import {
   PREQUAL_FILTERS,
+  type PostedWindow,
   type PrequalDecision,
   type PrequalFilter,
 } from "@/lib/config/constants";
@@ -80,15 +80,25 @@ function toItem(row: {
   };
 }
 
-export const REVIEW_VIEWS = ["review", "rejected", "stale", "binned"] as const;
+/**
+ * The queue's views (JSV2S1172).
+ *
+ * "Rules changed" was removed as a VIEW: it answered a question the owner never
+ * browses — you do not read stale verdicts one by one, you re-run them. The
+ * stale COUNT survives in `countForReview` because it drives the re-run button,
+ * which is the only thing that ever acted on it.
+ */
+export const REVIEW_VIEWS = ["review", "rejected", "binned"] as const;
 export type ReviewView = (typeof REVIEW_VIEWS)[number];
 
 export const REVIEW_VIEW_LABELS: Record<ReviewView, string> = {
   review: "Needs review",
   rejected: "Screened out",
-  stale: "Rules changed",
   binned: "Bin",
 };
+
+/** Per-view counts, plus the stale total behind the re-run button. */
+export type ReviewCounts = Record<ReviewView, number> & { stale: number };
 
 function viewFilter(view: ReviewView) {
   switch (view) {
@@ -106,16 +116,6 @@ function viewFilter(view: ReviewView) {
       return isNotNull(rawJobs.binnedAt);
     case "rejected":
       return eq(rawJobs.prequalification, "reject");
-    case "stale":
-      // Jobs judged under an older config. Adding a role or a country should
-      // surface everything the old rules turned away.
-      return and(
-        or(
-          eq(rawJobs.prequalification, "review"),
-          eq(rawJobs.prequalification, "reject"),
-        ),
-        ne(rawJobs.prequalificationVersion, CONFIG_VERSION),
-      );
   }
 }
 
@@ -147,6 +147,15 @@ export type FilterSelections = Partial<
 export type ReviewFilters = {
   view?: ReviewView;
   selections?: FilterSelections;
+  /**
+   * Which filter DECIDED the verdict — the queue's own chips (JSV2S1172).
+   *
+   * Coarser than `selections`, and deliberately so: the question the chips ask
+   * is "what held this job back", not "which outcome did that filter produce".
+   */
+  decidedBy?: PrequalFilter[];
+  /** Age of the posting itself, as opposed to when it was judged. */
+  postedWithin?: PostedWindow;
   /** Inclusive date bounds, as YYYY-MM-DD from the range picker. */
   from?: string | null;
   to?: string | null;
@@ -207,6 +216,31 @@ function selectionFilters(selections: FilterSelections | undefined) {
   return clauses;
 }
 
+/**
+ * OR across chips: two chips lit means "held back by domain OR by experience".
+ *
+ * `decidedBy` names a single filter per job, so AND-ing them could only ever
+ * return nothing — the one combination the user would read as a bug.
+ */
+function decidedByFilter(filters?: PrequalFilter[]) {
+  if (!filters?.length) return undefined;
+  return inArray(sql`${rawJobs.prequalificationDetail}->>'decidedBy'`, filters);
+}
+
+/**
+ * Age of the POSTING (`posted_at`), not of the verdict.
+ *
+ * A stale posting is usually already filled, so this is the filter that keeps
+ * the queue worth working through; `dateFilter` answers a different question.
+ */
+function postedFilter(window?: PostedWindow) {
+  if (!window || window === "any") return undefined;
+  const days = window === "today" ? 0 : window === "week" ? 7 : 30;
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  return gte(rawJobs.postedAt, since.toISOString().slice(0, 10));
+}
+
 function searchFilter(search?: string | null) {
   const q = search?.trim();
   if (!q) return undefined;
@@ -234,6 +268,8 @@ export async function listForReview(
         // itself, which is the one list that exists to show them.
         f.view === "binned" ? undefined : isNull(rawJobs.binnedAt),
         ...selectionFilters(f.selections),
+        decidedByFilter(f.decidedBy),
+        postedFilter(f.postedWithin),
         dateFilter(f.from, f.to),
         searchFilter(f.search),
       ),
@@ -334,7 +370,7 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
   return facets;
 }
 
-export async function countForReview(): Promise<Record<ReviewView, number>> {
+export async function countForReview(): Promise<ReviewCounts> {
   const [queue] = await db
     .select({
       review: sql<number>`count(*) filter (where ${rawJobs.prequalification} = 'review')::int`,
