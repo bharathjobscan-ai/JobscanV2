@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 
 import {
   applicationDocuments,
@@ -7,6 +7,7 @@ import {
   rawJobs,
 } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
+import { DELETABLE_AFTER_DAYS } from "@/lib/config/constants";
 import { db } from "@/lib/db/client";
 import { prequalify } from "./engine";
 
@@ -460,6 +461,109 @@ export async function binJobs(ids: string[]): Promise<number> {
 }
 
 /** Take jobs back out of the Bin, for when a rules change deserves a second look. */
+export class NotDeletable extends Error {}
+
+/**
+ * Permanently destroy binned jobs. THE ONLY IRREVERSIBLE ACTION IN THIS APP.
+ *
+ * Everything else here is a soft delete: rejecting keeps the row, binning keeps
+ * the row, even re-qualification only rewrites a verdict. This removes the
+ * `raw_jobs` row outright, and there is no undo and no backup.
+ *
+ * Three guards, and each one exists because the alternative is silent loss:
+ *
+ * 1. **Binned only.** A job that is merely rejected is still in a working
+ *    queue and can be promoted from it. Deleting one would remove something
+ *    the owner can still see and act on.
+ * 2. **Older than `DELETABLE_AFTER_DAYS`.** Measured from when it was BINNED,
+ *    not when it was seen — the age that matters is how long the decision has
+ *    stood, not how old the posting is.
+ * 3. **Never promoted.** `applications.rawJobId` cascades on delete, so
+ *    removing a promoted job would take its application, its generated
+ *    documents and its whole event history with it. A CV costs real money to
+ *    produce and cannot be regenerated identically.
+ *
+ * Ids that fail a guard are skipped and counted, never silently treated as
+ * deleted — a caller that asked for ten and got three needs to know.
+ */
+export async function deleteBinnedJobs(ids: string[]): Promise<{
+  deleted: number;
+  skippedNotBinned: number;
+  skippedTooRecent: number;
+  skippedPromoted: number;
+}> {
+  const empty = {
+    deleted: 0,
+    skippedNotBinned: 0,
+    skippedTooRecent: 0,
+    skippedPromoted: 0,
+  };
+  if (ids.length === 0) return empty;
+
+  const cutoff = new Date(Date.now() - DELETABLE_AFTER_DAYS * 86_400_000);
+
+  const candidates = await db
+    .select({
+      id: rawJobs.id,
+      binnedAt: rawJobs.binnedAt,
+      applicationId: applications.id,
+    })
+    .from(rawJobs)
+    .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
+    .where(inArray(rawJobs.id, ids));
+
+  const deletable: string[] = [];
+  const result = { ...empty };
+
+  for (const row of candidates) {
+    if (row.applicationId !== null) {
+      result.skippedPromoted += 1;
+    } else if (!row.binnedAt) {
+      result.skippedNotBinned += 1;
+    } else if (row.binnedAt > cutoff) {
+      result.skippedTooRecent += 1;
+    } else {
+      deletable.push(row.id);
+    }
+  }
+
+  if (deletable.length > 0) {
+    // Re-asserted in the WHERE clause rather than trusting the ids assembled
+    // above: this is the statement that cannot be undone, and a guard that
+    // lives only in application code is one refactor away from not running.
+    const gone = await db
+      .delete(rawJobs)
+      .where(
+        and(
+          inArray(rawJobs.id, deletable),
+          isNotNull(rawJobs.binnedAt),
+          lt(rawJobs.binnedAt, cutoff),
+        ),
+      )
+      .returning({ id: rawJobs.id });
+    result.deleted = gone.length;
+  }
+
+  return result;
+}
+
+/** How many binned jobs are old enough to destroy, for the UI to offer it. */
+export async function countDeletable(): Promise<number> {
+  const cutoff = new Date(Date.now() - DELETABLE_AFTER_DAYS * 86_400_000);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(rawJobs)
+    .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
+    .where(
+      and(
+        isNotNull(rawJobs.binnedAt),
+        lt(rawJobs.binnedAt, cutoff),
+        isNull(applications.id),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
 export async function restoreJobs(ids: string[]): Promise<number> {
   if (ids.length === 0) return 0;
   const updated = await db

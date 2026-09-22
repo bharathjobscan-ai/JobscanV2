@@ -6,6 +6,7 @@ import {
   AlreadyPromoted,
   ApplicationHasSpend,
   binJobs,
+  deleteBinnedJobs,
   demoteApplication,
   promoteJob,
   rejectJob,
@@ -72,6 +73,28 @@ export async function demoteApplicationAction(
   revalidatePath("/review");
   revalidatePath("/pipeline");
   return {};
+}
+
+/**
+ * Destroy binned jobs for good.
+ *
+ * Returns a summary rather than throwing on a partial result: asking to delete
+ * ten and having three refused by the age guard is the normal case, not an
+ * error, and the caller has to be able to say which happened.
+ */
+export async function deleteBinnedAction(
+  data: FormData,
+): Promise<{ deleted: number; skipped: number }> {
+  const ids = data.getAll("jobId").map(String).filter(Boolean);
+  if (ids.length === 0) return { deleted: 0, skipped: 0 };
+
+  const r = await deleteBinnedJobs(ids);
+  revalidatePath("/review");
+  revalidatePath("/pipeline");
+  return {
+    deleted: r.deleted,
+    skipped: r.skippedNotBinned + r.skippedTooRecent + r.skippedPromoted,
+  };
 }
 
 export async function requalifyAction(): Promise<void> {

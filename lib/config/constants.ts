@@ -486,3 +486,17 @@ export function nextAction(input: {
       return "Closed — review learnings";
   }
 }
+
+/**
+ * How old a binned job must be before it can be destroyed (2026-09-23).
+ *
+ * Lives here rather than beside the mutation because it is a policy, not a
+ * query — and because `mutations.ts` pulls in the database client, which put it
+ * out of reach of a unit test.
+ *
+ * Measured from when the job was BINNED, not when it was seen. The age that
+ * matters is how long the decision has stood: a posting scraped four months ago
+ * and dismissed this morning is a decision one morning old, and the Bin's whole
+ * value is that such a decision stays recoverable.
+ */
+export const DELETABLE_AFTER_DAYS = 30;
