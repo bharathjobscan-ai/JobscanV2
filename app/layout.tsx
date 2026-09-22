@@ -1,19 +1,17 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Inter, JetBrains_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
-import { THEME_SCRIPT } from "@/components/ui/theme-toggle";
 
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 /*
- * The city workspace's type (JSV2S1172). Loaded here rather than in the page
- * because next/font must be called at module scope, and self-hosting them is
- * what keeps the CSP clean — no request to fonts.googleapis.com at render.
+ * The workspace's type (JSV2S1172). Loaded here because next/font must be
+ * called at module scope, and self-hosting is what keeps the CSP clean — no
+ * request to fonts.googleapis.com at render.
  *
- * Playfair Display carries the city names and the big numbers; Inter does the
- * work;
- * JetBrains Mono is for run ids and timestamps, where a fixed advance width is
- * the whole point.
+ * Playfair Display carries the titles and the big numbers, Inter does the work,
+ * and JetBrains Mono is for run ids and timestamps, where a fixed advance width
+ * is the whole point.
  */
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"] });
@@ -24,33 +22,31 @@ export const metadata: Metadata = {
   description: "Application workspace for a visa-sponsored product management search",
 };
 
+/*
+ * NO EXPLICIT <head> HERE, AND THAT IS THE POINT.
+ *
+ * This layout carried `<head><script>…</script></head>` to pre-apply a stored
+ * theme before first paint. Next owns <head> in the App Router and injects the
+ * client bootstrap scripts into it; declaring one by hand displaced them, so
+ * the page shipped only the polyfill and devtools chunks and NO application
+ * client JavaScript at all.
+ *
+ * React therefore never hydrated. Every onClick in the app was inert — the
+ * filter panel, the tabs, bulk selection, all of it — while the server-rendered
+ * markup looked perfectly correct, which is why it read as "the filter is
+ * broken" rather than "nothing is interactive". It was reported six times
+ * before the cause was found, and it was never in the filter.
+ *
+ * The script it existed for is gone anyway: the palette is global dark and
+ * there is no theme left to pre-apply.
+ */
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    /*
-     * `suppressHydrationWarning` is required here, not cosmetic (JSV2S1160).
-     *
-     * The script below stamps `data-theme` on this element before React
-     * hydrates, so the client DOM deliberately differs from the server HTML —
-     * which is the entire point, and which React cannot distinguish from a real
-     * mismatch. Without this it logs a hydration error on every page load.
-     *
-     * It suppresses one level only: this element's own attributes. Nothing
-     * inside is affected, so a genuine mismatch anywhere else still reports.
-     */
     <html
       lang="en"
-      suppressHydrationWarning
       className={`${inter.variable} ${playfair.variable} ${geistMono.variable} ${jetbrains.variable} h-full antialiased`}
     >
-      <head>
-        {/*
-          Applied before first paint (JSV2S1160). A deferred script runs after
-          the browser has painted the default, which is the white flash this
-          exists to prevent — so it is inline and synchronous by necessity.
-        */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
-      </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="flex min-h-full flex-col">{children}</body>
     </html>
   );
 }
