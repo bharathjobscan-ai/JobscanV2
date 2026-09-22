@@ -517,3 +517,16 @@ export function nextAction(input: {
  * value is that such a decision stays recoverable.
  */
 export const DELETABLE_AFTER_DAYS = 30;
+
+/**
+ * How long a succeeded AI task blocks an identical one (JSV2S1174).
+ *
+ * Here rather than beside `enqueueTask` for the same reason as the Bin's
+ * retention: `features/ai/tasks.ts` pulls in the database client, which put it
+ * out of reach of a unit test.
+ *
+ * Ten minutes, chosen against a measured failure. On 2026-09-23 Generate
+ * CV + CL ran twice three minutes and sixteen seconds apart and cost $0.2577
+ * the second time; a shorter window would not have caught it.
+ */
+export const DUPLICATE_TASK_WINDOW_MS = 10 * 60 * 1000;

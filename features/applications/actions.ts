@@ -6,7 +6,7 @@ import { eq, sql } from "drizzle-orm";
 import { applications } from "@/db/schema";
 import { db } from "@/lib/db/client";
 
-import { enqueueTask, TaskBlocked } from "@/features/ai/tasks";
+import { enqueueTask, TaskBlocked, TaskTooSoon } from "@/features/ai/tasks";
 import {
   addNote,
   changeStatus,
@@ -189,8 +189,12 @@ export async function generateAction(
     return { error: "Unknown task." };
   }
 
+  // The confirm dialog sets this; nothing else does. A force that any caller
+  // could pass by accident would make the guard decorative.
+  const force = field(data, "confirmed") === "yes";
+
   try {
-    const result = await enqueueTask(id, task as AiTaskType);
+    const result = await enqueueTask(id, task as AiTaskType, { force });
     refresh(id);
     return {
       message:
@@ -199,6 +203,7 @@ export async function generateAction(
           : "Queued. It will appear once the local worker picks it up.",
     };
   } catch (error) {
+    if (error instanceof TaskTooSoon) return { error: error.message };
     if (error instanceof TaskBlocked || error instanceof MissingPromptError) {
       return { error: error.message };
     }

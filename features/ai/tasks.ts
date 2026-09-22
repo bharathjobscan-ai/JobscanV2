@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 
 import {
   aiJobs,
@@ -22,6 +22,7 @@ import {
   AI_TASK_DOCUMENT,
   AI_TASK_LABELS,
   DOCUMENT_LABELS,
+  DUPLICATE_TASK_WINDOW_MS,
   matchCategoryFor,
   type AiTaskType,
   type DocumentType,
@@ -107,10 +108,62 @@ function effortFor(taskType: AiTaskType): string {
  * plain HTTPS calls. Nothing is queued for a worker any more, so the caller
  * gets a finished result rather than a promise to poll.
  */
+/** Thrown when an identical task has just succeeded. */
+export class TaskTooSoon extends Error {}
+
+/**
+ * Has this exact task just run for this application?
+ *
+ * The existing in-flight check cannot catch this. Providers are called inline
+ * and synchronously (ADR-0005), so a task never sits in `queued` — it goes
+ * from nothing to `succeeded` — and a guard that looks for a running row has
+ * nothing to see. This looks at what FINISHED instead.
+ *
+ * It is the authoritative guard: a disabled button only disables one button,
+ * and on 2026-09-23 the same generate action was rendered in two places on one
+ * page, either of which would start a $0.20 run.
+ */
+async function recentlySucceeded(
+  applicationId: string,
+  taskType: AiTaskType,
+): Promise<Date | null> {
+  const [row] = await db
+    .select({ at: aiJobs.finishedAt })
+    .from(aiJobs)
+    .where(
+      and(
+        eq(aiJobs.applicationId, applicationId),
+        eq(aiJobs.taskType, taskType),
+        eq(aiJobs.status, "succeeded"),
+        gt(aiJobs.finishedAt, new Date(Date.now() - DUPLICATE_TASK_WINDOW_MS)),
+      ),
+    )
+    .orderBy(desc(aiJobs.finishedAt))
+    .limit(1);
+  return row?.at ?? null;
+}
+
 export async function enqueueTask(
   applicationId: string,
   taskType: AiTaskType,
+  options: { force?: boolean } = {},
 ): Promise<{ id: string; status: "succeeded" }> {
+  /*
+   * Checked before anything else, including before the application is loaded:
+   * the whole point is to spend nothing, and a guard that runs after the work
+   * has begun is not a guard.
+   */
+  if (!options.force) {
+    const at = await recentlySucceeded(applicationId, taskType);
+    if (at) {
+      const mins = Math.max(1, Math.round((Date.now() - at.getTime()) / 60000));
+      throw new TaskTooSoon(
+        `${AI_TASK_LABELS[taskType]} already ran ${mins} minute${mins === 1 ? "" : "s"} ago. ` +
+          `Re-running costs the same again — use Regenerate and confirm if you meant to.`,
+      );
+    }
+  }
+
   const [row] = await db
     .select({ application: applications, job: rawJobs })
     .from(applications)

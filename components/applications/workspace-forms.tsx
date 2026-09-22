@@ -36,14 +36,27 @@ function Submit({
   children,
   variant = "secondary",
   pendingLabel,
+  confirm,
 }: {
   children: React.ReactNode;
   variant?: "primary" | "secondary" | "ghost";
   pendingLabel?: string;
+  /**
+   * Asked before the form submits. Used for regeneration, which replaces work
+   * that has already been paid for and costs the same again.
+   */
+  confirm?: string;
 }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" variant={variant} disabled={pending}>
+    <Button
+      type="submit"
+      variant={variant}
+      disabled={pending}
+      onClick={(e) => {
+        if (confirm && !window.confirm(confirm)) e.preventDefault();
+      }}
+    >
       {pending ? (pendingLabel ?? "Working…") : children}
     </Button>
   );
@@ -250,9 +263,25 @@ export function GenerateButton({
           {label}
         </Button>
       ) : (
-        <Submit variant={regenerate ? "secondary" : "primary"} pendingLabel="Starting…">
-          {regenerate ? "Regenerate" : label}
-        </Submit>
+        <>
+          {/*
+            Set only by a confirmed regeneration, and read by the server as the
+            single permitted way past the duplicate guard. A plain "force" that
+            any caller could pass would make the guard decorative.
+          */}
+          {regenerate ? <input type="hidden" name="confirmed" value="yes" /> : null}
+          <Submit
+            variant={regenerate ? "secondary" : "primary"}
+            pendingLabel="Working… this takes about a minute"
+            confirm={
+              regenerate
+                ? `Regenerate ${label.replace(/^Generate /, "")}? This replaces the current version and costs roughly the same again.`
+                : undefined
+            }
+          >
+            {regenerate ? "Regenerate" : label}
+          </Submit>
+        </>
       )}
       <Feedback state={state} />
     </form>
