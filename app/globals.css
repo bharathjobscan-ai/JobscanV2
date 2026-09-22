@@ -6,93 +6,54 @@
  * A personal operating console — not a conventional ATS.
  */
 :root {
-  --background: #fbfbfa;
-  --surface: #ffffff;
-  --surface-muted: #f5f5f4;
-  --foreground: #1c1917;
-  --muted: #78716c;
-  --subtle: #a8a29e;
-  --border: #e7e5e4;
-  --border-strong: #d6d3d1;
-  --accent: #1c1917;
-  --positive: #15803d;
-  --positive-bg: #f0fdf4;
-  --warning: #b45309;
-  --warning-bg: #fffbeb;
-  --negative: #b91c1c;
-  --negative-bg: #fef2f2;
-  --info: #1d4ed8;
-  --info-bg: #eff6ff;
+  /*
+   * JobScan Nocturnal (JSV2S1172).
+   *
+   * THE PALETTE AND TYPE ARE THE OWNER'S SPEC SHEET, not the design project's
+   * own values. Those two disagree — the project file carries Cormorant
+   * Garamond, #090B0C and a warm brass; the spec sheet carries Playfair
+   * Display, #0B0B0F and #D4AF37 — and he has now chosen the spec sheet twice,
+   * most recently after seeing the project's values applied. So the project
+   * supplies the LAYOUT and the structure, and these supply the look.
+   *
+   * Global rather than scoped: the design has no light chrome anywhere in it,
+   * so light is no longer a state this app has.
+   */
+  --background: #0b0b0f;
+  --surface: #121318;
+  --surface-muted: #1a1f27;
+  --foreground: #e5e4e2;
+  --muted: #9aa3af;
+  --subtle: #6b7280;
+  --border: #2a2f3a;
+  --border-strong: #3a4150;
+  --accent: #d4af37;
+
+  /* Named as the spec sheet names them, so its swatches stay findable. */
+  --obsidian: #0b0b0f;
+  --charcoal: #121318;
+  --card: #1a1f27;
+  --platinum: #e5e4e2;
+  --slate: #9aa3af;
+  --faint: #6b7280;
+  --gold: #d4af37;
+  --gold-soft: #c9a227;
+  --emerald: #18a859;
+  --blue: #3b82f6;
+  --hair: rgba(229, 228, 226, 0.08);
+
+  --positive: #18a859;
+  --positive-bg: rgba(24, 168, 89, 0.12);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.12);
+  --negative: #ef4444;
+  --negative-bg: rgba(239, 68, 68, 0.12);
+  --info: #3b82f6;
+  --info-bg: rgba(59, 130, 246, 0.12);
+
+  --font-heading: var(--font-playfair), Georgia, "Times New Roman", serif;
 }
 
-/*
- * Three theme states, not two (JSV2S1160).
- *
- * The system preference is the default and needs no attribute. An explicit
- * choice stamps `data-theme` on <html>, which must win in BOTH directions:
- * without the `:not([data-theme="light"])` guard below, a user on a dark OS who
- * chooses light would stay dark, because the media query would still match.
- */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --background: #0c0a09;
-    --surface: #1c1917;
-    --surface-muted: #292524;
-    --foreground: #f5f5f4;
-    --muted: #a8a29e;
-    --subtle: #78716c;
-    --border: #292524;
-    --border-strong: #44403c;
-    --accent: #f5f5f4;
-    --positive: #4ade80;
-    --positive-bg: #14261a;
-    --warning: #fbbf24;
-    --warning-bg: #2a1f08;
-    --negative: #f87171;
-    --negative-bg: #2a1010;
-    --info: #93c5fd;
-    --info-bg: #10203a;
-  }
-}
-
-:root[data-theme="dark"] {
-    --background: #0c0a09;
-    --surface: #1c1917;
-    --surface-muted: #292524;
-    --foreground: #f5f5f4;
-    --muted: #a8a29e;
-    --subtle: #78716c;
-    --border: #292524;
-    --border-strong: #44403c;
-    --accent: #f5f5f4;
-    --positive: #4ade80;
-    --positive-bg: #14261a;
-    --warning: #fbbf24;
-    --warning-bg: #2a1f08;
-    --negative: #f87171;
-    --negative-bg: #2a1010;
-    --info: #93c5fd;
-    --info-bg: #10203a;
-}
-
-/*
- * `dark:` utilities must follow the toggle, not just the OS.
- *
- * Tailwind 4's built-in dark variant is `prefers-color-scheme` alone, so
- * without this an explicit choice would recolour the tokens above while every
- * `dark:` class stayed on the OS setting — half the page switching and half
- * not. The two arms mirror the token rules exactly.
- */
-@custom-variant dark {
-  @media (prefers-color-scheme: dark) {
-    &:where(:root:not([data-theme="light"]) *, :root:not([data-theme="light"])) {
-      @slot;
-    }
-  }
-  &:where(:root[data-theme="dark"] *, :root[data-theme="dark"]) {
-    @slot;
-  }
-}
 
 @theme inline {
   --color-background: var(--background);
@@ -119,7 +80,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: "cv11", "ss01";
 }
 
@@ -169,76 +130,21 @@ body {
   font-style: italic;
 }
 
-/*
- * The city workspace palette (JSV2S1172).
- *
- * SCOPED, not global. The app has a three-state light/dark theme that works;
- * this design is dark throughout and replacing the theme wholesale to get it
- * would be a one-way change made as a side effect. Everything here hangs off
- * `[data-surface="nocturne"]`, so the redesign can be looked at, kept or
- * dropped without touching a single existing screen.
- *
- * Values are the owner's design specification, transcribed exactly rather than
- * approximated — his artifact and his spec sheet disagreed (Cormorant Garamond
- * against Playfair Display, #090B0C against #0B0B0F) and the spec sheet is the
- * one he chose.
- */
-[data-surface="nocturne"] {
-  --n-bg: #0b0b0f;
-  --n-surface: #121318;
-  --n-card: #1a1f27;
-  --n-border: #2a2f3a;
-  --n-text: #e5e4e2;
-  --n-text-dim: #9aa3af;
-  --n-gold: #d4af37;
-  --n-gold-soft: #c9a227;
-  --n-emerald: #18a859;
-  --n-blue: #3b82f6;
-  --n-amber: #f59e0b;
-  --n-red: #ef4444;
 
-  background: var(--n-bg);
-  color: var(--n-text);
-  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-}
 
 /* Playfair for anything that is a name or a number worth reading as one. */
-[data-surface="nocturne"] .n-display {
-  font-family: var(--font-playfair), Georgia, "Times New Roman", serif;
+.n-display {
+  font-family: var(--font-heading);
   font-weight: 500;
   letter-spacing: -0.01em;
 }
 
-[data-surface="nocturne"] .n-mono {
+.n-mono {
   font-family: var(--font-mono-city), ui-monospace, SFMono-Regular, monospace;
   font-variant-numeric: tabular-nums;
 }
 
-/*
- * A nocturne page takes the chrome with it (2026-09-23).
- *
- * Scoping the palette to `[data-surface="nocturne"]` kept the theme toggle
- * working, which was right, but it left a dark page sitting inside light
- * chrome — a white header bar above an obsidian grid, which reads as a bug
- * rather than as a design.
- *
- * `:has()` fixes it without giving up the scoping: the page opts in, and the
- * root tokens follow. Everything in the header already paints from these
- * variables, so nothing there needs to know the nocturne view exists. Pages
- * that do not opt in are untouched, and the light/dark/system toggle still
- * governs them.
- */
-:root:has([data-surface="nocturne"]) {
-  --background: #0b0b0f;
-  --surface: #121318;
-  --surface-muted: #1a1f27;
-  --foreground: #e5e4e2;
-  --muted: #9aa3af;
-  --subtle: #6b7280;
-  --border: #2a2f3a;
-  --border-strong: #3a4150;
-  --accent: #d4af37;
-}
+
 
 /*
  * Full bleed, out of the 6xl column.
