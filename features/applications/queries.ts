@@ -100,6 +100,30 @@ function pendingPredicate() {
   )`;
 }
 
+/**
+ * The resume's own score, for the list's second column (JSV2S1172).
+ *
+ * A correlated subquery rather than a join: an application can hold several
+ * resume versions and joining would multiply its row, which is how a list of
+ * 91 quietly becomes a list of 140. `order by created_at desc limit 1` takes
+ * the current one.
+ *
+ * Reads the composite SimG wrote, not a recomputation — the worklist and the
+ * list must agree about what a document scores, and two places computing it is
+ * how they stop agreeing.
+ */
+const resumeScore = sql<number | null>`(
+  select (${applicationDocuments.simg}->'current'->>'composite')::int
+  from ${applicationDocuments}
+  where ${applicationDocuments.applicationId} = ${applications.id}
+    and ${applicationDocuments.docType} = 'resume'
+  order by ${applicationDocuments.createdAt} desc
+  limit 1
+)`;
+
+/** The watchlist tier the gate recorded, for the company column's star. */
+const watchlistTier = sql<number | null>`(${rawJobs.prequalificationDetail}->'watchlist'->>'tier')::int`;
+
 const hasResume = exists(
   db
     .select({ one: sql`1` })
@@ -146,6 +170,10 @@ export type ApplicationListItem = {
   lastActivityAt: Date;
   isIncomplete: boolean;
   hasResume: boolean;
+  /** SimG's composite for the current resume, where one has been evaluated. */
+  resumeScore: number | null;
+  /** 1-5 when the company is on the sponsorship watchlist, else null. */
+  watchlistTier: number | null;
   nextAction: string;
   /** JSV2S1158 — the ingestion run this job arrived in, if it has one. */
   ingestionRunId: string | null;
@@ -307,6 +335,8 @@ export async function listApplications(
       firstSeenAt: rawJobs.firstSeenAt,
       isPending: pendingPredicate(),
       hasResume,
+      resumeScore,
+      watchlistTier,
     })
     .from(applications)
     .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
@@ -344,6 +374,8 @@ export async function listApplications(
       lastActivityAt: row.lastActivityAt,
       isIncomplete: incomplete,
       hasResume: Boolean(row.hasResume),
+      resumeScore: row.resumeScore ?? null,
+      watchlistTier: row.watchlistTier ?? null,
       ingestionRunId: row.ingestionRunId,
       // Prefer the gate's timestamp; fall back to first sighting for jobs that
       // predate pre-qualification.

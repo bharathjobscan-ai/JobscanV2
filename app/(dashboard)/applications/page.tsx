@@ -11,6 +11,7 @@ import { Badge, Card, EmptyState, LinkButton } from "@/components/ui/base";
 import { getApplicationCosts } from "@/features/ai/queries";
 import { cityById } from "@/config/cities";
 import { CityGrid } from "@/components/applications/city-grid";
+import { CityTable } from "@/components/applications/city-table";
 import { getCitySummaries } from "@/features/applications/cities";
 import { FilterPanel } from "@/components/ui/filter-panel";
 import { formatUsd } from "@/lib/ai/pricing";
@@ -98,22 +99,47 @@ export default async function ApplicationsPage({
   const pageTotal = [...costs.values()].reduce((sum, c) => sum + c.totalUsd, 0);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
+    <div className="flex flex-col gap-5">
+      {/*
+        The city's photograph as a banner (JSV2S1172). The same image the card
+        carried on the way in, so arriving here confirms where you are instead
+        of making you read it.
+      */}
+      <div className="n-bleed relative -mt-8 mb-1 aspect-[2.4/1] max-h-[240px] w-full overflow-hidden">
+        {city.hero ? (
+          /* eslint-disable-next-line @next/next/no-img-element -- built to size
+             by scripts/build-city-images.mts and served locally. */
+          <img
+            src={city.hero}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : null}
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/55 to-background/25" />
+
+        <div className="absolute inset-0 mx-auto flex max-w-[1248px] flex-col justify-end px-6 pb-5 xl:px-14">
           <Link
             href="/applications"
             className="text-[11px] text-muted underline-offset-2 hover:underline"
           >
             ← All cities
           </Link>
-          <h1 className="text-lg font-semibold tracking-tight">{city.name}</h1>
-          <p className="text-xs text-muted">
-            {counts.all} tracked
-            {incomplete > 0 ? ` · ${incomplete} missing a job description` : ""}
-            {pageTotal > 0 ? ` · ${formatUsd(pageTotal)} AI spend in this view` : ""}
+          <h1 className="n-display mt-1 text-5xl leading-none">{city.name}</h1>
+          <p
+            className="mt-1.5 text-[10px] font-medium tracking-[0.18em] uppercase"
+            style={{ color: "var(--slate)" }}
+          >
+            {city.country}
           </p>
         </div>
+      </div>
+
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-xs text-muted">
+          {counts.all} tracked
+          {incomplete > 0 ? ` · ${incomplete} missing a job description` : ""}
+          {pageTotal > 0 ? ` · ${formatUsd(pageTotal)} AI spend in this view` : ""}
+        </p>
         <LinkButton href="/upload" variant="primary">
           Upload jobs
         </LinkButton>
@@ -175,13 +201,13 @@ export default async function ApplicationsPage({
           <EmptyState
             title={
               counts.all === 0
-                ? "No applications yet"
+                ? `Nothing in ${city.name} yet`
                 : `Nothing in ${VIEW_LABELS[view]}`
             }
             hint={
               counts.all === 0
-                ? "Upload a CSV, XLSX or JSON of jobs to get started. Every valid row becomes an application ready to work."
-                : "Try another view."
+                ? "The nightly fetch adds to this city automatically. You can also upload a CSV, XLSX or JSON of jobs."
+                : "Try another view, or widen the filters."
             }
             action={
               counts.all === 0 ? (
@@ -193,80 +219,12 @@ export default async function ApplicationsPage({
           />
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <ul className="divide-y divide-line">
-            {items.map((item) => (
-              <li key={item.id}>
-                <Link
-                  href={`/applications/${item.id}`}
-                  className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-surface-muted sm:flex-row sm:items-center sm:gap-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">
-                        {item.title}
-                      </span>
-                      {item.isIncomplete ? (
-                        <Badge tone="warning" title="No job description — scoring and tailoring are disabled">
-                          Incomplete
-                        </Badge>
-                      ) : null}
-                    </div>
-                    <p className="mt-0.5 truncate text-xs text-muted">
-                      {item.company}
-                      {item.location ? ` · ${item.location}` : ""}
-                      {" · "}
-                      <span className="text-subtle">{item.source}</span>
-                    </p>
-                    {/* JSV2S1158 — when the job arrived and which fetch brought
-                        it, so an application traces back to its batch. */}
-                    <p className="mt-0.5 truncate text-[11px] text-subtle">
-                      {item.ingestedAt
-                        ? item.ingestedAt.toLocaleDateString(undefined, {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })
-                        : "—"}
-                      {item.ingestionRunId ? (
-                        <>
-                          {" · run "}
-                          <span className="font-mono text-faint" title={item.ingestionRunId}>
-                            {item.ingestionRunId.slice(0, 8)}
-                          </span>
-                        </>
-                      ) : null}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <PreferredCityBadge city={item.preferredCity} />
-                  <MatchBadge category={item.matchCategory} />
-                    <ReferralBadge status={item.referralStatus} />
-                    <StatusBadge status={item.status} isPending={item.isPending} />
-                    <span className="w-8 text-right">
-                      <ScoreBadge score={item.jobScore} />
-                    </span>
-                    <span
-                      className="w-14 text-right text-[11px] tabular-nums text-subtle"
-                      title="AI spent on this application"
-                    >
-                      {(costs.get(item.id)?.totalUsd ?? 0) > 0
-                        ? formatUsd(costs.get(item.id)!.totalUsd)
-                        : "—"}
-                    </span>
-                  </div>
-
-                  <div className="w-full shrink-0 text-xs sm:w-44 sm:text-right">
-                    <p className="truncate font-medium">{item.nextAction}</p>
-                    <p className="text-subtle">{relative(item.lastActivityAt)}</p>
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        <CityTable items={items} />
       )}
+
+      <p className="pb-4 text-[11px]" style={{ color: "var(--faint)" }}>
+        {items.length} of {counts.all} shown · sorted by job score
+      </p>
     </div>
   );
 }
