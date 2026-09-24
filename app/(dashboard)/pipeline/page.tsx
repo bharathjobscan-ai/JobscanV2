@@ -57,6 +57,7 @@ function Pile({
   href,
   rule,
   dim = false,
+  lead = false,
 }: {
   label: string;
   count: number;
@@ -71,13 +72,21 @@ function Pile({
   href?: string;
   rule: string;
   dim?: boolean;
+  /**
+   * The figure the page exists to report. Only Qualified carries it: these are
+   * the jobs that became applications, and the other three piles are the cost
+   * of finding them.
+   */
+  lead?: boolean;
 }) {
   const headline = scope === "today" ? today : count;
   const body = (
     <>
       <div
-        className="n-display text-[30px] leading-none font-semibold tabular-nums"
-        style={dim ? { color: "var(--faint)" } : undefined}
+        className={`n-display leading-none font-semibold tabular-nums ${
+          lead ? "text-[44px]" : "text-[30px]"
+        }`}
+        style={dim ? { color: "var(--faint)" } : lead ? { color: rule } : undefined}
       >
         {headline}
       </div>
@@ -281,12 +290,13 @@ export default async function PipelinePage({
     runOutcomes.today.unevaluated;
 
   /*
-   * Which scale the single bar is showing. Defaults to all time: the page
-   * opens on today's RUNS, but the piles are a standing picture of the whole
-   * corpus, and a bar that silently meant something narrower than its
-   * neighbours would be the more surprising default.
+   * Which scale the single bar is showing.
+   *
+   * Today by default, matching the run table above it. The page answers "what
+   * happened overnight", and opening on a standing all-time picture made the
+   * two halves of the screen describe different periods.
    */
-  const pileScope = one("piles") === "today" ? "today" : "all";
+  const pileScope = one("piles") === "all" ? "all" : "today";
   const shownPiles = pileScope === "today" ? runOutcomes.today : piles;
   const shownTotal = pileScope === "today" ? todayTotal : total;
 
@@ -315,12 +325,13 @@ export default async function PipelinePage({
       */}
       <div className="mt-5 flex items-center gap-3">
         <div className="flex overflow-hidden rounded-md border border-line text-[11.5px]">
-          {(["all", "today"] as const).map((scope) => {
+          {(["today", "all"] as const).map((scope) => {
             const active = pileScope === scope;
             const next = new URLSearchParams(
               Object.entries(params).filter((e): e is [string, string] => Boolean(e[1])),
             );
-            if (scope === "all") next.delete("piles");
+            // Today is the default, so it is the absence of the param.
+            if (scope === "today") next.delete("piles");
             else next.set("piles", scope);
             const qs = next.toString();
             return (
@@ -351,6 +362,7 @@ export default async function PipelinePage({
         <Pile
           label="Qualified"
           scope={pileScope}
+          lead
           count={piles.pass}
           today={runOutcomes.today.pass}
           hint="Passed every filter — these became applications"
