@@ -4,7 +4,17 @@ import type { ReactNode } from "react";
 import { EmptyState } from "@/components/ui/base";
 import { getBudgetStatus } from "@/features/ai/budget-queries";
 import { getPipelineSummary } from "@/features/pipeline/dashboard-queries";
-import { getRunOutcomes } from "@/features/ingestion/run-outcomes";
+import {
+  RUN_RANGES,
+  RUNS_PER_PAGE,
+  getRunOutcomes,
+  isoDay,
+  resolveWindow,
+  todayWindow,
+  type PileSnapshot,
+  type RunRange,
+} from "@/features/ingestion/run-outcomes";
+import { RunFilters, RunPager, runsHref } from "@/components/pipeline/run-filters";
 import { INGESTION_RUN_LABELS, type IngestionRunStatus } from "@/lib/config/constants";
 import { formatUsd } from "@/lib/ai/pricing";
 
@@ -41,6 +51,7 @@ function runToneClass(status: IngestionRunStatus): string {
 function Pile({
   label,
   count,
+  today,
   hint,
   href,
   rule,
@@ -48,6 +59,7 @@ function Pile({
 }: {
   label: string;
   count: number;
+  today: number;
   hint: string;
   href?: string;
   rule: string;
@@ -62,6 +74,11 @@ function Pile({
         {count}
       </div>
       <div className={`mt-2 text-[13.5px] ${dim ? "text-muted" : ""}`}>{label}</div>
+      {/* Today's figure sits under the all-time one and says so in words. Two
+          bare numbers side by side would be a puzzle rather than a reading. */}
+      <div className="n-mono mt-1 text-[11.5px] text-subtle">
+        {today} today · {count} all time
+      </div>
       <p className="mt-0.5 text-xs text-subtle">{hint}</p>
     </>
   );
@@ -74,6 +91,58 @@ function Pile({
         </Link>
       ) : (
         body
+      )}
+    </div>
+  );
+}
+
+/**
+ * One proportional bar, named (2026-09-24).
+ *
+ * `flexGrow` carries the counts so the bar needs no arithmetic and a zero pile
+ * simply disappears. A day with nothing in it would otherwise draw an empty
+ * rule that looks like a rendering fault, so it says what it is instead.
+ */
+function ProportionBar({
+  label,
+  piles,
+  total,
+}: {
+  label: string;
+  piles: PileSnapshot;
+  total: number;
+}) {
+  return (
+    <div className="mt-4 flex items-center gap-4">
+      <span className="n-mono w-[62px] shrink-0 text-[11.5px] text-subtle">{label}</span>
+      {total === 0 ? (
+        <span className="text-[12.5px] text-subtle">Nothing yet</span>
+      ) : (
+        <div
+          className="flex h-11 flex-1 items-stretch overflow-hidden rounded"
+          style={{ background: "var(--hair)" }}
+          aria-hidden="true"
+        >
+          <div
+            style={{
+              flexGrow: piles.pass,
+              background: "color-mix(in srgb, var(--positive) 55%, transparent)",
+            }}
+          />
+          <div
+            style={{
+              flexGrow: piles.review,
+              background: "color-mix(in srgb, var(--warning) 60%, transparent)",
+            }}
+          />
+          <div
+            style={{
+              flexGrow: piles.reject,
+              background: "color-mix(in srgb, var(--negative) 55%, transparent)",
+            }}
+          />
+          <div style={{ flexGrow: piles.unevaluated, background: "var(--border)" }} />
+        </div>
       )}
     </div>
   );
@@ -157,7 +226,34 @@ function BudgetBar({
   );
 }
 
-export default async function PipelinePage() {
+export default async function PipelinePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const one = (key: string) => {
+    const v = params[key];
+    return Array.isArray(v) ? v[0] : v;
+  };
+
+  /**
+   * Closed by default, and then the page is about today (2026-09-24).
+   *
+   * Eight runs land a night, so an unbounded list answers "what happened
+   * overnight" with a year of history. History is a deliberate second click,
+   * and everything about that click lives in the URL so the view is linkable.
+   */
+  const showAll = one("runs") === "all";
+  const rangeParam = one("range");
+  const range = RUN_RANGES.includes(rangeParam as RunRange) ? (rangeParam as RunRange) : null;
+  const resolved = showAll
+    ? resolveWindow(range, one("from"), one("to"))
+    : { window: todayWindow(), from: null, to: null, clampedTo: null };
+
+  const requestedPage = Number.parseInt(one("page") ?? "1", 10);
+  const page = showAll && Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+
   // Three round trips, not seven. On a one-connection serverless pool each
   // query is sequential, so fan-out is latency and connection pressure.
   /**
@@ -167,7 +263,11 @@ export default async function PipelinePage() {
    */
   const [piles, runOutcomes, budget] = await Promise.all([
     getPipelineSummary(),
-    getRunOutcomes(20),
+    getRunOutcomes({
+      window: resolved.window,
+      limit: RUNS_PER_PAGE,
+      offset: (page - 1) * RUNS_PER_PAGE,
+    }),
     getBudgetStatus(),
   ]);
   const { runs: outcomes, unattributed } = runOutcomes;
@@ -175,6 +275,14 @@ export default async function PipelinePage() {
   const orphaned = piles.orphanedPasses;
 
   const total = piles.pass + piles.review + piles.reject + piles.unevaluated;
+  const todayTotal =
+    runOutcomes.today.pass +
+    runOutcomes.today.review +
+    runOutcomes.today.reject +
+    runOutcomes.today.unevaluated;
+
+  const totalPages = Math.max(1, Math.ceil(runOutcomes.total / RUNS_PER_PAGE));
+  const filterState = { range, from: resolved.from, to: resolved.to, page };
 
   return (
     <div className="mx-auto max-w-[1060px]">
@@ -188,31 +296,18 @@ export default async function PipelinePage() {
       </p>
 
       {/* --- The piles (JSV2S1038) -------------------------------------
-          A single proportional bar first, then the four figures beneath it.
-          The bar is the only place the relative size of the piles is legible
-          at a glance; `flexGrow` carries the counts so it needs no arithmetic
-          and a zero pile simply disappears. */}
-      <div
-        className="mt-8 flex h-11 items-stretch overflow-hidden rounded"
-        style={{ background: "var(--hair)" }}
-        aria-hidden="true"
-      >
-        <div
-          style={{ flexGrow: piles.pass, background: "color-mix(in srgb, var(--positive) 55%, transparent)" }}
-        />
-        <div
-          style={{ flexGrow: piles.review, background: "color-mix(in srgb, var(--warning) 60%, transparent)" }}
-        />
-        <div
-          style={{ flexGrow: piles.reject, background: "color-mix(in srgb, var(--negative) 55%, transparent)" }}
-        />
-        <div style={{ flexGrow: piles.unevaluated, background: "var(--border)" }} />
-      </div>
+          Two proportional bars, then the four figures beneath them. Each bar
+          is named at its left edge: all-time and today are the same four
+          categories at different scales, and unlabelled they would read as one
+          figure contradicting another. */}
+      <ProportionBar label="All time" piles={piles} total={total} />
+      <ProportionBar label="Today" piles={runOutcomes.today} total={todayTotal} />
 
       <div className="mt-4 grid gap-x-6 sm:grid-cols-2 lg:grid-cols-4">
         <Pile
           label="Qualified"
           count={piles.pass}
+          today={runOutcomes.today.pass}
           hint="Passed all four filters — these became applications"
           href="/applications"
           rule="var(--positive)"
@@ -220,6 +315,7 @@ export default async function PipelinePage() {
         <Pile
           label="Needs review"
           count={piles.review}
+          today={runOutcomes.today.review}
           hint="A filter could not be confirmed — one click to promote"
           href="/review"
           rule="var(--warning)"
@@ -227,6 +323,7 @@ export default async function PipelinePage() {
         <Pile
           label="Screened out"
           count={piles.reject}
+          today={runOutcomes.today.reject}
           hint="A filter contradicted — kept, never deleted"
           href="/review?view=rejected"
           rule="var(--negative)"
@@ -234,6 +331,7 @@ export default async function PipelinePage() {
         <Pile
           label="Not evaluated"
           count={piles.unevaluated}
+          today={runOutcomes.today.unevaluated}
           hint="Ingested before the gate existed — run prequalify:backfill"
           rule="var(--hair)"
           dim
@@ -289,18 +387,34 @@ export default async function PipelinePage() {
           the design has no table here. The drill-through links survive inside
           the opened row, which is where there is finally room to label them. */}
       <div className="mt-10 flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="n-display text-2xl font-normal">Runs</h2>
-        <span className="n-mono text-[12.5px] text-subtle">
-          {unattributed > 0
-            ? `${outcomes.length} recorded · ${unattributed} jobs predate run tracking`
-            : `last ${outcomes.length}`}
-        </span>
+        <h2 className="n-display text-2xl font-normal">
+          {showAll ? "Runs" : "Runs today"}
+        </h2>
+        <div className="flex flex-wrap items-baseline gap-4">
+          <span className="n-mono text-[12.5px] text-subtle">
+            {unattributed > 0
+              ? `${runOutcomes.total} recorded · ${unattributed} jobs predate run tracking`
+              : `${runOutcomes.total} recorded`}
+          </span>
+          <Link
+            href={showAll ? "/pipeline" : runsHref({})}
+            className="text-[12.5px] underline decoration-dotted underline-offset-2 hover:decoration-solid"
+          >
+            {showAll ? "Today only" : "View all runs"}
+          </Link>
+        </div>
       </div>
+
+      {showAll ? <RunFilters state={filterState} clampedTo={resolved.clampedTo} /> : null}
 
       {outcomes.length === 0 ? (
         <EmptyState
-          title="No runs recorded"
-          hint="Every upload and scheduled fetch now creates a run. The next one will appear here."
+          title={showAll ? "No runs in this range" : "No runs today"}
+          hint={
+            showAll
+              ? "Nothing ran between those dates. Widen the range, or clear the filter."
+              : `Nothing has run since midnight. Open the history to see earlier runs — ${isoDay(new Date())} is a quiet day so far.`
+          }
         />
       ) : (
         <div className="mt-3.5 border-t border-line">
@@ -404,6 +518,15 @@ export default async function PipelinePage() {
           ))}
         </div>
       )}
+
+      {showAll ? (
+        <RunPager
+          state={filterState}
+          page={page}
+          totalPages={totalPages}
+          total={runOutcomes.total}
+        />
+      ) : null}
 
       {/* The funnel arithmetic, spelled out once so the figures are readable
           without guessing what adds to what. */}
