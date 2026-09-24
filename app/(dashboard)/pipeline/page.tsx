@@ -52,6 +52,7 @@ function Pile({
   label,
   count,
   today,
+  scope,
   hint,
   href,
   rule,
@@ -60,24 +61,31 @@ function Pile({
   label: string;
   count: number;
   today: number;
+  /**
+   * Which figure leads. The toggle moved only the bar before this existed, so
+   * switching to Today redrew the proportions while the numbers beneath went
+   * on reading all-time — the bar and its own labels disagreeing.
+   */
+  scope: "all" | "today";
   hint: string;
   href?: string;
   rule: string;
   dim?: boolean;
 }) {
+  const headline = scope === "today" ? today : count;
   const body = (
     <>
       <div
         className="n-display text-[30px] leading-none font-semibold tabular-nums"
         style={dim ? { color: "var(--faint)" } : undefined}
       >
-        {count}
+        {headline}
       </div>
       <div className={`mt-2 text-[13.5px] ${dim ? "text-muted" : ""}`}>{label}</div>
-      {/* Today's figure sits under the all-time one and says so in words. Two
-          bare numbers side by side would be a puzzle rather than a reading. */}
+      {/* The other scale, named. Two bare numbers side by side would be a
+          puzzle rather than a reading. */}
       <div className="n-mono mt-1 text-[11.5px] text-subtle">
-        {today} today · {count} all time
+        {scope === "today" ? `${count} all time` : `${today} today`}
       </div>
       <p className="mt-0.5 text-xs text-subtle">{hint}</p>
     </>
@@ -342,14 +350,16 @@ export default async function PipelinePage({
       <div className="mt-4 grid gap-x-6 sm:grid-cols-2 lg:grid-cols-4">
         <Pile
           label="Qualified"
+          scope={pileScope}
           count={piles.pass}
           today={runOutcomes.today.pass}
-          hint="Passed all four filters — these became applications"
+          hint="Passed every filter — these became applications"
           href="/applications"
           rule="var(--positive)"
         />
         <Pile
           label="Needs review"
+          scope={pileScope}
           count={piles.review}
           today={runOutcomes.today.review}
           hint="A filter could not be confirmed — one click to promote"
@@ -358,6 +368,7 @@ export default async function PipelinePage({
         />
         <Pile
           label="Screened out"
+          scope={pileScope}
           count={piles.reject}
           today={runOutcomes.today.reject}
           hint="A filter contradicted — kept, never deleted"
@@ -366,6 +377,7 @@ export default async function PipelinePage({
         />
         <Pile
           label="Not evaluated"
+          scope={pileScope}
           count={piles.unevaluated}
           today={runOutcomes.today.unevaluated}
           hint="Ingested before the gate existed — run prequalify:backfill"
@@ -457,12 +469,16 @@ export default async function PipelinePage({
           {outcomes.map((o) => (
             <details key={o.runId} className="group border-b border-line">
               <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-3.5 sm:grid-cols-[110px_minmax(0,1fr)_auto_auto] [&::-webkit-details-marker]:hidden">
-                {/* Eight runs a night differ only by where they looked, so
-                    the location is the part that identifies one. */}
-                <span className="text-[13.5px]">
-                  {o.source}
+                {/* The city leads and the source sits under it: eight runs a
+                    night share one source and differ only by where they
+                    looked, so the location is what identifies a row and the
+                    source is the footnote. */}
+                <span className="flex flex-col leading-tight">
+                  <span className="text-[13.5px]">{o.location ?? o.source}</span>
                   {o.location ? (
-                    <span style={{ color: "var(--slate)" }}> · {o.location}</span>
+                    <span className="text-[11.5px]" style={{ color: "var(--slate)" }}>
+                      {o.source}
+                    </span>
                   ) : null}
                 </span>
                 <span className="n-mono hidden truncate text-[12.5px] text-muted sm:block">
