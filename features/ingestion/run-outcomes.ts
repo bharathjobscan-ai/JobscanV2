@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNotNull, sql, type AnyColumn, type SQL } from "drizzle-orm";
 
 import { applications, ingestionRuns, rawJobs } from "@/db/schema";
+import { runLocation } from "./run-label";
 import { db } from "@/lib/db/client";
 import type { IngestionRunStatus, IngestionTrigger } from "@/lib/config/constants";
 
@@ -30,6 +31,8 @@ import type { IngestionRunStatus, IngestionTrigger } from "@/lib/config/constant
 export type RunOutcome = {
   runId: string;
   source: string;
+  /** Where this run looked, for the table (2026-09-24). */
+  location: string | null;
   trigger: IngestionTrigger;
   status: IngestionRunStatus;
   startedAt: Date;
@@ -307,6 +310,7 @@ export async function getRunOutcomes({
     return {
       runId: run.id,
       source: run.source,
+      location: runLocation(run.params),
       trigger: run.trigger,
       status: run.status,
       startedAt: run.startedAt,

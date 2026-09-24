@@ -35,6 +35,7 @@ import {
   type ReferralStatus,
 } from "@/lib/config/constants";
 import { getEnv } from "@/lib/config/env";
+import { runLabel } from "@/features/ingestion/run-label";
 import { db } from "@/lib/db/client";
 import { isIncomplete } from "@/features/ingestion/schema";
 import {
@@ -602,6 +603,7 @@ export async function getApplicationFacets(
       fetch: rawJobs.ingestionRunId,
       fetchSource: ingestionRuns.source,
       fetchStartedAt: ingestionRuns.startedAt,
+      fetchParams: ingestionRuns.params,
     })
     .from(applications)
     .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
@@ -641,9 +643,12 @@ export async function getApplicationFacets(
       continue;
     }
     runs.set(row.fetch, {
-      label: `${row.fetchSource ?? "unknown"} · ${
-        row.fetchStartedAt ? row.fetchStartedAt.toISOString().slice(0, 10) : "—"
-      } · ${row.fetch.slice(0, 8)}`,
+      label: runLabel({
+        id: row.fetch,
+        source: row.fetchSource,
+        startedAt: row.fetchStartedAt,
+        params: row.fetchParams,
+      }),
       count: 1,
     });
   }

@@ -14,6 +14,7 @@ import {
 
 import { applications, ingestionRuns, rawJobs } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
+import { runLabel } from "@/features/ingestion/run-label";
 import {
   PREQUAL_FILTERS,
   type PostedWindow,
@@ -307,6 +308,7 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
       fetch: rawJobs.ingestionRunId,
       fetchSource: ingestionRuns.source,
       fetchStartedAt: ingestionRuns.startedAt,
+      fetchParams: ingestionRuns.params,
     })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
@@ -344,9 +346,12 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
     }
     const at = row.fetchStartedAt;
     runs.set(row.fetch, {
-      label: `${row.fetchSource ?? "unknown"} · ${
-        at ? at.toISOString().slice(0, 10) : "—"
-      } · ${row.fetch.slice(0, 8)}`,
+      label: runLabel({
+        id: row.fetch,
+        source: row.fetchSource,
+        startedAt: at,
+        params: row.fetchParams,
+      }),
       at,
       count: 1,
     });

@@ -103,18 +103,9 @@ function Pile({
  * simply disappears. A day with nothing in it would otherwise draw an empty
  * rule that looks like a rendering fault, so it says what it is instead.
  */
-function ProportionBar({
-  label,
-  piles,
-  total,
-}: {
-  label: string;
-  piles: PileSnapshot;
-  total: number;
-}) {
+function ProportionBar({ piles, total }: { piles: PileSnapshot; total: number }) {
   return (
     <div className="mt-4 flex items-center gap-4">
-      <span className="n-mono w-[62px] shrink-0 text-[11.5px] text-subtle">{label}</span>
       {total === 0 ? (
         <span className="text-[12.5px] text-subtle">Nothing yet</span>
       ) : (
@@ -281,6 +272,16 @@ export default async function PipelinePage({
     runOutcomes.today.reject +
     runOutcomes.today.unevaluated;
 
+  /*
+   * Which scale the single bar is showing. Defaults to all time: the page
+   * opens on today's RUNS, but the piles are a standing picture of the whole
+   * corpus, and a bar that silently meant something narrower than its
+   * neighbours would be the more surprising default.
+   */
+  const pileScope = one("piles") === "today" ? "today" : "all";
+  const shownPiles = pileScope === "today" ? runOutcomes.today : piles;
+  const shownTotal = pileScope === "today" ? todayTotal : total;
+
   const totalPages = Math.max(1, Math.ceil(runOutcomes.total / RUNS_PER_PAGE));
   const filterState = { range, from: resolved.from, to: resolved.to, page };
 
@@ -295,13 +296,48 @@ export default async function PipelinePage({
           : `${total} job${total === 1 ? "" : "s"} ingested. Only qualified jobs become applications.`}
       </p>
 
-      {/* --- The piles (JSV2S1038) -------------------------------------
-          Two proportional bars, then the four figures beneath them. Each bar
-          is named at its left edge: all-time and today are the same four
-          categories at different scales, and unlabelled they would read as one
-          figure contradicting another. */}
-      <ProportionBar label="All time" piles={piles} total={total} />
-      <ProportionBar label="Today" piles={runOutcomes.today} total={todayTotal} />
+      {/*
+        --- The piles (JSV2S1038) ---------------------------------------
+        ONE bar, switched rather than duplicated. Two bars read as rival
+        claims rather than as one measure at two scales; a toggle makes the
+        comparison sequential, which is how it is actually read.
+
+        A link, not a button: the choice belongs in the URL so the view is
+        linkable and no client JavaScript is needed to hold it.
+      */}
+      <div className="mt-5 flex items-center gap-3">
+        <div className="flex overflow-hidden rounded-md border border-line text-[11.5px]">
+          {(["all", "today"] as const).map((scope) => {
+            const active = pileScope === scope;
+            const next = new URLSearchParams(
+              Object.entries(params).filter((e): e is [string, string] => Boolean(e[1])),
+            );
+            if (scope === "all") next.delete("piles");
+            else next.set("piles", scope);
+            const qs = next.toString();
+            return (
+              <Link
+                key={scope}
+                href={qs ? `/pipeline?${qs}` : "/pipeline"}
+                className="px-3 py-1.5 transition-colors"
+                style={
+                  active
+                    ? { background: "var(--gold)", color: "#0b0b0f", fontWeight: 600 }
+                    : { color: "var(--slate)" }
+                }
+              >
+                {scope === "all" ? "All time" : "Today"}
+              </Link>
+            );
+          })}
+        </div>
+        <span className="n-mono text-[11.5px] text-subtle">
+          {shownTotal} job{shownTotal === 1 ? "" : "s"}{" "}
+          {pileScope === "today" ? "ingested today" : "ingested, all time"}
+        </span>
+      </div>
+
+      <ProportionBar piles={shownPiles} total={shownTotal} />
 
       <div className="mt-4 grid gap-x-6 sm:grid-cols-2 lg:grid-cols-4">
         <Pile
@@ -421,7 +457,14 @@ export default async function PipelinePage({
           {outcomes.map((o) => (
             <details key={o.runId} className="group border-b border-line">
               <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-3.5 sm:grid-cols-[110px_minmax(0,1fr)_auto_auto] [&::-webkit-details-marker]:hidden">
-                <span className="text-[13.5px]">{o.source}</span>
+                {/* Eight runs a night differ only by where they looked, so
+                    the location is the part that identifies one. */}
+                <span className="text-[13.5px]">
+                  {o.source}
+                  {o.location ? (
+                    <span style={{ color: "var(--slate)" }}> · {o.location}</span>
+                  ) : null}
+                </span>
                 <span className="n-mono hidden truncate text-[12.5px] text-muted sm:block">
                   {o.fetched} fetched · {o.landed} ingested · {o.autoQualified + o.forceQualified}{" "}
                   qualified
