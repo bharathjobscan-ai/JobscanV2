@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { BIN_FORM_ID } from "@/components/applications/bin-selection";
 import {
   AffinityNote,
@@ -201,17 +202,34 @@ export function HeldJobRow({ item }: { item: ReviewItem }) {
             <PrequalBadge decision={item.decision} reason={d?.reason} />
           </div>
 
-          <form action={promoteAction}>
-            <input type="hidden" name="rawJobId" value={item.id} />
-            <button
-              type="submit"
-              className={`${buttonClass.primary} min-h-8 px-3 text-[12.5px] whitespace-nowrap`}
-            >
-              Promote
-            </button>
-          </form>
+          {/* A discarded application, in the Bin with its job (2026-09-24).
+              It is already promoted, so Promote would fail and Reject means
+              nothing; Restore, above, is how it comes back. */}
+          {item.applicationId ? (
+            <>
+              <Badge tone="info" title="Discarded from Applications. Restoring brings back its documents too.">
+                Discarded application
+              </Badge>
+              <Link
+                href={`/applications/${item.applicationId}`}
+                className={`${buttonClass.ghost} min-h-8 px-3 text-[12.5px] whitespace-nowrap`}
+              >
+                Open application
+              </Link>
+            </>
+          ) : (
+            <form action={promoteAction}>
+              <input type="hidden" name="rawJobId" value={item.id} />
+              <button
+                type="submit"
+                className={`${buttonClass.primary} min-h-8 px-3 text-[12.5px] whitespace-nowrap`}
+              >
+                Promote
+              </button>
+            </form>
+          )}
 
-          {item.decision !== "reject" ? (
+          {item.decision !== "reject" && !item.applicationId ? (
             <form action={rejectAction}>
               <input type="hidden" name="rawJobId" value={item.id} />
               <button

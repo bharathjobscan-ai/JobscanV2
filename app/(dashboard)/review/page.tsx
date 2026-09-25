@@ -3,6 +3,7 @@ import Link from "next/link";
 import { BinSelection } from "@/components/applications/bin-selection";
 import { DELETABLE_AFTER_DAYS } from "@/lib/config/constants";
 import { countDeletable } from "@/features/prequalification/mutations";
+import { ClearBinButton } from "@/components/applications/clear-bin-button";
 import { HeldJobRow } from "@/components/review/held-job-row";
 import { ReviewFilters } from "@/components/review/review-filters";
 import { Button, Card, EmptyState } from "@/components/ui/base";
@@ -196,6 +197,13 @@ export default async function ReviewPage({
          * now links somewhere that can undo itself rather than to a dead end.
          */
         <div className="mt-3.5">
+          {/* The owner's 30-day clear (2026-09-24): everything eligible in one
+              go, not one ticked row at a time. */}
+          {view === "binned" ? (
+            <div className="mb-3 flex justify-end">
+              <ClearBinButton count={deletable} days={DELETABLE_AFTER_DAYS} />
+            </div>
+          ) : null}
           <BinSelection
             action={view === "binned" ? restoreAction : binAction}
             /* Only the Bin can destroy, and only there does it make sense: a
@@ -204,7 +212,7 @@ export default async function ReviewPage({
             destroy={view === "binned" ? deleteBinnedFormAction : undefined}
             hint={
               view === "binned"
-                ? `Tick a job to restore it. Deleting is permanent and only applies to jobs binned more than ${DELETABLE_AFTER_DAYS} days ago — ${deletable} qualify today.`
+                ? `Tick a job to restore it. Discarded applications come back with their documents. Deleting is permanent and only applies to jobs binned more than ${DELETABLE_AFTER_DAYS} days ago — ${deletable} qualify today.`
                 : undefined
             }
             label={view === "binned" ? "Restore from Bin" : "Move to Bin"}

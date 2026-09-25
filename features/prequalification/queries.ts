@@ -263,7 +263,9 @@ export async function listForReview(
     .where(
       and(
         viewFilter(f.view ?? "review"),
-        isNull(applications.id),
+        // The Bin also holds discarded applications (2026-09-24); every other
+        // view is the pre-application queue and must not show them.
+        f.view === "binned" ? undefined : isNull(applications.id),
         // The Bin is a soft delete: binned jobs keep their row and their
         // verdict but leave every working list (JSV2S1157) — except the Bin
         // itself, which is the one list that exists to show them.
@@ -316,7 +318,7 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
     .where(
       and(
         viewFilter(view),
-        isNull(applications.id),
+        view === "binned" ? undefined : isNull(applications.id),
         view === "binned" ? undefined : isNull(rawJobs.binnedAt),
       ),
     );
@@ -407,7 +409,8 @@ export async function countForReview(): Promise<ReviewCounts> {
     .select({ n: sql<number>`count(*)::int` })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
-    .where(and(isNotNull(rawJobs.binnedAt), isNull(applications.id)));
+    // Discarded applications included — they are in the Bin too (2026-09-24).
+    .where(isNotNull(rawJobs.binnedAt));
 
   return {
     review: queue?.review ?? 0,

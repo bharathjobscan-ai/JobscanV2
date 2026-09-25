@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import {
   AlreadyPromoted,
   ApplicationHasSpend,
+  binApplication,
   binJobs,
+  clearBin,
   deleteBinnedJobs,
   demoteApplication,
   promoteJob,
@@ -93,7 +95,7 @@ export async function deleteBinnedAction(
   revalidatePath("/pipeline");
   return {
     deleted: r.deleted,
-    skipped: r.skippedNotBinned + r.skippedTooRecent + r.skippedPromoted,
+    skipped: r.skippedNotBinned + r.skippedTooRecent,
   };
 }
 
@@ -137,6 +139,25 @@ export async function binAction(data: FormData): Promise<void> {
 export async function restoreAction(data: FormData): Promise<void> {
   const ids = data.getAll("jobId").filter((v): v is string => typeof v === "string");
   await restoreJobs(ids);
+  revalidatePath("/review");
+  revalidatePath("/pipeline");
+  // A restored job may carry an application, which reappears in its city.
+  revalidatePath("/applications", "layout");
+}
+
+/** Discard from the application's own page: to the Bin, keeping everything (2026-09-24). */
+export async function discardApplicationAction(data: FormData): Promise<void> {
+  const id = String(data.get("applicationId") ?? "");
+  if (!id) return;
+  await binApplication(id);
+  revalidatePath("/applications", "layout");
+  revalidatePath("/review");
+  revalidatePath("/pipeline");
+}
+
+/** Delete everything binned more than 30 days ago (2026-09-24). */
+export async function clearBinAction(): Promise<void> {
+  await clearBin();
   revalidatePath("/review");
   revalidatePath("/pipeline");
 }

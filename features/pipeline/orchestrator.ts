@@ -74,6 +74,9 @@ async function selectEligible(limit: number) {
       and(
         isNull(applications.jobScore),
         eq(rawJobs.prequalification, "pass"),
+        // Discarded applications sit in the Bin with their job (2026-09-24);
+        // scoring one would pay for a decision already made against it.
+        isNull(rawJobs.binnedAt),
         eq(applications.status, "ready_to_apply"),
         /*
          * JSV2S1168 — gate-qualified applications are unscored on purpose, and

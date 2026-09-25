@@ -5,7 +5,12 @@ import { useState, useTransition } from "react";
 import { demoteApplicationAction } from "@/features/prequalification/actions";
 
 /**
- * Send an application back to a pile (2026-09-21).
+ * Send an application back to the review queue (2026-09-21).
+ *
+ * Discard used to live here too, as a demotion to `reject`. It moved to the
+ * Overview on 2026-09-24 and now bins instead: a demotion deletes the
+ * application row, so it refused exactly the scored applications worth
+ * discarding.
  *
  * The inverse of promoting from the review queue. Deliberately at the FOOT of
  * the page rather than beside the score: it is reached rarely, it destroys an
@@ -43,16 +48,9 @@ export function DemoteForm({ applicationId }: { applicationId: string }) {
         >
           Send back to review
         </button>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => send("reject")}
-          className="rounded-md border border-line-strong px-2.5 py-1.5 text-xs font-medium text-negative hover:bg-negative-bg disabled:opacity-40"
-        >
-          Discard
-        </button>
         <span className="text-[11.5px] text-faint">
-          Removes the application; the job keeps its row and verdict.
+          Removes the application; the job keeps its row and verdict. To drop
+          it instead, use Discard on the Overview.
         </span>
       </div>
 
