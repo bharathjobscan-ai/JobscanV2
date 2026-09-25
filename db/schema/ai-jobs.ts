@@ -34,9 +34,17 @@ export const aiJobs = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
 
-    applicationId: uuid("application_id")
-      .notNull()
-      .references(() => applications.id, { onDelete: "cascade" }),
+    /**
+     * Null once the application is gone (2026-09-24). This was `not null` and
+     * cascading, so the Bin's 30-day purge of a discarded application would
+     * have deleted its spend rows with it. The day's and month's budget are
+     * summed from this table, so that would have understated spend and
+     * loosened the ceiling. `set null` keeps the cost and drops only the
+     * pointer.
+     */
+    applicationId: uuid("application_id").references(() => applications.id, {
+      onDelete: "set null",
+    }),
 
     taskType: text("task_type").$type<AiTaskType>().notNull(),
     status: text("status").$type<AiJobStatus>().notNull().default("queued"),

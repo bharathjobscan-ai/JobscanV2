@@ -118,10 +118,12 @@ body {
 .prose-doc p {
   margin: 0 0 0.75rem;
 }
+/* No disc: the renderer draws its own toned dot, and the two together showed
+   as a double bullet on every line of the score report (2026-09-25). */
 .prose-doc ul {
   margin: 0 0 0.75rem;
-  padding-left: 1.1rem;
-  list-style: disc;
+  padding-left: 0;
+  list-style: none;
 }
 .prose-doc li {
   margin-bottom: 0.25rem;

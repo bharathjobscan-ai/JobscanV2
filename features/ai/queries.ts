@@ -103,6 +103,8 @@ export async function getApplicationCosts(
 
   const grouped = new Map<string, typeof rows>();
   for (const row of rows) {
+    // Filtered by `inArray(applicationId, …)`, so never null here; narrowed for the type.
+    if (row.applicationId === null) continue;
     const list = grouped.get(row.applicationId) ?? [];
     list.push(row);
     grouped.set(row.applicationId, list);

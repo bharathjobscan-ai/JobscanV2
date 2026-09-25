@@ -92,7 +92,9 @@ async function latestResume(applicationId: string) {
 }
 
 export async function settleSimgEvaluation(
-  job: AiJobRow,
+  // Only called by `settleAiJobs` after it has skipped rows whose application
+  // was purged, so the id is always present here.
+  job: AiJobRow & { applicationId: string },
   parsed: { markdown: string; payload: Record<string, unknown> },
 ): Promise<void> {
   const fail = async (reason: string) => {

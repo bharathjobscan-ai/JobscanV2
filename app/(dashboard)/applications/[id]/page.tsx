@@ -45,6 +45,7 @@ import { getGroundingUsage } from "@/features/ai/budget-queries";
 import { getTaskStates, settleAiJobs } from "@/features/ai/tasks";
 import { getApplicationDetail } from "@/features/applications/queries";
 import {
+  DELETABLE_AFTER_DAYS,
   DOCUMENT_LABELS,
   MATCH_HINTS,
   type MatchCategory,
@@ -57,8 +58,13 @@ import { applyAccepted, project } from "@/features/simg/apply";
 import { measureAts } from "@/features/simg/measure";
 import { resolveArtwork } from "@/features/artwork/resolve";
 import { buildLedger } from "@/features/scoring/ledger";
+import { trimScoreReport } from "@/features/scoring/report";
 import { GateVerdictPanel } from "@/components/applications/gate-verdict";
 import { DemoteForm } from "@/components/applications/demote-form";
+import {
+  discardApplicationAction,
+  restoreAction,
+} from "@/features/prequalification/actions";
 import { VISA_REASON_LABELS } from "@/features/prequalification/labels";
 import {
   PREQUALIFICATION_LABELS,
@@ -359,9 +365,25 @@ export default async function ApplicationDetailPage({
 
       <StrategyPanel rows={strategyRows} />
 
-      {/* The score's own action, beside the verdict it produces. */}
-      <div className="mt-6 flex flex-wrap gap-2 border-t border-line pt-5">
+      {/* The score's own action, beside the verdict it produces. Discard
+          sits at the far end of the same row (2026-09-24): the Overview is
+          where you decide a job is not worth pursuing, and Discard only moves
+          it to the Bin, keeping everything, so it can sit near the verdict
+          without being dangerous. */}
+      <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-line pt-5">
         {scoreAction}
+        {job.binnedAt ? null : (
+          <form action={discardApplicationAction} className="ml-auto">
+            <input type="hidden" name="applicationId" value={application.id} />
+            <button
+              type="submit"
+              className={`${buttonClass.secondary} text-negative`}
+              title="Moves it to the Bin with its documents. Restore brings it all back; the Bin clears after 30 days."
+            >
+              Discard
+            </button>
+          </form>
+        )}
       </div>
     </>
   );
@@ -521,7 +543,9 @@ export default async function ApplicationDetailPage({
 
         {scoreReport?.contentMd ? (
           <div className="text-[13px]">
-            <Markdown content={scoreReport.contentMd} />
+            {/* Trimmed on render to the sections the owner keeps (2026-09-25);
+                the stored text is untouched. */}
+            <Markdown content={trimScoreReport(scoreReport.contentMd)} />
           </div>
         ) : null}
       </div>
@@ -650,7 +674,7 @@ export default async function ApplicationDetailPage({
         </div>
       </OnNeed>
 
-      <OnNeed title="Remove from applications" meta="Sends it back to a pile">
+      <OnNeed title="Send back to review" meta="Only before it is scored">
         <DemoteForm applicationId={application.id} />
       </OnNeed>
     </section>
@@ -879,6 +903,23 @@ export default async function ApplicationDetailPage({
         >
           ← Applications
         </Link>
+
+        {/* Discarded: the page still opens, from the Bin or an old link, and
+            says so rather than looking like a live application. */}
+        {job.binnedAt ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface-muted px-4 py-2.5 text-xs">
+            <span className="text-warning">
+              Discarded to the Bin on {formatDate(job.binnedAt)}. It is out of every list,
+              and can be deleted for good from {formatDate(new Date(job.binnedAt.getTime() + DELETABLE_AFTER_DAYS * 86_400_000))}.
+            </span>
+            <form action={restoreAction} className="ml-auto">
+              <input type="hidden" name="jobId" value={job.id} />
+              <button type="submit" className={buttonClass.secondary}>
+                Restore
+              </button>
+            </form>
+          </div>
+        ) : null}
 
         {tasks.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-2 rounded-lg border border-line bg-surface-muted px-4 py-2.5 text-xs">

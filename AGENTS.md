@@ -54,6 +54,18 @@ GitHub Actions cron (Phase 1.5).
   PASS; manual uploads always create one. A `raw_jobs` row without an
   application is normal, and is invisible to every query in
   `features/applications/queries.ts` — those are rooted at `applications`.
+- **A discarded application is binned, not deleted.** Discard sets
+  `raw_jobs.binned_at` and keeps the application and its documents, so every
+  query rooted at `applications` must exclude binned jobs (`notBinned` in
+  `features/applications/queries.ts`). The detail page is the exception. The
+  Bin's 30-day purge deletes the application too; `ai_jobs` survives it
+  (`set null`), because the budget is summed from that table.
+- **A score's total is computed in code, not by the model.** Components the
+  gate, watchlist, register or job record settle are scored in
+  `features/scoring/fixed.ts`; the model scores only the rest, and
+  `finaliseScore` adds them up. A new rule the facts can decide belongs there,
+  not in the prompt. The component names in `config/scoreg.ts` are the contract
+  with the model.
 - **Task prompts are built per task type.** `SCORE_CONTRACT` and
   `DOCUMENT_CONTRACT` in `lib/ai/prompts.ts` must stay separate: one shared
   contract once told the scoring model to emit a CV, and it did.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { billableGroundedRunIds, groundingUsage,
-  shouldGroundScoring,
+  hasLocalSponsorRegister,
 } from "@/features/ai/grounding";
 import { GROUNDING_COST_PER_REQUEST, GROUNDING_FREE_PER_MONTH } from "@/lib/ai/pricing";
 
@@ -99,30 +99,26 @@ describe("billableGroundedRunIds", () => {
 });
 
 /**
- * JSV2S1146. Grounding is the one cost that is not a function of tokens, and
- * this is the switch that decides whether a run pays it.
+ * JSV2S1146, revised 2026-09-25. The register no longer decides whether a score
+ * searches (every score does); it decides only where the evidence tier can be
+ * settled in code.
  */
-describe("grounding is skipped only where the register is local", () => {
-  it("skips the search for UK postings, in every spelling", () => {
+describe("hasLocalSponsorRegister", () => {
+  it("recognises the UK in every spelling", () => {
     for (const c of ["United Kingdom", "uk", "England", "  Scotland  ", "GB"]) {
-      expect(shouldGroundScoring(c)).toBe(false);
+      expect(hasLocalSponsorRegister(c)).toBe(true);
     }
   });
 
-  it("keeps the search everywhere without a local register", () => {
+  it("holds no register anywhere else", () => {
     for (const c of ["Netherlands", "Germany", "United Arab Emirates", "Ireland", "Portugal", "Luxembourg"]) {
-      expect(shouldGroundScoring(c)).toBe(true);
+      expect(hasLocalSponsorRegister(c)).toBe(false);
     }
   });
 
-  /**
-   * Errs towards grounding ON. A missing country is a badly-formatted posting
-   * far more often than a UK one, and scoring a non-UK job with neither a
-   * register nor a search leaves half the score resting on nothing.
-   */
-  it("grounds when the country is unknown", () => {
-    expect(shouldGroundScoring(null)).toBe(true);
-    expect(shouldGroundScoring(undefined)).toBe(true);
-    expect(shouldGroundScoring("")).toBe(true);
+  it("treats an unknown country as having no register", () => {
+    expect(hasLocalSponsorRegister(null)).toBe(false);
+    expect(hasLocalSponsorRegister(undefined)).toBe(false);
+    expect(hasLocalSponsorRegister("")).toBe(false);
   });
 });

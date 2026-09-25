@@ -15,7 +15,15 @@ import { applyAtsHygiene, type AtsReport } from "@/lib/documents/ats";
 import { lineBudgetFor, settleSimgEvaluation } from "@/features/simg/settle";
 import { SIMG_AUTOMATIC } from "@/config/simg";
 import { lookupSponsor, sponsorPromptBlock } from "@/features/sponsors/lookup";
-import { lookupWatchlist } from "@/features/companies/lookup";
+import { lookupAffinity, lookupWatchlist } from "@/features/companies/lookup";
+import {
+  fixedScoring,
+  scoringFixedPromptBlock,
+  type FixedScoring,
+} from "@/features/scoring/fixed";
+import { finaliseScore } from "@/features/scoring/finalise";
+import type { PreQualificationResult } from "@/features/prequalification/types";
+import type { ScoreLineItem } from "@/db/schema";
 import { gatePromptBlock, watchlistPromptBlock } from "@/features/companies/prompt";
 import { parseTaskResponse, type AiProvider, type TaskContext } from "@/lib/ai/types";
 import {
@@ -112,6 +120,133 @@ function effortFor(taskType: AiTaskType): string {
 export class TaskTooSoon extends Error {}
 
 /**
+ * Everything a task sends, assembled without calling anything billed.
+ *
+ * Split out of `enqueueTask` (2026-09-25) so the exact prompt for a real job
+ * can be inspected, and its size measured, before any money is spent on it.
+ */
+export async function prepareTask(
+  applicationId: string,
+  taskType: AiTaskType,
+): Promise<{ context: TaskContext; scoring: FixedScoring | null }> {
+  const [row] = await db
+    .select({ application: applications, job: rawJobs })
+    .from(applications)
+    .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
+    .where(eq(applications.id, applicationId))
+    .limit(1);
+
+  if (!row) throw new TaskBlocked("Application not found.");
+
+  if (isIncomplete({ description: row.job.description })) {
+    throw new TaskBlocked(
+      "This job has no usable description. Add the job description before generating material.",
+    );
+  }
+
+  const context: TaskContext = {
+    applicationId,
+    taskType,
+    title: row.job.title,
+    company: row.job.company,
+    location: row.job.location,
+    country: row.job.country,
+    description: row.job.description!,
+    jobUrl: row.job.jobUrl,
+    visaSponsorshipMentioned: row.job.visaSponsorshipMentioned,
+    postedAt: row.job.postedAt,
+    employmentType: row.job.employmentType,
+    seniority: row.job.seniority,
+    salaryRaw: row.job.salaryRaw,
+    reachability: row.job.reachability,
+    inboundSourceDetail: row.job.inboundSourceDetail,
+  };
+
+  /**
+   * JSV2S1127 — resolve the sponsor licence before scoring, not during.
+   *
+   * Fixes a measured failure: ScoreG searched "Visa Inc" while the register
+   * lists "VISA EUROPE LIMITED", found nothing, and dropped the visa pillar
+   * 60 -> 30, taking the score 75 -> 59. The lookup is free, instant and
+   * deterministic, and an `unknown` result is passed through as "not checked"
+   * rather than "not a sponsor" so an unloaded register cannot fabricate an
+   * absence.
+   */
+  let scoring: FixedScoring | null = null;
+  if (taskType === "score") {
+    const match = await lookupSponsor(row.job.company);
+    context.sponsorBlock = sponsorPromptBlock(match);
+
+    /*
+     * JSV2S1051 / JSV2S1156 — everything the gate already established, handed
+     * over as fact.
+     *
+     * The scorer's visa pillar is half the score, and until now most of it was
+     * re-derived by web search on every run: whether the posting refuses
+     * sponsorship (the gate read that deterministically) and whether the
+     * company has actually sponsored (the watchlist records it). Supplying both
+     * is what lets the prompt drop its blocker list and skip four searches.
+     */
+    const watchlist = lookupWatchlist(row.job.company);
+    context.watchlistBlock = watchlistPromptBlock(watchlist);
+    context.gateBlock = gatePromptBlock(
+      row.job.prequalificationDetail,
+      lookupAffinity(row.job.company),
+    );
+
+    /*
+     * 2026-09-25 — score what the facts above already settle, before the call,
+     * and send the model only the judgement components (₹10 a score target).
+     */
+    // Every field read optionally: an older verdict may predate a filter.
+    const gate = (row.job.prequalificationDetail ?? null) as Partial<PreQualificationResult> | null;
+    scoring = fixedScoring({
+      title: row.job.title,
+      country: gate?.location?.country ?? row.job.country?.toLowerCase() ?? null,
+      preferredCity: gate?.location?.preferredCity ?? null,
+      locationRule: gate?.location?.rule ?? null,
+      isRemote: gate?.location?.isRemote ?? false,
+      experience: gate?.experience ?? null,
+      visaReasonCode: gate?.visa?.reasonCode ?? null,
+      watchlistTier: watchlist?.tier ?? null,
+      sponsorStatus: match.status,
+      source: row.job.source,
+      postedAt: row.job.postedAt,
+      reachability: row.job.reachability,
+      today: new Date(),
+    });
+    context.scoringFixedBlock = scoringFixedPromptBlock(scoring);
+    context.grounded = scoring.grounded;
+  }
+
+  // SimG evaluates a document rather than a job, so its context carries the
+  // generated CV and the two figures the application already knows (JSV2S1058).
+  if (taskType === "simg") {
+    const [resume] = await db
+      .select({ contentMd: applicationDocuments.contentMd, summary: applicationDocuments.summary })
+      .from(applicationDocuments)
+      .where(
+        and(
+          eq(applicationDocuments.applicationId, applicationId),
+          eq(applicationDocuments.docType, "resume"),
+        ),
+      )
+      .orderBy(desc(applicationDocuments.version))
+      .limit(1);
+
+    if (!resume?.contentMd) {
+      throw new TaskBlocked("Generate the CV before evaluating it.");
+    }
+
+    context.cvMarkdown = resume.contentMd;
+    context.atsParseScore = resume.summary?.ats?.parseScore;
+    context.lineBudget = lineBudgetFor(resume.contentMd);
+  }
+
+  return { context, scoring };
+}
+
+/**
  * Has this exact task just run for this application?
  *
  * The existing in-flight check cannot catch this. Providers are called inline
@@ -164,90 +299,7 @@ export async function enqueueTask(
     }
   }
 
-  const [row] = await db
-    .select({ application: applications, job: rawJobs })
-    .from(applications)
-    .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
-    .where(eq(applications.id, applicationId))
-    .limit(1);
-
-  if (!row) throw new TaskBlocked("Application not found.");
-
-  if (isIncomplete({ description: row.job.description })) {
-    throw new TaskBlocked(
-      "This job has no usable description. Add the job description before generating material.",
-    );
-  }
-
-  const context: TaskContext = {
-    applicationId,
-    taskType,
-    title: row.job.title,
-    company: row.job.company,
-    location: row.job.location,
-    country: row.job.country,
-    description: row.job.description!,
-    jobUrl: row.job.jobUrl,
-    visaSponsorshipMentioned: row.job.visaSponsorshipMentioned,
-    postedAt: row.job.postedAt,
-    employmentType: row.job.employmentType,
-    seniority: row.job.seniority,
-    salaryRaw: row.job.salaryRaw,
-    reachability: row.job.reachability,
-    inboundSourceDetail: row.job.inboundSourceDetail,
-  };
-
-  /**
-   * JSV2S1127 — resolve the sponsor licence before scoring, not during.
-   *
-   * Fixes a measured failure: ScoreG searched "Visa Inc" while the register
-   * lists "VISA EUROPE LIMITED", found nothing, and dropped the visa pillar
-   * 60 -> 30, taking the score 75 -> 59. The lookup is free, instant and
-   * deterministic, and an `unknown` result is passed through as "not checked"
-   * rather than "not a sponsor" so an unloaded register cannot fabricate an
-   * absence.
-   */
-  if (taskType === "score") {
-    const match = await lookupSponsor(row.job.company);
-    context.sponsorBlock = sponsorPromptBlock(match);
-
-    /*
-     * JSV2S1051 / JSV2S1156 — everything the gate already established, handed
-     * over as fact.
-     *
-     * The scorer's visa pillar is half the score, and until now most of it was
-     * re-derived by web search on every run: whether the posting refuses
-     * sponsorship (the gate read that deterministically) and whether the
-     * company has actually sponsored (the watchlist records it). Supplying both
-     * is what lets the prompt drop its blocker list and skip four searches.
-     */
-    context.watchlistBlock = watchlistPromptBlock(lookupWatchlist(row.job.company));
-    context.gateBlock = gatePromptBlock(row.job.prequalificationDetail);
-  }
-
-  // SimG evaluates a document rather than a job, so its context carries the
-  // generated CV and the two figures the application already knows (JSV2S1058).
-  if (taskType === "simg") {
-    const [resume] = await db
-      .select({ contentMd: applicationDocuments.contentMd, summary: applicationDocuments.summary })
-      .from(applicationDocuments)
-      .where(
-        and(
-          eq(applicationDocuments.applicationId, applicationId),
-          eq(applicationDocuments.docType, "resume"),
-        ),
-      )
-      .orderBy(desc(applicationDocuments.version))
-      .limit(1);
-
-    if (!resume?.contentMd) {
-      throw new TaskBlocked("Generate the CV before evaluating it.");
-    }
-
-    context.cvMarkdown = resume.contentMd;
-    context.atsParseScore = resume.summary?.ats?.parseScore;
-    context.lineBudget = lineBudgetFor(resume.contentMd);
-  }
+  const { context, scoring } = await prepareTask(applicationId, taskType);
 
   const provider = providerFor(taskType);
   const model = modelFor(taskType, provider.name);
@@ -267,12 +319,20 @@ export async function enqueueTask(
       provider: provider.name,
       model,
       effort: effortFor(taskType),
+      // Recorded from the same decision the provider acted on; this used to say
+      // GoogleSearch for every Gemini score, UK ones included.
       allowedTools:
-        provider.name === "gemini_api" && taskType === "score"
+        provider.name === "gemini_api" && taskType === "score" && context.grounded
           ? "GoogleSearch"
           : null,
       prompt: prompt ? flattenPrompt(prompt) : null,
-      result: { markdown: result.markdown, payload: result.payload },
+      // `fixed` travels with the result so settling adds up exactly the
+      // components the model was told were fixed, whenever it runs.
+      result: {
+        markdown: result.markdown,
+        payload: result.payload,
+        ...(scoring ? { fixed: scoring.fixed } : {}),
+      },
       usage: result.usage
         ? {
             inputTokens: result.usage.inputTokens,
@@ -336,7 +396,16 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
 
   let settled = 0;
 
-  for (const job of pending) {
+  for (const row of pending) {
+    // The application was purged from the Bin before this result was settled.
+    // The row stays `succeeded` so its cost still counts; there is just nowhere
+    // left to write the output.
+    if (row.applicationId === null) {
+      await db.update(aiJobs).set({ settledAt: sql`now()` }).where(eq(aiJobs.id, row.id));
+      continue;
+    }
+    const job = { ...row, applicationId: row.applicationId };
+
     const raw = (job.result ?? {}) as {
       markdown?: string;
       payload?: Record<string, unknown>;
@@ -392,6 +461,19 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
         ? splitDocuments(parsed.markdown)
         : [{ docType, markdown: parsed.markdown }];
 
+    /*
+     * 2026-09-25 — where the run carried fixed components, the score is added
+     * up here from the fixed lines plus the model's judgement lines; the
+     * model no longer reports a total. Runs from before that (and the mock,
+     * whose breakdown is not line items) keep the model's own score.
+     */
+    const fixedLines = (raw as { fixed?: ScoreLineItem[] }).fixed;
+    const final =
+      job.taskType === "score" && Array.isArray(fixedLines) && Array.isArray(parsed.payload.analysis?.breakdown)
+        ? finaliseScore(fixedLines, parsed.payload.analysis)
+        : null;
+    const score = final?.score ?? parsed.payload.score;
+
     await db.transaction(async (tx) => {
       for (const part of parts) {
         const docType = part.docType;
@@ -446,24 +528,26 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
             taskType: job.taskType,
             model: job.model,
             version,
-            score: parsed.payload.score ?? null,
+            score: job.taskType === "score" ? (score ?? null) : (parsed.payload.score ?? null),
             atsRepairs: ats?.repairs.length ?? 0,
             atsParseScore: ats?.parseScore ?? null,
           },
         });
       }
 
-      if (job.taskType === "score" && parsed.payload.score !== undefined) {
+
+      if (job.taskType === "score" && score !== undefined) {
         await tx
           .update(applications)
           .set({
-            jobScore: parsed.payload.score,
+            jobScore: score,
             // Derived from ScoreG's decision bands, never taken from the model:
             // it is a pure function of the score, so deriving it is
-            // deterministic and cannot drift between runs (C3).
-            matchCategory: matchCategoryFor(parsed.payload.score),
+            // deterministic and cannot drift between runs (C3). A hard override
+            // (visa or resume pillar below its floor) is Skip whatever the total.
+            matchCategory: final?.overrideReject ? "reject" : matchCategoryFor(score),
             visaSignal: parsed.payload.visaSignal ?? null,
-            jobScoreAnalysis: parsed.payload.analysis ?? null,
+            jobScoreAnalysis: final?.analysis ?? parsed.payload.analysis ?? null,
             jobScoreGeneratedAt: job.finishedAt ?? sql`now()`,
             lastActivityAt: sql`now()`,
             updatedAt: sql`now()`,
