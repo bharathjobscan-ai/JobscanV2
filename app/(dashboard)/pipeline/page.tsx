@@ -17,6 +17,7 @@ import {
 import { RunFilters, RunPager, runsHref } from "@/components/pipeline/run-filters";
 import { INGESTION_RUN_LABELS, type IngestionRunStatus } from "@/lib/config/constants";
 import { formatUsd } from "@/lib/ai/pricing";
+import { cityById } from "@/config/cities";
 
 export const dynamic = "force-dynamic";
 
@@ -183,11 +184,13 @@ function DrillDown({
   className = "",
 }: {
   count: number;
-  href: string;
+  /** Absent when there is nowhere honest to send the click — see `runApplicationsHref`. */
+  href?: string;
   title: string;
   className?: string;
 }) {
   if (!count) return <span className="text-subtle">—</span>;
+  if (!href) return <span className={className}>{count}</span>;
   return (
     <Link
       href={href}
@@ -197,6 +200,29 @@ function DrillDown({
       {count}
     </Link>
   );
+}
+
+/**
+ * Where a run's qualified count leads (2026-09-24).
+ *
+ * The applications list is reached through a city now (JSV2S1172), and a bare
+ * `/applications?fetch=` lands on the city grid with the filter dropped — the
+ * link had been going nowhere since the redesign. A scheduled run fetched one
+ * city, so it links into that city's table, on `view=all` because the default
+ * view is Ready to Apply and would hide anything from the run already applied
+ * to. An upload has no location and its jobs may span cities, so it gets no
+ * link rather than a wrong one.
+ */
+function runApplicationsHref(location: string | null, runId: string): string | undefined {
+  // `runLocation` has already cut "London, United Kingdom" to "London", which
+  // is the city's id once lower-cased; "upload" and "replay" match nothing.
+  const city = cityById(location);
+  return city ? `/applications?city=${city.id}&view=all&fetch=${runId}` : undefined;
+}
+
+/** Auto and force together — both became applications. */
+function qualified(o: { autoQualified: number; forceQualified: number }): number {
+  return o.autoQualified + o.forceQualified;
 }
 
 /** A metric inside an opened run: label in slate, figure in platinum. */
@@ -494,8 +520,17 @@ export default async function PipelinePage({
                   ) : null}
                 </span>
                 <span className="n-mono hidden truncate text-[12.5px] text-muted sm:block">
-                  {o.fetched} fetched · {o.landed} ingested · {o.autoQualified + o.forceQualified}{" "}
-                  qualified
+                  {o.fetched} fetched · {o.landed} ingested ·{" "}
+                  {/* Qualified keeps its place in the line but takes the
+                      Qualified pile's colour: it is the one figure in a run
+                      that says anything went right, and in plain mono it read
+                      the same as "fetched" (2026-09-24). */}
+                  <span
+                    className={qualified(o) > 0 ? "font-semibold" : undefined}
+                    style={{ color: qualified(o) > 0 ? "var(--positive)" : undefined }}
+                  >
+                    {qualified(o)} qualified
+                  </span>
                   {o.costUsd === null ? "" : ` · ${formatUsd(o.costUsd)}`}
                 </span>
                 <span className={`text-[12.5px] whitespace-nowrap ${runToneClass(o.status)}`}>
@@ -520,7 +555,7 @@ export default async function PipelinePage({
                 <Metric label="Auto qualified">
                   <DrillDown
                     count={o.autoQualified}
-                    href={`/applications?fetch=${o.runId}`}
+                    href={runApplicationsHref(o.location, o.runId)}
                     title="Applications created by this fetch"
                     className="text-positive"
                   />
@@ -528,7 +563,7 @@ export default async function PipelinePage({
                 <Metric label="Force qualified">
                   <DrillDown
                     count={o.forceQualified}
-                    href={`/applications?fetch=${o.runId}`}
+                    href={runApplicationsHref(o.location, o.runId)}
                     title="Promoted by hand from this fetch"
                   />
                 </Metric>

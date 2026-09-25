@@ -31,13 +31,27 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 /** Days since posting, in the design's compact form. */
-function age(at: Date | null): string {
-  if (!at) return "—";
+function age(posted: string | null): string {
+  if (!posted) return "—";
+  // Local midnight: `new Date("2026-09-24")` is UTC and shifts a day west of Greenwich.
+  const at = new Date(`${posted}T00:00:00`);
+  if (Number.isNaN(at.getTime())) return "—";
   const days = Math.floor((Date.now() - at.getTime()) / 86_400_000);
   if (days <= 0) return "today";
   if (days === 1) return "1d old";
   if (days < 30) return `${days}d old`;
   return `${Math.floor(days / 30)}mo old`;
+}
+
+/** When the job arrived here, by fetch or upload: a date, not an age. */
+function uploaded(at: Date | null): string {
+  if (!at) return "—";
+  const sameYear = at.getFullYear() === new Date().getFullYear();
+  return at.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
 }
 
 /**
@@ -96,7 +110,7 @@ export function CityTable({ items }: { items: ApplicationListItem[] }) {
             <th className="px-2 py-2.5">
               <span className="sr-only">Starred</span>
             </th>
-            {["Job", "Resume", "Role", "Company", "Posted", "Visa", "Status", "Action"].map(
+            {["Job", "Resume", "Role", "Company", "Posted", "Uploaded", "Visa", "Status", "Action"].map(
               (h, i) => (
                 <th
                   key={h}
@@ -162,8 +176,18 @@ export function CityTable({ items }: { items: ApplicationListItem[] }) {
                   ) : null}
                 </td>
 
+                {/* Posted read the ingest date until 2026-09-24, so a month-old
+                    advert fetched this morning said "today". It now reads the
+                    posting's own date, and the arrival has its own column. */}
                 <td className="n-mono px-3 py-3 whitespace-nowrap text-faint">
-                  {age(item.ingestedAt)}
+                  {age(item.postedAt)}
+                </td>
+
+                <td
+                  className="n-mono px-3 py-3 whitespace-nowrap text-faint"
+                  title={item.ingestedAt?.toLocaleString("en-GB") ?? undefined}
+                >
+                  {uploaded(item.ingestedAt)}
                 </td>
 
                 <td className="px-3 py-3 whitespace-nowrap">

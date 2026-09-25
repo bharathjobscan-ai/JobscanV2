@@ -38,5 +38,15 @@
     "card": "/cities/manchester-card.webp",
     "hero": "/cities/manchester-hero.webp",
     "blur": "data:image/webp;base64,UklGRooAAABXRUJQVlA4IH4AAAAwBACdASoUAA0APt1apkyopSOiMAgBEBuJbACdMoADTOmj3XBY3x9n0QAA95xaDVhm198euzDqCltC8x+0eL8Bth7EizBvkgRRr3JN7u3lTSb+Bj3PF96GwGzTHEYbucgJGQ9qkdB4gPKerWnqSXK0HaTrv+zkVR5ID4aAAAA="
+  },
+  "other": {
+    "card": "/cities/other-card.webp",
+    "hero": "/cities/other-hero.webp",
+    "blur": "data:image/webp;base64,UklGRmQAAABXRUJQVlA4IFgAAACQAwCdASoUAA0APt1apkyopSOiMAgBEBuJYwAAYfIMXNtdpsAAAP70nU7SoGdjNjHkUSM2Q0H2HiUrPF9FlS1Frqd6AEwCWHIHSeFmm/DGPHHdSlxQTAAA"
+  },
+  "remote": {
+    "card": "/cities/remote-card.webp",
+    "hero": "/cities/remote-hero.webp",
+    "blur": "data:image/webp;base64,UklGRowAAABXRUJQVlA4IIAAAAAQBACdASoUAA0APt1apkyopSOiMAgBEBuJZwCdACFcjvf56jXKt3PQAAD+56PJI+VoJ2E7WV08RsI/Vw8SsaccAjIvBhufMHt/LNoNrSOncP2bPrAlnfe1b9q6MKgYnTO7D6PRwEDj853UO0zg3yBmZqYzCLgHjIsXkKcADqAAAA=="
   }
 }

@@ -19,6 +19,12 @@ import generated from "./images.generated.json";
 export type City = {
   /** Lower-case key, matching the city resolved by the location filter. */
   id: string;
+  /**
+   * `city` is a fetch location. `remote` and `other` are cards with no fetch
+   * behind them (2026-09-24): without them a job that names no target city had
+   * nowhere to be listed, and 34 of 160 applications were unreachable.
+   */
+  kind: "city" | "remote" | "other";
   name: string;
   country: string;
   /** The location string sent to the actor, for tracing a card to its fetch. */
@@ -48,6 +54,7 @@ export const CITIES: readonly City[] = FETCH_LOCATIONS.map((location) => {
   const img = images[id];
   return {
     id,
+    kind: "city" as const,
     name,
     country,
     fetchLocation: location,
@@ -59,26 +66,43 @@ export const CITIES: readonly City[] = FETCH_LOCATIONS.map((location) => {
   };
 });
 
-const byId = new Map(CITIES.map((c) => [c.id, c]));
+/**
+ * The two cards that are not places (2026-09-24). Kept out of `CITIES`, which
+ * stays the fetch plan, and after them in `CARDS`, so they sort last on the
+ * grid. Their photographs go through `npm run cities:build` like a city's
+ * (2026-09-24), from `assets/city-source/{remote,other}-card.jpg`:
+ *   remote: "Laptop on a neat desk (Unsplash)", CC0, Wikimedia Commons
+ *   other:  "Northwestern Europe at Night", ISS photograph, NASA, public domain
+ * Their ids must never collide with a city's: `remote` and `other` are not
+ * places anyone fetches.
+ */
+export const REMOTE_CARD: City = {
+  id: "remote",
+  kind: "remote",
+  name: "Remote",
+  country: "Anywhere",
+  fetchLocation: "",
+  card: images.remote?.card ?? "",
+  hero: images.remote?.hero ?? "",
+  blur: images.remote?.blur ?? "",
+};
+
+export const OTHER_CARD: City = {
+  id: "other",
+  kind: "other",
+  name: "Other locations",
+  country: "No target city named",
+  fetchLocation: "",
+  card: images.other?.card ?? "",
+  hero: images.other?.hero ?? "",
+  blur: images.other?.blur ?? "",
+};
+
+export const CARDS: readonly City[] = [...CITIES, REMOTE_CARD, OTHER_CARD];
+
+const byId = new Map(CARDS.map((c) => [c.id, c]));
 
 export function cityById(id: string | null | undefined): City | null {
   if (!id) return null;
   return byId.get(id.trim().toLowerCase()) ?? null;
-}
-
-/**
- * Which city a job belongs to.
- *
- * Matched on the city the gate already resolved, so the grouping here and the
- * verdict on the detail screen can never disagree about where a job is.
- */
-export function cityForJob(
-  preferredCity: string | null | undefined,
-  location: string | null | undefined,
-): City | null {
-  const direct = cityById(preferredCity);
-  if (direct) return direct;
-  if (!location) return null;
-  const haystack = location.toLowerCase();
-  return CITIES.find((c) => haystack.includes(c.id)) ?? null;
 }

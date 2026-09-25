@@ -13,12 +13,16 @@ import type { CitySummary } from "@/features/applications/cities";
  * would bury London behind Amsterdam on every single visit.
  */
 
-function relative(at: Date | null): string {
-  if (!at) return "never scanned";
+/**
+ * `verb` because Remote and Other are not fetched: their date is the latest
+ * arrival, and "scanned" would claim a fetch that never happened.
+ */
+function relative(at: Date | null, verb: string): string {
+  if (!at) return `never ${verb}`;
   const hours = Math.round((Date.now() - at.getTime()) / 3_600_000);
-  if (hours < 1) return "scanned just now";
-  if (hours < 24) return `scanned ${hours}h ago`;
-  return `scanned ${Math.round(hours / 24)}d ago`;
+  if (hours < 1) return `${verb} just now`;
+  if (hours < 24) return `${verb} ${hours}h ago`;
+  return `${verb} ${Math.round(hours / 24)}d ago`;
 }
 
 function CityCard({ summary, priority }: { summary: CitySummary; priority: boolean }) {
@@ -104,14 +108,24 @@ function CityCard({ summary, priority }: { summary: CitySummary; priority: boole
                 className="n-display text-4xl leading-none"
                 style={{ color: empty ? "var(--slate)" : "var(--platinum)" }}
               >
-                {summary.readyToday}
+                {summary.ready}
               </span>
               <span
                 className="text-[10px] font-medium tracking-[0.16em] uppercase"
                 style={{ color: "var(--slate)" }}
               >
-                ready today
+                ready to apply
               </span>
+            </p>
+            {/* Today's arrivals sit under the total rather than beside it: they
+                are a subset of it, not a rival figure. */}
+            <p
+              className="mt-1.5 text-[11px]"
+              style={{ color: summary.arrivedToday > 0 ? "var(--gold)" : "var(--slate)" }}
+            >
+              {summary.arrivedToday > 0
+                ? `+${summary.arrivedToday} from today's run`
+                : "none new today"}
             </p>
           </div>
 
@@ -146,7 +160,7 @@ function CityCard({ summary, priority }: { summary: CitySummary; priority: boole
         <span style={{ color: "var(--border)" }}>|</span>
         <span>{summary.fresh} new</span>
         <span style={{ color: "var(--border)" }}>|</span>
-        <span className="n-mono">{relative(summary.lastSeenAt)}</span>
+        <span className="n-mono">{relative(summary.lastSeenAt, city.kind === "city" ? "scanned" : "last arrival")}</span>
       </div>
     </Link>
   );
@@ -154,6 +168,9 @@ function CityCard({ summary, priority }: { summary: CitySummary; priority: boole
 
 export function CityGrid({ summaries }: { summaries: CitySummary[] }) {
   const tracked = summaries.reduce((n, s) => n + s.total, 0);
+  const cityCount = summaries.filter((s) => s.city.kind === "city").length;
+  const ready = summaries.reduce((n, s) => n + s.ready, 0);
+  const arrivedToday = summaries.reduce((n, s) => n + s.arrivedToday, 0);
 
   return (
     <div className="-mt-8 pt-8 pb-10">
@@ -161,8 +178,32 @@ export function CityGrid({ summaries }: { summaries: CitySummary[] }) {
         <h1 className="n-display text-5xl leading-none" style={{ color: "var(--platinum)" }}>
           Applications
         </h1>
+        <p className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-2">
+          <span className="flex items-baseline gap-2">
+            <span className="n-display text-3xl leading-none" style={{ color: "var(--platinum)" }}>
+              {ready}
+            </span>
+            <span
+              className="text-[10px] font-medium tracking-[0.16em] uppercase"
+              style={{ color: "var(--slate)" }}
+            >
+              ready to apply
+            </span>
+          </span>
+          <span className="flex items-baseline gap-2">
+            <span className="n-display text-3xl leading-none" style={{ color: "var(--gold)" }}>
+              {arrivedToday}
+            </span>
+            <span
+              className="text-[10px] font-medium tracking-[0.16em] uppercase"
+              style={{ color: "var(--slate)" }}
+            >
+              from today&apos;s run
+            </span>
+          </span>
+        </p>
         <p className="mt-3 text-sm" style={{ color: "var(--slate)" }}>
-          {tracked} tracked across {summaries.length} target cities. Open a city to
+          {tracked} tracked across {cityCount} target cities, plus remote and elsewhere. Open a city to
           work its table.
         </p>
       </header>

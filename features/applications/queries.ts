@@ -8,6 +8,7 @@ import {
   ilike,
   inArray,
   isNotNull,
+  isNull,
   not,
   or,
   sql,
@@ -21,6 +22,8 @@ import {
   ingestionRuns,
   rawJobs,
 } from "@/db/schema";
+import { LENS_WEIGHTS } from "@/config/simg";
+import { CITIES } from "@/config/cities";
 import {
   ACTIVE_STATUSES,
   CLOSED_STATUSES,
@@ -116,12 +119,29 @@ function pendingPredicate() {
  * 91 quietly becomes a list of 140. `order by created_at desc limit 1` takes
  * the current one.
  *
- * Reads the composite SimG wrote, not a recomputation — the worklist and the
- * list must agree about what a document scores, and two places computing it is
- * how they stop agreeing.
+ * The same figure the detail screen's score panel leads with — `project()`'s
+ * `current`: the weighted lens composite plus the points of every accepted
+ * recommendation, capped at 100. Computed here because SimG never stores a
+ * composite; this once read `current->>'composite'`, a key nothing writes, so
+ * the column showed a dash on every row (fixed 2026-09-24). The weights are
+ * interpolated from `LENS_WEIGHTS` rather than restated, so the list and the
+ * panel cannot drift apart when a weight changes.
  */
+// The key is inlined, not bound: it comes from a fixed union, and a bound
+// parameter leaves `->` ambiguous between its text and integer overloads.
+const lensScore = (lens: keyof typeof LENS_WEIGHTS) =>
+  sql`coalesce((${applicationDocuments.simg}->'current'->${sql.raw(`'${lens}'`)}->>'score')::numeric, 0) * ${LENS_WEIGHTS[lens]}::numeric`;
+
 const resumeScore = sql<number | null>`(
-  select (${applicationDocuments.simg}->'current'->>'composite')::int
+  select case when ${applicationDocuments.simg} is null then null else least(
+    100,
+    round(${lensScore("ats")} + ${lensScore("recruiter")} + ${lensScore("hiringManager")})
+      + coalesce((
+        select sum((rec->>'points')::numeric)
+        from jsonb_array_elements(${applicationDocuments.simg}->'recommendations') as rec
+        where rec->>'state' = 'accepted'
+      ), 0)
+  )::int end
   from ${applicationDocuments}
   where ${applicationDocuments.applicationId} = ${applications.id}
     and ${applicationDocuments.docType} = 'resume'
@@ -133,20 +153,63 @@ const resumeScore = sql<number | null>`(
 const watchlistTier = watchlistTierSql;
 
 /**
- * Which applications belong to a city (JSV2S1172).
+ * Which card a job sits on — the ONE definition (JSV2S1172, 2026-09-24).
  *
- * Mirrors `cityForJob`: the gate's resolved preferred city first, falling back
- * to the raw location string. Defined ONCE and shared by the list and the
- * counts — they disagreed before this existed, with a city page reporting the
- * global 124 above a table of 66, because the counts never filtered at all.
+ * The grid's counts and the city table both read this expression, so they
+ * cannot disagree. Before this there were two: `cityForJob` in code for the
+ * grid and an OR of the same tests in SQL for the table. They drifted, and
+ * neither had anywhere to put a job that named no target city.
+ *
+ * In order, first match wins:
+ *  1. `remote`, when the gate read the posting as remote. This is first
+ *     because the owner asked for remote jobs to have their own card. LinkedIn
+ *     stamps a city on most remote roles ("London, England" on a remote PM
+ *     post), and letting the city win would leave the Remote card empty;
+ *  2. the city the gate resolved, then the city named in the location string —
+ *     what the posting itself says;
+ *  3. the city the fetch was looking for. Manchester's fetch returns postings
+ *     that say only "United Kingdom", and those belong on Manchester's card
+ *     rather than nowhere;
+ *  4. `other` — uploads that name only a country, and towns outside the plan.
+ *
+ * City ids are inlined, not bound: they are config, and a CASE whose every
+ * result is an untyped parameter gives Postgres nothing to infer a type from.
  */
+const CITY_IDS = CITIES.map((c) => {
+  if (!/^[a-z-]+$/.test(c.id)) throw new Error(`Unsafe city id: ${c.id}`);
+  return c.id;
+});
+const cityIdList = sql.raw(CITY_IDS.map((id) => `'${id}'`).join(", "));
+const fetchCity = sql`(
+  select lower(split_part(${ingestionRuns.params}->'locations'->>0, ',', 1))
+  from ${ingestionRuns}
+  where ${ingestionRuns.id} = ${rawJobs.ingestionRunId}
+)`;
+const preferredCitySql = sql`lower(${rawJobs.prequalificationDetail}->'location'->>'preferredCity')`;
+
+export const cityKeySql = sql<string>`(case
+  when ${rawJobs.prequalificationDetail}->'location'->>'isRemote' = 'true' then 'remote'
+  when ${preferredCitySql} in (${cityIdList}) then ${preferredCitySql}
+  ${sql.join(
+    CITY_IDS.map(
+      (id) => sql`when lower(${rawJobs.location}) like ${sql.raw(`'%${id}%'`)} then ${sql.raw(`'${id}'`)}`,
+    ),
+    sql` `,
+  )}
+  when ${fetchCity} in (${cityIdList}) then ${fetchCity}
+  else 'other'
+end)`;
+
+/**
+ * Discarded applications leave every list (2026-09-24). Discard bins the job
+ * and keeps the application, so every query rooted at applications has to
+ * say so. The detail page is the exception: it still opens, and offers Restore.
+ */
+const notBinned = isNull(rawJobs.binnedAt);
+
 export function cityPredicate(city: string | null | undefined) {
   if (!city) return undefined;
-  const id = city.trim().toLowerCase();
-  return or(
-    sql`lower(${rawJobs.prequalificationDetail}->'location'->>'preferredCity') = ${id}`,
-    ilike(rawJobs.location, `%${id}%`),
-  );
+  return sql`${cityKeySql} = ${city.trim().toLowerCase()}`;
 }
 
 const hasResume = exists(
@@ -210,6 +273,8 @@ export type ApplicationListItem = {
    * has an arrival date worth showing.
    */
   ingestedAt: Date | null;
+  /** The posting's own date, `YYYY-MM-DD`, where the source gave one. */
+  postedAt: string | null;
 };
 
 /**
@@ -404,6 +469,7 @@ export async function listApplications(
       ingestionRunId: rawJobs.ingestionRunId,
       prequalifiedAt: rawJobs.prequalifiedAt,
       firstSeenAt: rawJobs.firstSeenAt,
+      postedAt: rawJobs.postedAt,
       isPending: pendingPredicate(),
       hasResume,
       resumeScore,
@@ -414,6 +480,7 @@ export async function listApplications(
     .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
     .where(
       and(
+        notBinned,
         viewFilter(view),
         ...applicationSelectionFilters(f.selections),
         ingestedRange(f.from, f.to),
@@ -453,6 +520,7 @@ export async function listApplications(
       // Prefer the gate's timestamp; fall back to first sighting for jobs that
       // predate pre-qualification.
       ingestedAt: row.prequalifiedAt ?? row.firstSeenAt,
+      postedAt: row.postedAt,
       nextAction: nextAction({
         status: row.status,
         referralStatus: row.referralStatus,
@@ -468,7 +536,7 @@ export async function countByView(
   city?: string | null,
 ): Promise<Record<ApplicationView, number>> {
   const pending = pendingPredicate();
-  const where = cityPredicate(city);
+  const where = and(notBinned, cityPredicate(city));
   const [row] = await db
     .select({
       all: sql<number>`count(*)::int`,
@@ -569,7 +637,10 @@ export async function countIncomplete(city?: string | null): Promise<number> {
     .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
     .where(
       and(
-        sql`${rawJobs.description} is null or length(trim(${rawJobs.description})) < 50`,
+        // Parenthesised: a bare OR inside AND bound as `a or (b and city)`, so
+        // every job with no description counted toward every city.
+        sql`(${rawJobs.description} is null or length(trim(${rawJobs.description})) < 50)`,
+        notBinned,
         cityPredicate(city),
       ),
     );
@@ -617,7 +688,7 @@ export async function getApplicationFacets(
      * rather than as an honest empty result. A facet must only offer what it
      * can return.
      */
-    .where(and(viewFilter(view), cityPredicate(city)));
+    .where(and(notBinned, viewFilter(view), cityPredicate(city)));
 
   const tally = (
     values: (string | null)[],

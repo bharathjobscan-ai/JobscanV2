@@ -43,10 +43,17 @@ export default async function ApplicationsPage({
     return <CityGrid summaries={summaries} />;
   }
 
+  /*
+   * Ready to Apply by default (2026-09-24). A city is opened to work its queue,
+   * and "all" put applied and closed rows between the user and the ones still
+   * waiting. The default is the absence of the param, so the bare city link
+   * from the grid lands here and "all" has to be asked for by name.
+   */
+  const DEFAULT_VIEW: ApplicationView = "ready";
   const view = (
     APPLICATION_VIEWS.includes(params.view as ApplicationView)
       ? params.view
-      : "all"
+      : DEFAULT_VIEW
   ) as ApplicationView;
 
 
@@ -149,7 +156,7 @@ export default async function ApplicationsPage({
               /* The city has to survive a tab change, or every tab is a door
                  back out to the grid. */
               href={
-                key === "all"
+                key === DEFAULT_VIEW
                   ? `/applications?city=${city.id}`
                   : `/applications?city=${city.id}&view=${key}`
               }
@@ -171,7 +178,7 @@ export default async function ApplicationsPage({
           you are filtering. */}
       <CityFilters
         cityId={city.id}
-        view={view === "all" ? undefined : view}
+        view={view === DEFAULT_VIEW ? undefined : view}
         facets={facets}
         initial={{
           q: search ?? "",
@@ -196,7 +203,11 @@ export default async function ApplicationsPage({
             }
             hint={
               counts.all === 0
-                ? "The nightly fetch adds to this city automatically. You can also upload a CSV, XLSX or JSON of jobs."
+                ? city.kind === "city"
+                  ? "The nightly fetch adds to this city automatically. You can also upload a CSV, XLSX or JSON of jobs."
+                  : city.kind === "remote"
+                    ? "Jobs the gate reads as remote land here, whichever city the posting names."
+                    : "Jobs that name no target city, and were not found by a city's fetch, land here."
                 : "Try another view, or widen the filters."
             }
             action={
