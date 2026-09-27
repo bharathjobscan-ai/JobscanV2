@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -88,6 +89,16 @@ export const applications = pgTable(
     referrerName: text("referrer_name"),
     referralNotes: text("referral_notes"),
 
+    /**
+     * Marked to come back to (JSV2S1173).
+     *
+     * A timestamp rather than a boolean: "starred" and "starred on the 14th"
+     * cost the same to store, and the second one can be sorted and aged. Every
+     * other state on this row records when it happened, and a lone boolean
+     * would be the exception that cannot answer "what did I flag last week".
+     */
+    starredAt: timestamp("starred_at", { withTimezone: true }),
+
     /** First submission. Drives the derived `deemed_pending` view state (C2). */
     appliedAt: timestamp("applied_at", { withTimezone: true }),
 
@@ -107,6 +118,13 @@ export const applications = pgTable(
     index("applications_status_idx").on(t.status),
     index("applications_last_activity_idx").on(t.lastActivityAt),
     index("applications_applied_at_idx").on(t.appliedAt),
+    /*
+     * Partial: only starred rows are ever selected by it, and they are a small
+     * minority of the table. A full index here would be mostly nulls.
+     */
+    index("applications_starred_idx")
+      .on(t.starredAt)
+      .where(sql`${t.starredAt} is not null`),
   ],
 );
 

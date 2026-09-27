@@ -8,7 +8,7 @@ import {
   ilike,
   inArray,
   isNotNull,
-  lt,
+  isNull,
   not,
   or,
   sql,
@@ -22,6 +22,8 @@ import {
   ingestionRuns,
   rawJobs,
 } from "@/db/schema";
+import { LENS_WEIGHTS } from "@/config/simg";
+import { CITIES } from "@/config/cities";
 import {
   ACTIVE_STATUSES,
   CLOSED_STATUSES,
@@ -36,8 +38,17 @@ import {
   type ReferralStatus,
 } from "@/lib/config/constants";
 import { getEnv } from "@/lib/config/env";
+import { runLabel } from "@/features/ingestion/run-label";
 import { db } from "@/lib/db/client";
 import { isIncomplete } from "@/features/ingestion/schema";
+import {
+  VISA_LABELS,
+  VISA_STATUSES,
+  visaStatusOf,
+  visaStatusPredicate,
+  watchlistTierSql,
+  type VisaStatus,
+} from "@/features/applications/visa";
 import type { JobScoreAnalysis } from "@/db/schema";
 
 /**
@@ -100,6 +111,107 @@ function pendingPredicate() {
   )`;
 }
 
+/**
+ * The resume's own score, for the list's second column (JSV2S1172).
+ *
+ * A correlated subquery rather than a join: an application can hold several
+ * resume versions and joining would multiply its row, which is how a list of
+ * 91 quietly becomes a list of 140. `order by created_at desc limit 1` takes
+ * the current one.
+ *
+ * The same figure the detail screen's score panel leads with — `project()`'s
+ * `current`: the weighted lens composite plus the points of every accepted
+ * recommendation, capped at 100. Computed here because SimG never stores a
+ * composite; this once read `current->>'composite'`, a key nothing writes, so
+ * the column showed a dash on every row (fixed 2026-09-24). The weights are
+ * interpolated from `LENS_WEIGHTS` rather than restated, so the list and the
+ * panel cannot drift apart when a weight changes.
+ */
+// The key is inlined, not bound: it comes from a fixed union, and a bound
+// parameter leaves `->` ambiguous between its text and integer overloads.
+const lensScore = (lens: keyof typeof LENS_WEIGHTS) =>
+  sql`coalesce((${applicationDocuments.simg}->'current'->${sql.raw(`'${lens}'`)}->>'score')::numeric, 0) * ${LENS_WEIGHTS[lens]}::numeric`;
+
+const resumeScore = sql<number | null>`(
+  select case when ${applicationDocuments.simg} is null then null else least(
+    100,
+    round(${lensScore("ats")} + ${lensScore("recruiter")} + ${lensScore("hiringManager")})
+      + coalesce((
+        select sum((rec->>'points')::numeric)
+        from jsonb_array_elements(${applicationDocuments.simg}->'recommendations') as rec
+        where rec->>'state' = 'accepted'
+      ), 0)
+  )::int end
+  from ${applicationDocuments}
+  where ${applicationDocuments.applicationId} = ${applications.id}
+    and ${applicationDocuments.docType} = 'resume'
+  order by ${applicationDocuments.createdAt} desc
+  limit 1
+)`;
+
+/** The watchlist tier the gate recorded, for the company column's star. */
+const watchlistTier = watchlistTierSql;
+
+/**
+ * Which card a job sits on — the ONE definition (JSV2S1172, 2026-09-24).
+ *
+ * The grid's counts and the city table both read this expression, so they
+ * cannot disagree. Before this there were two: `cityForJob` in code for the
+ * grid and an OR of the same tests in SQL for the table. They drifted, and
+ * neither had anywhere to put a job that named no target city.
+ *
+ * In order, first match wins:
+ *  1. `remote`, when the gate read the posting as remote. This is first
+ *     because the owner asked for remote jobs to have their own card. LinkedIn
+ *     stamps a city on most remote roles ("London, England" on a remote PM
+ *     post), and letting the city win would leave the Remote card empty;
+ *  2. the city the gate resolved, then the city named in the location string —
+ *     what the posting itself says;
+ *  3. the city the fetch was looking for. Manchester's fetch returns postings
+ *     that say only "United Kingdom", and those belong on Manchester's card
+ *     rather than nowhere;
+ *  4. `other` — uploads that name only a country, and towns outside the plan.
+ *
+ * City ids are inlined, not bound: they are config, and a CASE whose every
+ * result is an untyped parameter gives Postgres nothing to infer a type from.
+ */
+const CITY_IDS = CITIES.map((c) => {
+  if (!/^[a-z-]+$/.test(c.id)) throw new Error(`Unsafe city id: ${c.id}`);
+  return c.id;
+});
+const cityIdList = sql.raw(CITY_IDS.map((id) => `'${id}'`).join(", "));
+const fetchCity = sql`(
+  select lower(split_part(${ingestionRuns.params}->'locations'->>0, ',', 1))
+  from ${ingestionRuns}
+  where ${ingestionRuns.id} = ${rawJobs.ingestionRunId}
+)`;
+const preferredCitySql = sql`lower(${rawJobs.prequalificationDetail}->'location'->>'preferredCity')`;
+
+export const cityKeySql = sql<string>`(case
+  when ${rawJobs.prequalificationDetail}->'location'->>'isRemote' = 'true' then 'remote'
+  when ${preferredCitySql} in (${cityIdList}) then ${preferredCitySql}
+  ${sql.join(
+    CITY_IDS.map(
+      (id) => sql`when lower(${rawJobs.location}) like ${sql.raw(`'%${id}%'`)} then ${sql.raw(`'${id}'`)}`,
+    ),
+    sql` `,
+  )}
+  when ${fetchCity} in (${cityIdList}) then ${fetchCity}
+  else 'other'
+end)`;
+
+/**
+ * Discarded applications leave every list (2026-09-24). Discard bins the job
+ * and keeps the application, so every query rooted at applications has to
+ * say so. The detail page is the exception: it still opens, and offers Restore.
+ */
+const notBinned = isNull(rawJobs.binnedAt);
+
+export function cityPredicate(city: string | null | undefined) {
+  if (!city) return undefined;
+  return sql`${cityKeySql} = ${city.trim().toLowerCase()}`;
+}
+
 const hasResume = exists(
   db
     .select({ one: sql`1` })
@@ -146,6 +258,12 @@ export type ApplicationListItem = {
   lastActivityAt: Date;
   isIncomplete: boolean;
   hasResume: boolean;
+  /** SimG's composite for the current resume, where one has been evaluated. */
+  resumeScore: number | null;
+  /** 1-5 when the company is on the sponsorship watchlist, else null. */
+  watchlistTier: number | null;
+  /** JSV2S1173 — marked to revisit. */
+  starred: boolean;
   nextAction: string;
   /** JSV2S1158 — the ingestion run this job arrived in, if it has one. */
   ingestionRunId: string | null;
@@ -155,6 +273,8 @@ export type ApplicationListItem = {
    * has an arrival date worth showing.
    */
   ingestedAt: Date | null;
+  /** The posting's own date, `YYYY-MM-DD`, where the source gave one. */
+  postedAt: string | null;
 };
 
 /**
@@ -191,8 +311,28 @@ function viewFilter(view: ApplicationView) {
  *
  * Selections WITHIN a facet are OR-ed, ACROSS facets AND-ed — "priority apply
  * AND referral needed" has to mean both.
+ *
+ * Single-choice axes (`posted`, `visa`, `tier`, `minJob`, `minResume`) ride in
+ * the same shape rather than getting a parallel parameter object: the city
+ * panel reads and writes the whole set as URL parameters, and one vocabulary
+ * means one place to validate it.
  */
 export type ApplicationSelections = Record<string, string[]>;
+
+/** The relative windows the city panel's two date selects offer. */
+const RELATIVE_DAYS: Record<string, number> = {
+  today: 0,
+  "3d": 3,
+  week: 7,
+  month: 30,
+};
+
+export function relativeCutoff(key: string | undefined): string | null {
+  if (!key || !(key in RELATIVE_DAYS)) return null;
+  const at = new Date();
+  at.setDate(at.getDate() - RELATIVE_DAYS[key]);
+  return at.toISOString().slice(0, 10);
+}
 
 export type ApplicationFilters = {
   view?: ApplicationView;
@@ -203,22 +343,21 @@ export type ApplicationFilters = {
   search?: string | null;
 };
 
-/** `to` is inclusive: compared against the start of the following day. */
+/**
+ * `to` is inclusive: compared against the start of the following day.
+ *
+ * The bounds are bound as YYYY-MM-DD strings cast in SQL, not as JS `Date`s.
+ * A raw `sql` expression carries no column type, so the driver had nothing to
+ * encode a `Date` with and threw ERR_INVALID_ARG_TYPE mid-query — every date
+ * range on this page was a 500 until 2026-09-23. The regex guard is what makes
+ * the cast safe on a hand-edited URL.
+ */
 function ingestedRange(from?: string | null, to?: string | null) {
+  const at = sql`coalesce(${rawJobs.prequalifiedAt}, ${rawJobs.firstSeenAt})`;
+  const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
   const clauses = [];
-  if (from) {
-    const start = new Date(`${from}T00:00:00`);
-    if (!Number.isNaN(start.getTime())) {
-      clauses.push(gte(sql`coalesce(${rawJobs.prequalifiedAt}, ${rawJobs.firstSeenAt})`, start));
-    }
-  }
-  if (to) {
-    const end = new Date(`${to}T00:00:00`);
-    if (!Number.isNaN(end.getTime())) {
-      end.setDate(end.getDate() + 1);
-      clauses.push(lt(sql`coalesce(${rawJobs.prequalifiedAt}, ${rawJobs.firstSeenAt})`, end));
-    }
-  }
+  if (from && isDay(from)) clauses.push(sql`${at} >= ${from}::date`);
+  if (to && isDay(to)) clauses.push(sql`${at} < ${to}::date + 1`);
   return clauses.length > 0 ? and(...clauses) : undefined;
 }
 
@@ -244,12 +383,52 @@ function applicationSelectionFilters(selections?: ApplicationSelections) {
   if (selections.country?.length) {
     clauses.push(inArray(rawJobs.country, selections.country));
   }
+  // JSV2S1173 — "show me only what I flagged" is the whole point of a star.
+  if (selections.starred?.[0] === "yes") {
+    clauses.push(isNotNull(applications.starredAt));
+  }
   if (selections.company?.length) {
     clauses.push(inArray(rawJobs.company, selections.company));
+  }
+  if (selections.city?.length) {
+    clauses.push(cityPredicate(selections.city[0])!);
   }
   if (selections.fetch?.length) {
     clauses.push(inArray(rawJobs.ingestionRunId, selections.fetch));
   }
+  if (selections.location?.length) {
+    clauses.push(inArray(rawJobs.location, selections.location));
+  }
+
+  // The posting's own date, which is not the ingest date `from`/`to` cover: a
+  // month-old advert can arrive in this morning's fetch.
+  const postedFrom = relativeCutoff(selections.posted?.[0]);
+  if (postedFrom) clauses.push(gte(rawJobs.postedAt, postedFrom));
+
+  const visa = selections.visa?.[0];
+  if (visa && VISA_STATUSES.includes(visa as VisaStatus)) {
+    clauses.push(visaStatusPredicate(visa as VisaStatus));
+  }
+
+  const tier = selections.tier?.[0];
+  if (tier === "none") {
+    clauses.push(sql`${watchlistTier} is null`);
+  } else if (tier && /^[1-5]$/.test(tier)) {
+    // "Tier 4 and above" — the watchlist is a confidence ordering, so a floor
+    // is the only reading that makes the higher tiers reachable at all.
+    clauses.push(sql`${watchlistTier} >= ${Number(tier)}`);
+  }
+
+  const minJob = Number(selections.minJob?.[0]);
+  if (Number.isFinite(minJob) && minJob > 0) {
+    clauses.push(gte(applications.jobScore, Math.trunc(minJob)));
+  }
+
+  const minResume = Number(selections.minResume?.[0]);
+  if (Number.isFinite(minResume) && minResume > 0) {
+    clauses.push(sql`${resumeScore} >= ${Math.trunc(minResume)}`);
+  }
+
   return clauses;
 }
 
@@ -290,13 +469,18 @@ export async function listApplications(
       ingestionRunId: rawJobs.ingestionRunId,
       prequalifiedAt: rawJobs.prequalifiedAt,
       firstSeenAt: rawJobs.firstSeenAt,
+      postedAt: rawJobs.postedAt,
       isPending: pendingPredicate(),
       hasResume,
+      resumeScore,
+      watchlistTier,
+      starredAt: applications.starredAt,
     })
     .from(applications)
     .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
     .where(
       and(
+        notBinned,
         viewFilter(view),
         ...applicationSelectionFilters(f.selections),
         ingestedRange(f.from, f.to),
@@ -329,10 +513,14 @@ export async function listApplications(
       lastActivityAt: row.lastActivityAt,
       isIncomplete: incomplete,
       hasResume: Boolean(row.hasResume),
+      resumeScore: row.resumeScore ?? null,
+      watchlistTier: row.watchlistTier ?? null,
+      starred: row.starredAt !== null,
       ingestionRunId: row.ingestionRunId,
       // Prefer the gate's timestamp; fall back to first sighting for jobs that
       // predate pre-qualification.
       ingestedAt: row.prequalifiedAt ?? row.firstSeenAt,
+      postedAt: row.postedAt,
       nextAction: nextAction({
         status: row.status,
         referralStatus: row.referralStatus,
@@ -344,8 +532,11 @@ export async function listApplications(
   });
 }
 
-export async function countByView(): Promise<Record<ApplicationView, number>> {
+export async function countByView(
+  city?: string | null,
+): Promise<Record<ApplicationView, number>> {
   const pending = pendingPredicate();
+  const where = and(notBinned, cityPredicate(city));
   const [row] = await db
     .select({
       all: sql<number>`count(*)::int`,
@@ -354,7 +545,11 @@ export async function countByView(): Promise<Record<ApplicationView, number>> {
       active: sql<number>`count(*) filter (where ${applications.status} in ('applied','shortlisted','interview') and not ${pending})::int`,
       closed: sql<number>`count(*) filter (where ${applications.status} in ('offer','rejected_application','rejected_screening','rejected_interview','rejected_visa'))::int`,
     })
-    .from(applications);
+    .from(applications)
+    // Joined even when no city is given: the predicate reads rawJobs columns,
+    // and an inner join on a notNull unique FK cannot change the count.
+    .innerJoin(rawJobs, eq(rawJobs.id, applications.rawJobId))
+    .where(where);
 
   return {
     all: row?.all ?? 0,
@@ -435,13 +630,19 @@ export type ApplicationDetail = NonNullable<
 >;
 
 /** Jobs imported without a usable description, for the "needs attention" nudge. */
-export async function countIncomplete(): Promise<number> {
+export async function countIncomplete(city?: string | null): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(applications)
     .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
     .where(
-      sql`${rawJobs.description} is null or length(trim(${rawJobs.description})) < 50`,
+      and(
+        // Parenthesised: a bare OR inside AND bound as `a or (b and city)`, so
+        // every job with no description counted toward every city.
+        sql`(${rawJobs.description} is null or length(trim(${rawJobs.description})) < 50)`,
+        notBinned,
+        cityPredicate(city),
+      ),
     );
   return row?.n ?? 0;
 }
@@ -459,6 +660,7 @@ export const hasScoreAnalysis = isNotNull(applications.jobScoreAnalysis);
  */
 export async function getApplicationFacets(
   view: ApplicationView = "all",
+  city?: string | null,
 ): Promise<Record<string, { value: string; label: string; count: number }[]>> {
   const rows = await db
     .select({
@@ -467,14 +669,26 @@ export async function getApplicationFacets(
       source: rawJobs.source,
       country: rawJobs.country,
       company: rawJobs.company,
+      location: rawJobs.location,
+      tier: watchlistTier,
       fetch: rawJobs.ingestionRunId,
       fetchSource: ingestionRuns.source,
       fetchStartedAt: ingestionRuns.startedAt,
+      fetchParams: ingestionRuns.params,
     })
     .from(applications)
     .innerJoin(rawJobs, eq(applications.rawJobId, rawJobs.id))
     .leftJoin(ingestionRuns, eq(ingestionRuns.id, rawJobs.ingestionRunId))
-    .where(viewFilter(view));
+    /*
+     * Scoped to the city as well as the view (JSV2S1172).
+     *
+     * Without this the panel offered every value in the database: London's
+     * filters listed "Netherlands (7)" and companies with no London job at
+     * all, and ticking one returned nothing — which reads as a broken filter
+     * rather than as an honest empty result. A facet must only offer what it
+     * can return.
+     */
+    .where(and(notBinned, viewFilter(view), cityPredicate(city)));
 
   const tally = (
     values: (string | null)[],
@@ -500,9 +714,12 @@ export async function getApplicationFacets(
       continue;
     }
     runs.set(row.fetch, {
-      label: `${row.fetchSource ?? "unknown"} · ${
-        row.fetchStartedAt ? row.fetchStartedAt.toISOString().slice(0, 10) : "—"
-      } · ${row.fetch.slice(0, 8)}`,
+      label: runLabel({
+        id: row.fetch,
+        source: row.fetchSource,
+        startedAt: row.fetchStartedAt,
+        params: row.fetchParams,
+      }),
       count: 1,
     });
   }
@@ -536,6 +753,29 @@ export async function getApplicationFacets(
       rows.map((r) => r.company),
       (v) => v,
     ),
+    /**
+     * The locations inside this city (JSV2S1172).
+     *
+     * A city is a catchment, not a point — "London" holds Canary Wharf,
+     * Shoreditch and a dozen hybrid phrasings, and the design's LOCATION select
+     * is how you get from the one to the other.
+     */
+    location: tally(
+      rows.map((r) => r.location),
+      (v) => v,
+    ),
+    /*
+     * Visa and watchlist are fixed vocabularies, so these carry counts rather
+     * than membership — the select shows every state, including the empty ones,
+     * because "Confirmed (0)" is information and a missing option is not.
+     */
+    visa: VISA_STATUSES.map((value) => ({
+      value,
+      label: VISA_LABELS[value],
+      count: rows.filter(
+        (r) => visaStatusOf({ watchlistTier: r.tier ?? null, matchCategory: r.match }) === value,
+      ).length,
+    })),
     fetch: [...runs.entries()]
       .map(([value, r]) => ({ value, label: r.label, count: r.count }))
       .sort((a, b) => b.count - a.count),

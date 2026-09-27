@@ -42,7 +42,39 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  * cannot classify is treated as retryable, because a transient network error
  * often surfaces as an opaque `fetch failed`.
  */
+/**
+ * A provider refusing on budget, which no amount of waiting fixes
+ * (JSV2S1148, found live 2026-09-21).
+ *
+ * A 429 normally means "too fast, try again" and retrying is correct. A 429
+ * from a spend cap means "you have spent your allowance this month" and
+ * retrying is pure waste — three attempts per job, across every job in a pass,
+ * all certain to fail.
+ *
+ * Matched on the message because the shape differs by provider, and because
+ * the Gemini SDK reports `status: "RESOURCE_EXHAUSTED"` — a STRING. `Number()`
+ * of that is NaN, which failed the numeric test below and fell through to the
+ * "cannot classify, so retry" default. The cap was retried by accident rather
+ * than by decision.
+ */
+export function isSpendCapError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : JSON.stringify(error ?? "");
+
+  return /spending cap|spend cap|quota.*exceeded|exceeded.*quota|billing.*(disabled|required)|insufficient[_ ]quota|RESOURCE_EXHAUSTED/i.test(
+    message,
+  );
+}
+
 export function isRetryable(error: unknown): boolean {
+  // Checked before anything else: a spend cap is permanent for the month, and
+  // it arrives wearing a status code that otherwise means "retry me".
+  if (isSpendCapError(error)) return false;
+
   const status =
     typeof error === "object" && error !== null && "status" in error
       ? Number((error as { status: unknown }).status)

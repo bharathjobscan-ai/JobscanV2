@@ -1,117 +1,103 @@
+import type { ReactNode } from "react";
+
 import type { ScoreLedger } from "@/features/scoring/ledger";
 
 /**
- * "How this score was reached" — the deduction ledger (JSV2S1140).
+ * The weighted calculation — how the three pillars become one number
+ * (JSV2S1140, brought to the design 2026-09-23).
  *
- * Every point starts on the table and is lost to a named rule. That framing is
- * the story's whole purpose: a total invites argument, an itemised deduction
- * tells you which rule to attack.
+ * ScoreG's contract is `(Visa × 0.50) + (Resume × 0.30) + (Relevance × 0.20)`,
+ * and this panel is that sentence set as arithmetic: each pillar's own score,
+ * its weight, the product it contributes, and the total they sum to. A score
+ * you cannot audit is one you cannot argue with.
  *
  * Presentation only — every figure comes from `features/scoring/ledger.ts`,
- * which is pure and separately tested.
+ * which is pure and separately tested. It previously rendered the same data as
+ * a running deduction table; the figures are unchanged, the reading is the
+ * design's.
  */
-export function ScoreLedgerTable({ ledger }: { ledger: ScoreLedger }) {
+
+export function ScoreLedgerTable({
+  ledger,
+  /** The verdict callout the design sets beside the arithmetic. */
+  aside,
+  /** The model's own arithmetic, as it wrote it. */
+  finalCalculation,
+}: {
+  ledger: ScoreLedger;
+  aside?: ReactNode;
+  finalCalculation?: string | null;
+}) {
   return (
-    <div className="text-xs">
-      <div className="flex items-baseline justify-between gap-3 pb-2">
-        <span className="text-[10px] font-medium tracking-wide text-accent uppercase">
-          How {ledger.stored ?? ledger.computed} was reached
-        </span>
-        <span className="text-[11px] text-faint">
-          Every point starts on the table and is lost, not won
-        </span>
-      </div>
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+      <div className="rounded-lg bg-surface px-6 py-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <span className="text-[10px] tracking-[0.16em] text-accent uppercase">
+            Weighted calculation
+          </span>
+          <span className="text-[11.5px] text-faint">
+            Three pillars, one number, no rounding hidden
+          </span>
+        </div>
 
-      <div className="grid grid-cols-[minmax(0,1fr)_4rem_4.5rem] gap-3 border-b border-line pb-1.5 text-[10px] tracking-wide text-faint uppercase">
-        <span>Deduction</span>
-        <span className="text-right">Points</span>
-        <span className="text-right">Running</span>
-      </div>
-
-      <div className="grid grid-cols-[minmax(0,1fr)_4rem_4.5rem] items-baseline gap-3 border-b border-line py-2">
-        <span className="font-semibold">Points on the table</span>
-        <span />
-        <span className="text-right text-base font-semibold tabular-nums">100.0</span>
-      </div>
-
-      {ledger.pillars.map((pillar) => (
-        <div key={pillar.key}>
-          <div className="grid grid-cols-[minmax(0,1fr)_4rem_4.5rem] items-baseline gap-3 border-b border-line py-2">
-            <div className="min-w-0">
-              <p className="font-medium">{pillar.label}</p>
-              <p className="mt-0.5 text-[11px] text-faint">
-                {Math.round(pillar.weight * 100)}% of the score · scored{" "}
-                {pillar.score} / 100
-              </p>
-              {/* The bar shows how much of this pillar's weight was lost. */}
-              <div className="mt-1.5 h-0.5 bg-surface-muted">
-                <div
-                  className={`h-0.5 ${
-                    pillar.score <= 40
-                      ? "bg-negative"
-                      : pillar.score >= 85
-                        ? "bg-positive"
-                        : "bg-warning"
-                  }`}
-                  style={{ width: `${Math.min(100, 100 - pillar.score)}%` }}
-                />
+        <div className="mt-5 flex flex-wrap items-stretch gap-x-3 gap-y-4">
+          {ledger.pillars.map((pillar, i) => (
+            <div key={pillar.key} className="flex items-stretch gap-3">
+              {i > 0 ? (
+                <span className="n-display self-center text-[22px] text-faint">+</span>
+              ) : null}
+              <div className="min-w-[8.5rem]">
+                <p className="text-[10px] tracking-[0.12em] text-faint uppercase">
+                  {pillar.label}
+                </p>
+                <p className="n-mono mt-1.5 text-[13px] tabular-nums">
+                  {pillar.score} × {pillar.weight.toFixed(2)}
+                </p>
+                <p className="n-display mt-1 text-[24px] leading-none tabular-nums">
+                  {(pillar.score * pillar.weight).toFixed(1)}
+                </p>
               </div>
             </div>
-            <span
-              className={`text-right tabular-nums ${
-                pillar.lost > 0 ? "text-negative" : "text-positive"
-              }`}
+          ))}
+
+          <span className="n-display self-center text-[22px] text-faint">=</span>
+
+          <div className="min-w-[8.5rem] rounded-md border border-accent/40 px-4 py-3">
+            <p className="text-[10px] tracking-[0.12em] text-faint uppercase">Job score</p>
+            <p
+              className="n-display mt-1 text-[31px] leading-none tabular-nums"
+              style={{ color: "var(--gold)" }}
             >
-              {pillar.lost > 0 ? `−${pillar.lost.toFixed(1)}` : "0.0"}
-            </span>
-            <span className="text-right tabular-nums text-muted">
-              {pillar.running.toFixed(1)}
-            </span>
+              {ledger.computed.toFixed(1)}
+            </p>
+            <p className="mt-1 text-[11px] text-faint tabular-nums">
+              {ledger.totalLost.toFixed(1)} of 100 lost
+            </p>
           </div>
-
-          {pillar.items
-            .filter((item) => item.lost > 0)
-            .map((item) => (
-              <div
-                key={item.component}
-                className="grid grid-cols-[minmax(0,1fr)_4rem_4.5rem] items-baseline gap-3 py-1"
-              >
-                <div className="min-w-0 pl-4">
-                  <span className="text-muted">
-                    {item.component} — {item.awarded} of {item.max}
-                  </span>
-                  {item.reason ? (
-                    <p className="text-[11px] text-subtle">{item.reason}</p>
-                  ) : null}
-                </div>
-                <span className="text-right text-[11.5px] tabular-nums text-faint">
-                  −{item.lost.toFixed(1)}
-                </span>
-                <span />
-              </div>
-            ))}
         </div>
-      ))}
 
-      <div className="mt-1 grid grid-cols-[minmax(0,1fr)_4rem_4.5rem] items-baseline gap-3 border-t-2 border-foreground/40 pt-2">
-        <span className="font-semibold">Job score</span>
-        <span />
-        <span className="text-right text-lg font-semibold tabular-nums">
-          {ledger.computed.toFixed(1)}
-        </span>
+        {finalCalculation ? (
+          <p className="n-mono mt-5 border-t border-line pt-3.5 text-[11.5px] text-faint tabular-nums">
+            As the model wrote it: {finalCalculation}
+          </p>
+        ) : null}
+
+        {/*
+          The model's arithmetic contradicting its own breakdown is a real
+          finding, not a rounding wobble. Saying so beats showing whichever
+          number happens to look better.
+        */}
+        {!ledger.reconciles ? (
+          <p className="mt-3 rounded border border-warning/25 bg-warning-bg px-2.5 py-2 text-[11.5px] text-warning">
+            This breakdown sums to {ledger.computed.toFixed(1)}, but the stored
+            score is {ledger.stored}. The model&rsquo;s own arithmetic disagrees
+            with its own itemisation — treat both with suspicion and regenerate.
+          </p>
+        ) : null}
       </div>
 
-      {/*
-        The model's arithmetic contradicting its own breakdown is a real
-        finding, not a rounding wobble. Saying so beats showing whichever
-        number happens to look better.
-      */}
-      {!ledger.reconciles ? (
-        <p className="mt-2 rounded border border-warning/25 bg-warning-bg px-2 py-1.5 text-[11px] text-warning">
-          This breakdown sums to {ledger.computed.toFixed(1)}, but the stored
-          score is {ledger.stored}. The model&rsquo;s own arithmetic disagrees
-          with its own itemisation — treat both with suspicion and regenerate.
-        </p>
+      {aside ? (
+        <div className="rounded-lg border border-line px-5 py-5">{aside}</div>
       ) : null}
     </div>
   );

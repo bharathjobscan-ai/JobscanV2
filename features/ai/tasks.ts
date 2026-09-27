@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 
 import {
   aiJobs,
@@ -15,13 +15,22 @@ import { applyAtsHygiene, type AtsReport } from "@/lib/documents/ats";
 import { lineBudgetFor, settleSimgEvaluation } from "@/features/simg/settle";
 import { SIMG_AUTOMATIC } from "@/config/simg";
 import { lookupSponsor, sponsorPromptBlock } from "@/features/sponsors/lookup";
-import { lookupWatchlist } from "@/features/companies/lookup";
+import { lookupAffinity, lookupWatchlist } from "@/features/companies/lookup";
+import {
+  fixedScoring,
+  scoringFixedPromptBlock,
+  type FixedScoring,
+} from "@/features/scoring/fixed";
+import { finaliseScore } from "@/features/scoring/finalise";
+import type { PreQualificationResult } from "@/features/prequalification/types";
+import type { ScoreLineItem } from "@/db/schema";
 import { gatePromptBlock, watchlistPromptBlock } from "@/features/companies/prompt";
 import { parseTaskResponse, type AiProvider, type TaskContext } from "@/lib/ai/types";
 import {
   AI_TASK_DOCUMENT,
   AI_TASK_LABELS,
   DOCUMENT_LABELS,
+  DUPLICATE_TASK_WINDOW_MS,
   matchCategoryFor,
   type AiTaskType,
   type DocumentType,
@@ -107,10 +116,19 @@ function effortFor(taskType: AiTaskType): string {
  * plain HTTPS calls. Nothing is queued for a worker any more, so the caller
  * gets a finished result rather than a promise to poll.
  */
-export async function enqueueTask(
+/** Thrown when an identical task has just succeeded. */
+export class TaskTooSoon extends Error {}
+
+/**
+ * Everything a task sends, assembled without calling anything billed.
+ *
+ * Split out of `enqueueTask` (2026-09-25) so the exact prompt for a real job
+ * can be inspected, and its size measured, before any money is spent on it.
+ */
+export async function prepareTask(
   applicationId: string,
   taskType: AiTaskType,
-): Promise<{ id: string; status: "succeeded" }> {
+): Promise<{ context: TaskContext; scoring: FixedScoring | null }> {
   const [row] = await db
     .select({ application: applications, job: rawJobs })
     .from(applications)
@@ -154,6 +172,7 @@ export async function enqueueTask(
    * rather than "not a sponsor" so an unloaded register cannot fabricate an
    * absence.
    */
+  let scoring: FixedScoring | null = null;
   if (taskType === "score") {
     const match = await lookupSponsor(row.job.company);
     context.sponsorBlock = sponsorPromptBlock(match);
@@ -168,8 +187,36 @@ export async function enqueueTask(
      * company has actually sponsored (the watchlist records it). Supplying both
      * is what lets the prompt drop its blocker list and skip four searches.
      */
-    context.watchlistBlock = watchlistPromptBlock(lookupWatchlist(row.job.company));
-    context.gateBlock = gatePromptBlock(row.job.prequalificationDetail);
+    const watchlist = lookupWatchlist(row.job.company);
+    context.watchlistBlock = watchlistPromptBlock(watchlist);
+    context.gateBlock = gatePromptBlock(
+      row.job.prequalificationDetail,
+      lookupAffinity(row.job.company),
+    );
+
+    /*
+     * 2026-09-25 — score what the facts above already settle, before the call,
+     * and send the model only the judgement components (₹10 a score target).
+     */
+    // Every field read optionally: an older verdict may predate a filter.
+    const gate = (row.job.prequalificationDetail ?? null) as Partial<PreQualificationResult> | null;
+    scoring = fixedScoring({
+      title: row.job.title,
+      country: gate?.location?.country ?? row.job.country?.toLowerCase() ?? null,
+      preferredCity: gate?.location?.preferredCity ?? null,
+      locationRule: gate?.location?.rule ?? null,
+      isRemote: gate?.location?.isRemote ?? false,
+      experience: gate?.experience ?? null,
+      visaReasonCode: gate?.visa?.reasonCode ?? null,
+      watchlistTier: watchlist?.tier ?? null,
+      sponsorStatus: match.status,
+      source: row.job.source,
+      postedAt: row.job.postedAt,
+      reachability: row.job.reachability,
+      today: new Date(),
+    });
+    context.scoringFixedBlock = scoringFixedPromptBlock(scoring);
+    context.grounded = scoring.grounded;
   }
 
   // SimG evaluates a document rather than a job, so its context carries the
@@ -196,6 +243,64 @@ export async function enqueueTask(
     context.lineBudget = lineBudgetFor(resume.contentMd);
   }
 
+  return { context, scoring };
+}
+
+/**
+ * Has this exact task just run for this application?
+ *
+ * The existing in-flight check cannot catch this. Providers are called inline
+ * and synchronously (ADR-0005), so a task never sits in `queued` — it goes
+ * from nothing to `succeeded` — and a guard that looks for a running row has
+ * nothing to see. This looks at what FINISHED instead.
+ *
+ * It is the authoritative guard: a disabled button only disables one button,
+ * and on 2026-09-23 the same generate action was rendered in two places on one
+ * page, either of which would start a $0.20 run.
+ */
+async function recentlySucceeded(
+  applicationId: string,
+  taskType: AiTaskType,
+): Promise<Date | null> {
+  const [row] = await db
+    .select({ at: aiJobs.finishedAt })
+    .from(aiJobs)
+    .where(
+      and(
+        eq(aiJobs.applicationId, applicationId),
+        eq(aiJobs.taskType, taskType),
+        eq(aiJobs.status, "succeeded"),
+        gt(aiJobs.finishedAt, new Date(Date.now() - DUPLICATE_TASK_WINDOW_MS)),
+      ),
+    )
+    .orderBy(desc(aiJobs.finishedAt))
+    .limit(1);
+  return row?.at ?? null;
+}
+
+export async function enqueueTask(
+  applicationId: string,
+  taskType: AiTaskType,
+  options: { force?: boolean } = {},
+): Promise<{ id: string; status: "succeeded" }> {
+  /*
+   * Checked before anything else, including before the application is loaded:
+   * the whole point is to spend nothing, and a guard that runs after the work
+   * has begun is not a guard.
+   */
+  if (!options.force) {
+    const at = await recentlySucceeded(applicationId, taskType);
+    if (at) {
+      const mins = Math.max(1, Math.round((Date.now() - at.getTime()) / 60000));
+      throw new TaskTooSoon(
+        `${AI_TASK_LABELS[taskType]} already ran ${mins} minute${mins === 1 ? "" : "s"} ago. ` +
+          `Re-running costs the same again — use Regenerate and confirm if you meant to.`,
+      );
+    }
+  }
+
+  const { context, scoring } = await prepareTask(applicationId, taskType);
+
   const provider = providerFor(taskType);
   const model = modelFor(taskType, provider.name);
   const isMock = provider.name === "mock";
@@ -214,12 +319,20 @@ export async function enqueueTask(
       provider: provider.name,
       model,
       effort: effortFor(taskType),
+      // Recorded from the same decision the provider acted on; this used to say
+      // GoogleSearch for every Gemini score, UK ones included.
       allowedTools:
-        provider.name === "gemini_api" && taskType === "score"
+        provider.name === "gemini_api" && taskType === "score" && context.grounded
           ? "GoogleSearch"
           : null,
       prompt: prompt ? flattenPrompt(prompt) : null,
-      result: { markdown: result.markdown, payload: result.payload },
+      // `fixed` travels with the result so settling adds up exactly the
+      // components the model was told were fixed, whenever it runs.
+      result: {
+        markdown: result.markdown,
+        payload: result.payload,
+        ...(scoring ? { fixed: scoring.fixed } : {}),
+      },
       usage: result.usage
         ? {
             inputTokens: result.usage.inputTokens,
@@ -283,7 +396,16 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
 
   let settled = 0;
 
-  for (const job of pending) {
+  for (const row of pending) {
+    // The application was purged from the Bin before this result was settled.
+    // The row stays `succeeded` so its cost still counts; there is just nowhere
+    // left to write the output.
+    if (row.applicationId === null) {
+      await db.update(aiJobs).set({ settledAt: sql`now()` }).where(eq(aiJobs.id, row.id));
+      continue;
+    }
+    const job = { ...row, applicationId: row.applicationId };
+
     const raw = (job.result ?? {}) as {
       markdown?: string;
       payload?: Record<string, unknown>;
@@ -339,6 +461,19 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
         ? splitDocuments(parsed.markdown)
         : [{ docType, markdown: parsed.markdown }];
 
+    /*
+     * 2026-09-25 — where the run carried fixed components, the score is added
+     * up here from the fixed lines plus the model's judgement lines; the
+     * model no longer reports a total. Runs from before that (and the mock,
+     * whose breakdown is not line items) keep the model's own score.
+     */
+    const fixedLines = (raw as { fixed?: ScoreLineItem[] }).fixed;
+    const final =
+      job.taskType === "score" && Array.isArray(fixedLines) && Array.isArray(parsed.payload.analysis?.breakdown)
+        ? finaliseScore(fixedLines, parsed.payload.analysis)
+        : null;
+    const score = final?.score ?? parsed.payload.score;
+
     await db.transaction(async (tx) => {
       for (const part of parts) {
         const docType = part.docType;
@@ -393,24 +528,26 @@ export async function settleAiJobs(applicationId?: string): Promise<number> {
             taskType: job.taskType,
             model: job.model,
             version,
-            score: parsed.payload.score ?? null,
+            score: job.taskType === "score" ? (score ?? null) : (parsed.payload.score ?? null),
             atsRepairs: ats?.repairs.length ?? 0,
             atsParseScore: ats?.parseScore ?? null,
           },
         });
       }
 
-      if (job.taskType === "score" && parsed.payload.score !== undefined) {
+
+      if (job.taskType === "score" && score !== undefined) {
         await tx
           .update(applications)
           .set({
-            jobScore: parsed.payload.score,
+            jobScore: score,
             // Derived from ScoreG's decision bands, never taken from the model:
             // it is a pure function of the score, so deriving it is
-            // deterministic and cannot drift between runs (C3).
-            matchCategory: matchCategoryFor(parsed.payload.score),
+            // deterministic and cannot drift between runs (C3). A hard override
+            // (visa or resume pillar below its floor) is Skip whatever the total.
+            matchCategory: final?.overrideReject ? "reject" : matchCategoryFor(score),
             visaSignal: parsed.payload.visaSignal ?? null,
-            jobScoreAnalysis: parsed.payload.analysis ?? null,
+            jobScoreAnalysis: final?.analysis ?? parsed.payload.analysis ?? null,
             jobScoreGeneratedAt: job.finishedAt ?? sql`now()`,
             lastActivityAt: sql`now()`,
             updatedAt: sql`now()`,

@@ -110,7 +110,6 @@ Respond with a fenced \`json\` block, then the readable report as markdown.
 
 \`\`\`json
 {
-  "score": 0-100,
   "visaSignal": "short phrase describing sponsorship evidence",
   "analysis": {
     "summary": "one paragraph of prose — a string, never an object",
@@ -120,34 +119,25 @@ Respond with a fenced \`json\` block, then the readable report as markdown.
     "breakdown": [
       { "pillar": "Visa Intelligence", "component": "Intent Signals",
         "awarded": 0, "max": 20,
-        "reason": "why these points were withheld or earned" }
+        "reason": "which signals earned or missed points, in one sentence" }
     ],
-    "finalCalculation": "(A x 0.50) + (B x 0.30) + (C x 0.20) = N",
-    "exceptions": ["any hard override applied, and why"]
+    "exceptions": ["anything unusual about this job worth flagging"]
   }
 }
 \`\`\`
 
-\`analysis.breakdown\` must contain **one entry per scored sub-component**, not
-one per pillar. Use the method's own rubric: every named component with its own
-maximum gets its own line — Structural Eligibility, Behavioral Signals and
-Intent Signals under Visa Intelligence; Domain, Functional PM and Seniority
-under Resume Match; Location, Role Alignment, Experience Fit, Reachability and
-Posting Age under Job Relevance.
+\`analysis.breakdown\` has **exactly one line per component listed under
+"Score only these components"** in the job block, using those exact names and
+ranges. Do not add lines for the components already scored by the application,
+and do not report a total, a weighted calculation or a decision band: the
+application adds the score up from the fixed lines and yours, and applies the
+hard overrides itself. Where a component is additive from named signals, name
+the signals that earned or missed points in its \`reason\`.
 
-Where a component is itself additive from named signals, add a line for each of
-those too, so a withheld point is traceable to the rule that withheld it. Give
-every line a \`reason\` — for anything scoring below its maximum, say precisely
-what was missing and which rule applied.
-
-The decision band is computed from the score by the application; do not state or
-invent one.
-
-The application renders the breakdown table, the weighted calculation and the
-overrides from the JSON above, so **do not repeat any of them in the markdown**.
-Use the markdown only for what the structured fields cannot carry: the entity
-you resolved, what each search returned, how you weighed conflicting evidence,
-and the application strategy. Keep it under 400 words.
+The markdown is the method's two report sections and nothing else:
+\`### Key Insights\` and \`### Web Search Evidence\`. Do not write a "SCORE:" line,
+a breakdown table, an application strategy or next actions. Keep it under 350
+words.
 
 **This is a scoring task only.** Do not write a resume, a cover letter, or any
 part or draft of either, and emit no document delimiters. Those documents are
@@ -275,6 +265,7 @@ function jobBlock(context: TaskContext): string {
     context.sponsorBlock ? `\n${context.sponsorBlock}\n` : null,
     context.watchlistBlock ? `\n${context.watchlistBlock}\n` : null,
     context.gateBlock ? `\n${context.gateBlock}\n` : null,
+    context.scoringFixedBlock ? `\n${context.scoringFixedBlock}\n` : null,
     "### Job description",
     context.description,
   ]

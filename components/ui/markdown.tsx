@@ -94,7 +94,10 @@ export function Markdown({ content }: { content: string }) {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
 
-  let listItems: string[] = [];
+  // Depth comes from the bullet's indent: ScoreG writes "Top 3 strengths:" as
+  // a bullet with the strengths nested under it, and flattening that made the
+  // label read as a fourth strength.
+  let listItems: { text: string; depth: number }[] = [];
   let paragraph: string[] = [];
   let sectionTone: Tone = "neutral";
 
@@ -105,13 +108,37 @@ export function Markdown({ content }: { content: string }) {
     blocks.push(
       <ul key={`ul-${key}`} className="my-1.5 flex flex-col gap-1">
         {items.map((item, i) => {
-          const tone = sectionTone === "neutral" ? toneOf(item) : sectionTone;
+          // A bullet with deeper bullets under it is their label: no dot of
+          // its own, and its tone ("gaps or risks") colours its children.
+          const isLabel = (items[i + 1]?.depth ?? -1) > item.depth;
+          let parentTone: Tone = "neutral";
+          for (let j = i - 1; j >= 0; j--) {
+            if (items[j].depth < item.depth) {
+              parentTone = toneOf(items[j].text);
+              break;
+            }
+          }
+          const tone =
+            sectionTone !== "neutral"
+              ? sectionTone
+              : parentTone !== "neutral"
+                ? parentTone
+                : toneOf(item.text);
+          const indent = { marginLeft: `${item.depth * 1.1}rem` };
+          if (isLabel) {
+            return (
+              <li key={i} className="mt-1 font-medium" style={indent}>
+                {inline(item.text, `ul${key}-${i}`)}
+              </li>
+            );
+          }
           return (
             <li
               key={i}
-              className={`relative pl-4 before:absolute before:left-0 before:top-[0.5em] before:h-1.5 before:w-1.5 before:rounded-full ${BULLET_MARKER[tone]}`}
+              style={indent}
+              className={`relative pl-4 before:absolute before:left-0 before:top-[0.6em] before:h-1.5 before:w-1.5 before:rounded-full ${BULLET_MARKER[tone]}`}
             >
-              {inline(item, `ul${key}-${i}`)}
+              {inline(item.text, `ul${key}-${i}`)}
             </li>
           );
         })}
@@ -234,10 +261,12 @@ export function Markdown({ content }: { content: string }) {
       continue;
     }
 
-    const bullet = line.match(/^\s*[-*+]\s+(.*)$/);
+    const bullet = line.match(/^(\s*)[-*+]\s+(.*)$/);
     if (bullet) {
       flushParagraph();
-      listItems.push(bullet[1]);
+      // Two spaces or a tab per level, which is what the models emit.
+      const depth = Math.min(3, Math.floor(bullet[1].replace(/\t/g, "  ").length / 2));
+      listItems.push({ text: bullet[2], depth });
       continue;
     }
 

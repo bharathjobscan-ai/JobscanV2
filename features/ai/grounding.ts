@@ -92,18 +92,16 @@ export function groundingUsage(used: number): GroundingUsage {
 /**
  * Countries whose sponsor register we hold locally (JSV2S1146).
  *
- * Grounding exists on the scoring call mainly to establish sponsorship. Where
- * the register is local that question is already answered deterministically,
- * for free, from a source a web search cannot read anyway — the UK register is
- * a CSV, not indexed pages. Searching there pays ~$0.09 a run to rediscover a
- * fact we already hold, badly.
+ * Used to settle the evidence tier in code (`features/scoring/fixed.ts`): in
+ * these countries the licence question is answered by the register, for free.
  *
- * Everywhere else there is no local register yet, so the search still earns its
- * place and stays on. The owner made exactly this distinction on 2026-09-19.
- *
- * NEXT ONE TO FALL: the Netherlands. IND publishes its recognised-sponsor
- * register publicly — the owner's own watchlist file cites it — so Amsterdam
- * could join this list and take a second city off grounding.
+ * It no longer decides whether a score searches the web. From 2026-09-19 to
+ * 2026-09-25 it did: search was off for UK jobs, on the theory that the
+ * register replaced it. It replaced only the licence check. Behavioral Signals
+ * (community sentiment, recent hires, careers-page relocation) can only be found
+ * by searching, and the skill scores them 0 when no search ran. So every UK job
+ * lost up to 20 visa points: GoCardless fell from 65 to 40 on visa. The owner
+ * reversed it on 2026-09-25: every scoring run searches, in every country.
  */
 const LOCAL_REGISTER_COUNTRIES = new Set([
   "united kingdom",
@@ -116,15 +114,8 @@ const LOCAL_REGISTER_COUNTRIES = new Set([
   "northern ireland",
 ]);
 
-/**
- * Should this scoring run search the web?
- *
- * Deliberately errs towards grounding ON. An unknown or missing country is
- * almost always a badly-formatted posting rather than a UK one, and scoring a
- * non-UK job with no register and no search would leave the visa pillar — half
- * the score — resting on nothing at all.
- */
-export function shouldGroundScoring(country: string | null | undefined): boolean {
-  if (!country) return true;
-  return !LOCAL_REGISTER_COUNTRIES.has(country.trim().toLowerCase());
+/** True where the sponsor register is held locally. Unknown country → false. */
+export function hasLocalSponsorRegister(country: string | null | undefined): boolean {
+  if (!country) return false;
+  return LOCAL_REGISTER_COUNTRIES.has(country.trim().toLowerCase());
 }

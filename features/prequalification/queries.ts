@@ -1,9 +1,23 @@
-import { and, desc, eq, gte, ilike, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { applications, ingestionRuns, rawJobs } from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
+import { runLabel } from "@/features/ingestion/run-label";
 import {
   PREQUAL_FILTERS,
+  type PostedWindow,
   type PrequalDecision,
   type PrequalFilter,
 } from "@/lib/config/constants";
@@ -67,31 +81,42 @@ function toItem(row: {
   };
 }
 
-export const REVIEW_VIEWS = ["review", "rejected", "stale"] as const;
+/**
+ * The queue's views (JSV2S1172).
+ *
+ * "Rules changed" was removed as a VIEW: it answered a question the owner never
+ * browses — you do not read stale verdicts one by one, you re-run them. The
+ * stale COUNT survives in `countForReview` because it drives the re-run button,
+ * which is the only thing that ever acted on it.
+ */
+export const REVIEW_VIEWS = ["review", "rejected", "binned"] as const;
 export type ReviewView = (typeof REVIEW_VIEWS)[number];
 
 export const REVIEW_VIEW_LABELS: Record<ReviewView, string> = {
   review: "Needs review",
   rejected: "Screened out",
-  stale: "Rules changed",
+  binned: "Bin",
 };
+
+/** Per-view counts, plus the stale total behind the re-run button. */
+export type ReviewCounts = Record<ReviewView, number> & { stale: number };
 
 function viewFilter(view: ReviewView) {
   switch (view) {
     case "review":
       return eq(rawJobs.prequalification, "review");
+    /**
+     * The Bin, finally visible (JSV2S1157, completed 2026-09-21).
+     *
+     * Binning was built as a soft delete on the promise of "a future Bin view",
+     * and until now there wasn't one — so a binned job kept its row, its verdict
+     * and its evidence, and no screen could show any of it. Nineteen jobs were
+     * sitting in a place with no door.
+     */
+    case "binned":
+      return isNotNull(rawJobs.binnedAt);
     case "rejected":
       return eq(rawJobs.prequalification, "reject");
-    case "stale":
-      // Jobs judged under an older config. Adding a role or a country should
-      // surface everything the old rules turned away.
-      return and(
-        or(
-          eq(rawJobs.prequalification, "review"),
-          eq(rawJobs.prequalification, "reject"),
-        ),
-        ne(rawJobs.prequalificationVersion, CONFIG_VERSION),
-      );
   }
 }
 
@@ -123,6 +148,15 @@ export type FilterSelections = Partial<
 export type ReviewFilters = {
   view?: ReviewView;
   selections?: FilterSelections;
+  /**
+   * Which filter DECIDED the verdict — the queue's own chips (JSV2S1172).
+   *
+   * Coarser than `selections`, and deliberately so: the question the chips ask
+   * is "what held this job back", not "which outcome did that filter produce".
+   */
+  decidedBy?: PrequalFilter[];
+  /** Age of the posting itself, as opposed to when it was judged. */
+  postedWithin?: PostedWindow;
   /** Inclusive date bounds, as YYYY-MM-DD from the range picker. */
   from?: string | null;
   to?: string | null;
@@ -183,6 +217,31 @@ function selectionFilters(selections: FilterSelections | undefined) {
   return clauses;
 }
 
+/**
+ * OR across chips: two chips lit means "held back by domain OR by experience".
+ *
+ * `decidedBy` names a single filter per job, so AND-ing them could only ever
+ * return nothing — the one combination the user would read as a bug.
+ */
+function decidedByFilter(filters?: PrequalFilter[]) {
+  if (!filters?.length) return undefined;
+  return inArray(sql`${rawJobs.prequalificationDetail}->>'decidedBy'`, filters);
+}
+
+/**
+ * Age of the POSTING (`posted_at`), not of the verdict.
+ *
+ * A stale posting is usually already filled, so this is the filter that keeps
+ * the queue worth working through; `dateFilter` answers a different question.
+ */
+function postedFilter(window?: PostedWindow) {
+  if (!window || window === "any") return undefined;
+  const days = window === "today" ? 0 : window === "week" ? 7 : 30;
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  return gte(rawJobs.postedAt, since.toISOString().slice(0, 10));
+}
+
 function searchFilter(search?: string | null) {
   const q = search?.trim();
   if (!q) return undefined;
@@ -204,11 +263,16 @@ export async function listForReview(
     .where(
       and(
         viewFilter(f.view ?? "review"),
-        isNull(applications.id),
+        // The Bin also holds discarded applications (2026-09-24); every other
+        // view is the pre-application queue and must not show them.
+        f.view === "binned" ? undefined : isNull(applications.id),
         // The Bin is a soft delete: binned jobs keep their row and their
-        // verdict but leave every working list (JSV2S1157).
-        isNull(rawJobs.binnedAt),
+        // verdict but leave every working list (JSV2S1157) — except the Bin
+        // itself, which is the one list that exists to show them.
+        f.view === "binned" ? undefined : isNull(rawJobs.binnedAt),
         ...selectionFilters(f.selections),
+        decidedByFilter(f.decidedBy),
+        postedFilter(f.postedWithin),
         dateFilter(f.from, f.to),
         searchFilter(f.search),
       ),
@@ -246,11 +310,18 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
       fetch: rawJobs.ingestionRunId,
       fetchSource: ingestionRuns.source,
       fetchStartedAt: ingestionRuns.startedAt,
+      fetchParams: ingestionRuns.params,
     })
     .from(rawJobs)
     .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
     .leftJoin(ingestionRuns, eq(ingestionRuns.id, rawJobs.ingestionRunId))
-    .where(and(viewFilter(view), isNull(applications.id), isNull(rawJobs.binnedAt)));
+    .where(
+      and(
+        viewFilter(view),
+        view === "binned" ? undefined : isNull(applications.id),
+        view === "binned" ? undefined : isNull(rawJobs.binnedAt),
+      ),
+    );
 
   const facets: ReviewFacets = {};
   for (const filter of PREQUAL_FILTERS) {
@@ -277,9 +348,12 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
     }
     const at = row.fetchStartedAt;
     runs.set(row.fetch, {
-      label: `${row.fetchSource ?? "unknown"} · ${
-        at ? at.toISOString().slice(0, 10) : "—"
-      } · ${row.fetch.slice(0, 8)}`,
+      label: runLabel({
+        id: row.fetch,
+        source: row.fetchSource,
+        startedAt: at,
+        params: row.fetchParams,
+      }),
       at,
       count: 1,
     });
@@ -303,7 +377,7 @@ export async function getFacets(view: ReviewView = "review"): Promise<ReviewFace
   return facets;
 }
 
-export async function countForReview(): Promise<Record<ReviewView, number>> {
+export async function countForReview(): Promise<ReviewCounts> {
   const [queue] = await db
     .select({
       review: sql<number>`count(*) filter (where ${rawJobs.prequalification} = 'review')::int`,
@@ -329,10 +403,20 @@ export async function countForReview(): Promise<Record<ReviewView, number>> {
     .innerJoin(applications, eq(applications.rawJobId, rawJobs.id))
     .where(sql`${rawJobs.prequalificationVersion} is distinct from ${CONFIG_VERSION}`);
 
+  // Counted separately because every query above excludes binned rows — which
+  // is the correct default everywhere except the one view that shows them.
+  const [binned] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(rawJobs)
+    .leftJoin(applications, eq(applications.rawJobId, rawJobs.id))
+    // Discarded applications included — they are in the Bin too (2026-09-24).
+    .where(isNotNull(rawJobs.binnedAt));
+
   return {
     review: queue?.review ?? 0,
     rejected: queue?.rejected ?? 0,
     stale: (queue?.stale ?? 0) + (promoted?.stale ?? 0),
+    binned: binned?.n ?? 0,
   };
 }
 

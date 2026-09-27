@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 
 import {
   AlreadyPromoted,
+  ApplicationHasSpend,
+  binApplication,
   binJobs,
+  clearBin,
+  deleteBinnedJobs,
+  demoteApplication,
   promoteJob,
   rejectJob,
   requalifyPromoted,
@@ -45,6 +50,70 @@ export async function rejectAction(formData: FormData): Promise<void> {
  * updates the verdict record of a job that already has one and must never
  * disturb the application itself.
  */
+/**
+ * Send an application back to a pile (2026-09-21).
+ *
+ * Returns the refusal as a string rather than throwing it at the user: an
+ * application carrying a generated CV is a legitimate thing to have, and being
+ * told why the button declined is more useful than an error page.
+ */
+export async function demoteApplicationAction(
+  data: FormData,
+): Promise<{ error?: string }> {
+  const id = String(data.get("applicationId") ?? "");
+  const to = data.get("to") === "reject" ? "reject" : "review";
+  if (!id) return {};
+
+  try {
+    await demoteApplication(id, to, String(data.get("reason") ?? ""));
+  } catch (error) {
+    if (error instanceof ApplicationHasSpend) return { error: error.message };
+    throw error;
+  }
+
+  revalidatePath("/applications");
+  revalidatePath("/review");
+  revalidatePath("/pipeline");
+  return {};
+}
+
+/**
+ * Destroy binned jobs for good.
+ *
+ * Returns a summary rather than throwing on a partial result: asking to delete
+ * ten and having three refused by the age guard is the normal case, not an
+ * error, and the caller has to be able to say which happened.
+ */
+export async function deleteBinnedAction(
+  data: FormData,
+): Promise<{ deleted: number; skipped: number }> {
+  const ids = data.getAll("jobId").map(String).filter(Boolean);
+  if (ids.length === 0) return { deleted: 0, skipped: 0 };
+
+  const r = await deleteBinnedJobs(ids);
+  revalidatePath("/review");
+  revalidatePath("/pipeline");
+  return {
+    deleted: r.deleted,
+    skipped: r.skippedNotBinned + r.skippedTooRecent,
+  };
+}
+
+/**
+ * The form's entry point.
+ *
+ * A `<form action>` must return void, and `deleteBinnedAction` deliberately
+ * returns a per-reason summary so callers and tests can see that asking for ten
+ * and getting three is the age guard working rather than a failure. This thin
+ * wrapper keeps both: the summary stays available, and the form gets its void.
+ *
+ * The user-visible feedback is the revalidated count — "N qualify today" drops
+ * by exactly what was destroyed.
+ */
+export async function deleteBinnedFormAction(data: FormData): Promise<void> {
+  await deleteBinnedAction(data);
+}
+
 export async function requalifyAction(): Promise<void> {
   await requalifyStale();
   await requalifyPromoted();
@@ -70,6 +139,25 @@ export async function binAction(data: FormData): Promise<void> {
 export async function restoreAction(data: FormData): Promise<void> {
   const ids = data.getAll("jobId").filter((v): v is string => typeof v === "string");
   await restoreJobs(ids);
+  revalidatePath("/review");
+  revalidatePath("/pipeline");
+  // A restored job may carry an application, which reappears in its city.
+  revalidatePath("/applications", "layout");
+}
+
+/** Discard from the application's own page: to the Bin, keeping everything (2026-09-24). */
+export async function discardApplicationAction(data: FormData): Promise<void> {
+  const id = String(data.get("applicationId") ?? "");
+  if (!id) return;
+  await binApplication(id);
+  revalidatePath("/applications", "layout");
+  revalidatePath("/review");
+  revalidatePath("/pipeline");
+}
+
+/** Delete everything binned more than 30 days ago (2026-09-24). */
+export async function clearBinAction(): Promise<void> {
+  await clearBin();
   revalidatePath("/review");
   revalidatePath("/pipeline");
 }

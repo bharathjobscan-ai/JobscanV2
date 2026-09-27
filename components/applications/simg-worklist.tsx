@@ -3,7 +3,9 @@
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
-import { Badge, Button, Card, CardHeader } from "@/components/ui/base";
+import { Badge, Button } from "@/components/ui/base";
+import { Panel, PanelGrid, SectionHead } from "@/components/applications/detail/section";
+import { SimgScorePanel } from "@/components/applications/detail/simg/score-panel";
 import { LENS_LABELS, TARGET_DOCUMENT_SCORE } from "@/config/simg";
 import {
   acceptAllAction,
@@ -22,16 +24,31 @@ const KIND_LABEL: Record<SimgRecommendation["kind"], string> = {
   delete: "Remove",
 };
 
+/**
+ * "Recruiter · 6 sec" → name and marker, split rather than restated.
+ *
+ * The qualifier the design shows as a clock marker is already in the config
+ * label; duplicating it here as a literal would be a second place to edit and
+ * a second place to be wrong.
+ */
+function lensParts(label: string): { name: string; marker: string | null } {
+  const [name, ...rest] = label.split("·").map((part) => part.trim());
+  const marker = rest.join(" · ");
+  return { name, marker: marker.length > 0 ? marker : null };
+}
+
 function Submit({
   children,
   variant = "secondary",
+  className = "",
 }: {
   children: React.ReactNode;
   variant?: "primary" | "secondary" | "ghost";
+  className?: string;
 }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" variant={variant} disabled={pending}>
+    <Button type="submit" variant={variant} disabled={pending} className={className}>
       {pending ? "…" : children}
     </Button>
   );
@@ -40,29 +57,38 @@ function Submit({
 /**
  * The change itself, rendered the way a diff is (JSV2S1126).
  *
- * Struck red for what goes, green for what arrives. A `modify` shows both; an
+ * Struck red for what goes, green for what arrives, each under its own label
+ * so the two halves cannot be confused at a glance. A `modify` shows both; an
  * `insert` has no red half and a `delete` no green one, which is exactly the
  * shape of the edit and needs no explaining.
  */
 function Diff({ rec }: { rec: SimgRecommendation }) {
   return (
-    <div className="mt-2 space-y-1 font-mono text-[11.5px] leading-relaxed">
+    <div className="grid gap-3 text-[12px] leading-relaxed sm:grid-cols-2">
       {rec.before ? (
-        <p className="rounded bg-negative-bg px-2 py-1 text-negative">
-          <span className="mr-1.5 select-none opacity-60">−</span>
-          <s>{rec.before}</s>
-        </p>
+        <div className="min-w-0">
+          <p className="text-[10px] tracking-[0.12em] text-faint uppercase">
+            Current resume text
+          </p>
+          <p className="n-mono mt-1.5 rounded bg-negative-bg px-3 py-2.5 text-negative line-through">
+            {rec.before}
+          </p>
+        </div>
       ) : null}
       {rec.after ? (
-        <p className="rounded bg-positive-bg px-2 py-1 text-positive">
-          <span className="mr-1.5 select-none opacity-60">+</span>
-          {rec.after}
-        </p>
-      ) : null}
-      {rec.kind === "insert" && rec.anchorAfter ? (
-        <p className="text-[11px] text-faint">
-          Inserted after: <span className="italic">{rec.anchorAfter}</span>
-        </p>
+        <div className="min-w-0">
+          <p className="text-[10px] tracking-[0.12em] text-faint uppercase">
+            {rec.kind === "insert" ? "Proposed addition" : "Proposed replacement"}
+          </p>
+          <p className="n-mono mt-1.5 rounded bg-positive-bg px-3 py-2.5 text-positive">
+            {rec.after}
+          </p>
+          {rec.kind === "insert" && rec.anchorAfter ? (
+            <p className="mt-1.5 text-[11.5px] text-faint italic">
+              Inserted after: {rec.anchorAfter}
+            </p>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -74,20 +100,25 @@ function StateForm({
   state,
   children,
   variant,
+  block = false,
 }: {
   applicationId: string;
   recommendationId: string;
   state: "accepted" | "discarded" | "pending";
   children: React.ReactNode;
   variant?: "primary" | "secondary" | "ghost";
+  /** Stretch the control to the column width, as the design stacks them. */
+  block?: boolean;
 }) {
   const [result, action] = useActionState(setRecommendationAction, EMPTY);
   return (
-    <form action={action} className="inline">
+    <form action={action} className={block ? "block" : "inline"}>
       <input type="hidden" name="applicationId" value={applicationId} />
       <input type="hidden" name="recommendationId" value={recommendationId} />
       <input type="hidden" name="state" value={state} />
-      <Submit variant={variant}>{children}</Submit>
+      <Submit variant={variant} className={block ? "w-full" : ""}>
+        {children}
+      </Submit>
       {result.error ? (
         <span className="ml-2 text-[11px] text-negative">{result.error}</span>
       ) : null}
@@ -95,6 +126,10 @@ function StateForm({
   );
 }
 
+/**
+ * One recommendation, in the design's three columns: which lens is speaking
+ * and what it is worth, the change itself, and the decision.
+ */
 function Recommendation({
   rec,
   applicationId,
@@ -103,44 +138,61 @@ function Recommendation({
   applicationId: string;
 }) {
   const done = rec.state !== "pending";
+  const { name, marker } = lensParts(LENS_LABELS[rec.lens]);
 
   return (
-    <li className="border-t border-line py-3.5">
-      <div className="flex items-start gap-3">
-        <div className="w-24 shrink-0">
-          <p className="text-[10.5px] font-medium tracking-wide uppercase">
-            {LENS_LABELS[rec.lens]}
-          </p>
-          <p className="mt-1 text-[10.5px] tracking-wide text-faint uppercase">
-            {KIND_LABEL[rec.kind]}
-          </p>
-        </div>
+    <li
+      className="grid grid-cols-1 gap-x-6 gap-y-4 border-t py-6 sm:grid-cols-[minmax(150px,168px)_minmax(0,1fr)] lg:grid-cols-[minmax(150px,168px)_minmax(0,1fr)_128px]"
+      style={{ borderColor: "var(--hair)" }}
+    >
+      <div className="min-w-0">
+        <p className="text-[10px] tracking-[0.12em] text-faint uppercase">{name}</p>
 
-        <div className="min-w-0 flex-1">
-          <p className="text-sm">{rec.text}</p>
-          {rec.detail ? <p className="mt-0.5 text-xs text-muted">{rec.detail}</p> : null}
-
-          {/*
-            The confirmation gate. Marked before the diff, not after, because the
-            user reviews this list by eye before pressing Accept all — an
-            unverified claim has to be impossible to skim past.
-          */}
-          {rec.requiresConfirmation ? (
-            <p className="mt-2 rounded border border-warning/25 bg-warning-bg px-2 py-1.5 text-[11.5px] text-warning">
-              <strong>Verify before accepting.</strong>{" "}
-              {rec.confirm ?? "This asserts experience not evidenced in your master resume."}
-            </p>
+        <div className="mt-1.5 flex items-baseline gap-2.5">
+          <span className="n-display text-[19px] font-semibold text-positive tabular-nums">
+            +{rec.points}
+          </span>
+          {marker ? (
+            <span className="text-[11px] text-faint tabular-nums">
+              <span aria-hidden>◷ </span>
+              {marker}
+            </span>
           ) : null}
-
-          <Diff rec={rec} />
         </div>
 
-        <div className="w-10 shrink-0 text-right text-base font-semibold tabular-nums">
-          +{rec.points}
-        </div>
+        <p className="n-display mt-2.5 text-[15px] font-semibold">{rec.text}</p>
+        {rec.detail ? (
+          <p className="mt-1.5 text-[12px] text-faint">{rec.detail}</p>
+        ) : null}
+
+        <span className="mt-2.5 inline-block rounded-sm border border-line-strong px-2 py-0.5 text-[10px] tracking-[0.1em] text-muted uppercase">
+          {KIND_LABEL[rec.kind]}
+        </span>
       </div>
 
-      <div className="mt-2 flex justify-end gap-2">
+      <div className="min-w-0">
+        {/*
+          The confirmation gate. Marked before the diff, not after, because the
+          user reviews this list by eye before pressing Accept all — an
+          unverified claim has to be impossible to skim past.
+        */}
+        {rec.requiresConfirmation ? (
+          <p
+            className="mb-3 rounded px-3 py-2.5 text-[12.5px]"
+            style={{
+              border: "1px solid color-mix(in srgb, var(--gold) 45%, transparent)",
+              background: "color-mix(in srgb, var(--gold) 9%, transparent)",
+            }}
+          >
+            <span style={{ color: "var(--gold)" }}>Verify before accepting.</span>{" "}
+            {rec.confirm ?? "This asserts experience not evidenced in your master resume."}
+          </p>
+        ) : null}
+
+        <Diff rec={rec} />
+      </div>
+
+      <div className="flex flex-wrap items-start gap-2 lg:flex-col lg:gap-2">
         {done ? (
           <>
             <Badge tone={rec.state === "accepted" ? "positive" : "neutral"}>
@@ -150,9 +202,10 @@ function Recommendation({
               applicationId={applicationId}
               recommendationId={rec.id}
               state="pending"
-              variant="ghost"
+              variant="secondary"
+              block
             >
-              Undo
+              <span aria-hidden>↺</span> Undo
             </StateForm>
           </>
         ) : (
@@ -162,14 +215,16 @@ function Recommendation({
               recommendationId={rec.id}
               state="accepted"
               variant="primary"
+              block
             >
-              Accept
+              <span aria-hidden>✓</span> Accept
             </StateForm>
             <StateForm
               applicationId={applicationId}
               recommendationId={rec.id}
               state="discarded"
-              variant="ghost"
+              variant="secondary"
+              block
             >
               Discard
             </StateForm>
@@ -212,11 +267,14 @@ function AcceptAll({
 }
 
 /**
- * SimG — the CV evaluation and its priced worklist (JSV2S1058 + JSV2S1126).
+ * SimG — the CV evaluation and its priced worklist (JSV2S1058 + JSV2S1126),
+ * drawn to the Nocturnal design (JSV2S1172).
  *
  * Presentation only: every number here is computed server-side by
  * `features/simg/apply.ts`. That split is deliberate so this component can be
- * replaced by the approved design without touching the arithmetic.
+ * restyled without touching the arithmetic — in particular `overflows`, which
+ * is re-derived from the replayed CV on every accept and is never taken from
+ * the model.
  */
 export function SimgWorklist({
   applicationId,
@@ -237,124 +295,122 @@ export function SimgWorklist({
   const reachedBar = projection.current >= TARGET_DOCUMENT_SCORE;
 
   return (
-    <Card>
-      <CardHeader
-        title="CV evaluation"
-        meta={`SimG · ${evaluation.provider ?? "—"}`}
+    <section>
+      <SectionHead
+        title="SimG · three lenses on the resume"
+        meta={`${evaluation.provider ?? "—"} · ${projection.pendingCount} pending · ${projection.acceptedCount} applied`}
       />
 
-      <div className="px-5 pt-4">
-        {/* baseline → generated → current, with the potential still on offer. */}
-        <div className="flex flex-wrap items-baseline gap-2 text-2xl font-semibold tabular-nums">
-          <span className="text-faint">{projection.baseline}</span>
-          <span className="text-faint">→</span>
-          <span className="text-muted">{projection.generated}</span>
-          <span className="text-faint">→</span>
-          <span className={reachedBar ? "text-positive" : ""}>{projection.current}</span>
-          {projection.potential > projection.current ? (
-            <span className="text-sm font-normal text-muted">
-              of {projection.potential} available
-            </span>
-          ) : null}
-        </div>
-        <p className="mt-1 text-[11.5px] text-faint">
-          Master resume → as generated → with your edits · document score, target{" "}
-          {TARGET_DOCUMENT_SCORE}. This is not the job score.
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-6">
+        <p className="max-w-[64ch] flex-1 text-[13.5px] text-muted">
+          SimG reads the resume as an ATS parser, a recruiter with six seconds,
+          and the hiring manager. Every edit shows the line it replaces. Accept and
+          the score moves; discard and nothing changes.
         </p>
-
-        <dl className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded-md border border-line bg-line">
-          {(Object.keys(LENS_LABELS) as (keyof typeof LENS_LABELS)[]).map((key) => (
-            <div key={key} className="bg-surface px-3 py-2.5">
-              <dt className="text-[10px] tracking-wide text-faint uppercase">
-                {LENS_LABELS[key]}
-              </dt>
-              <dd className="mt-0.5 text-lg font-semibold tabular-nums">
-                {evaluation.current[key]?.score ?? "—"}
-              </dd>
-              {evaluation.current[key]?.note ? (
-                <dd className="text-[11px] text-muted">{evaluation.current[key].note}</dd>
-              ) : null}
-            </div>
-          ))}
-        </dl>
-
-        {/*
-          JSV2S1145 — stated as MEASURED, beside an otherwise estimated score.
-          Parse readiness and keyword coverage are both deterministic, so this
-          third of the composite is fact; the recruiter and hiring-manager
-          lenses remain the model's judgement and are labelled as such.
-        */}
-        {measured ? (
-          <div className="mt-3 rounded-md border border-line bg-surface-muted px-3 py-2">
-            <p className="text-[10px] tracking-wide text-faint uppercase">
-              ATS lens, measured on the current CV
-            </p>
-            <p className="mt-1 text-sm">
-              <span className="font-semibold tabular-nums">{measured.lensScore}</span>
-              {measured.delta !== null && measured.delta !== 0 ? (
-                <span
-                  className={
-                    measured.delta > 0 ? "ml-1.5 text-positive" : "ml-1.5 text-negative"
-                  }
-                >
-                  {measured.delta > 0 ? "+" : ""}
-                  {measured.delta} vs SimG&rsquo;s estimate
-                </span>
-              ) : (
-                <span className="ml-1.5 text-muted">matches SimG&rsquo;s estimate</span>
-              )}
-            </p>
-            <p className="mt-0.5 text-[11px] text-subtle tabular-nums">
-              Parse {measured.parseScore} · keywords {measured.mustHaveFound}/
-              {measured.mustHaveTotal}
-              {measured.recovered.length > 0
-                ? ` · recovered ${measured.recovered.join(", ")}`
-                : ""}
-            </p>
-            {measured.stillMissing.length > 0 ? (
-              <p className="mt-0.5 text-[11px] text-warning">
-                Still missing: {measured.stillMissing.join(", ")}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {projection.overflows ? (
-          <p className="mt-3 rounded border border-negative/25 bg-negative-bg px-2 py-1.5 text-[11.5px] text-negative">
-            The CV now runs about {projection.overBy} lines onto a second page.
-            Accept a removal or discard an addition.
-          </p>
-        ) : null}
+        <SimgScorePanel projection={projection} />
       </div>
 
+      <PanelGrid min="170px" className="mt-5">
+        {(Object.keys(LENS_LABELS) as (keyof typeof LENS_LABELS)[]).map((key) => (
+          <Panel key={key} label={LENS_LABELS[key]} className="p-4">
+            <p className="n-display mt-1.5 text-[21px] font-semibold tabular-nums">
+              {evaluation.current[key]?.score ?? "—"}
+            </p>
+            {evaluation.current[key]?.note ? (
+              <p className="mt-0.5 text-[11.5px] text-muted">
+                {evaluation.current[key].note}
+              </p>
+            ) : null}
+          </Panel>
+        ))}
+      </PanelGrid>
+
+      {/*
+        JSV2S1145 — stated as MEASURED, beside an otherwise estimated score.
+        Parse readiness and keyword coverage are both deterministic, so this
+        third of the composite is fact; the recruiter and hiring-manager
+        lenses remain the model's judgement and are labelled as such.
+      */}
+      {measured ? (
+        <div className="mt-3 rounded-md border border-line bg-surface-muted px-4 py-3">
+          <p className="text-[10px] tracking-[0.12em] text-faint uppercase">
+            ATS lens, measured on the current CV
+          </p>
+          <p className="mt-1.5 text-[14px]">
+            <span className="n-display text-[19px] font-semibold tabular-nums">
+              {measured.lensScore}
+            </span>
+            {measured.delta !== null && measured.delta !== 0 ? (
+              <span
+                className={
+                  measured.delta > 0 ? "ml-2 text-positive" : "ml-2 text-negative"
+                }
+              >
+                {measured.delta > 0 ? "+" : ""}
+                {measured.delta} vs SimG&rsquo;s estimate
+              </span>
+            ) : (
+              <span className="ml-2 text-muted">matches SimG&rsquo;s estimate</span>
+            )}
+          </p>
+          <p className="mt-1 text-[11.5px] text-subtle tabular-nums">
+            Parse {measured.parseScore} · keywords {measured.mustHaveFound}/
+            {measured.mustHaveTotal}
+            {measured.recovered.length > 0
+              ? ` · recovered ${measured.recovered.join(", ")}`
+              : ""}
+          </p>
+          {measured.stillMissing.length > 0 ? (
+            <p className="mt-1 text-[11.5px] text-warning">
+              Still missing: {measured.stillMissing.join(", ")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/*
+        Re-derived on every accept from the replayed CV, never from the model.
+        One page is the contract with the .docx renderer, so this has to be the
+        loudest thing on the screen when it is true.
+      */}
+      {projection.overflows ? (
+        <p className="mt-3 rounded border border-negative/25 bg-negative-bg px-3 py-2 text-[12px] text-negative">
+          The CV now runs about {projection.overBy} lines onto a second page.
+          Accept a removal or discard an addition.
+        </p>
+      ) : null}
+
       {recommendations.length > 0 ? (
-        <div className="px-5 pb-4">
+        <div className="mt-6">
           {/*
             Only what still needs a decision stays on screen. An accepted or
             discarded item has been dealt with and is just noise from then on,
             so it rolls into the history disclosure below where it can still be
             reopened.
           */}
-          <ul className="mt-3">
+          <ul>
             {pending.map((rec) => (
               <Recommendation key={rec.id} rec={rec} applicationId={applicationId} />
             ))}
           </ul>
 
           {pending.length === 0 ? (
-            <p className="border-t border-line py-4 text-xs text-muted">
+            <p
+              className="border-t py-5 text-[13.5px] text-muted"
+              style={{ borderColor: "var(--hair)" }}
+            >
               Every recommendation has been actioned. Regenerate the CV for a
               fresh evaluation.
             </p>
           ) : null}
 
           {actioned.length > 0 ? (
-            <details className="border-t border-line pt-3">
-              <summary className="cursor-pointer text-xs font-medium text-muted hover:text-foreground">
+            <details className="border-t pt-4" style={{ borderColor: "var(--hair)" }}>
+              <summary className="cursor-pointer text-[13px] text-muted hover:text-foreground">
                 Action history
                 <span className="ml-1.5 text-subtle">
-                  ({projection.acceptedCount} applied ·{" "}
-                  {projection.discardedCount} discarded)
+                  ({projection.acceptedCount} applied · {projection.discardedCount}{" "}
+                  discarded)
                 </span>
               </summary>
               <ul className="mt-1">
@@ -365,26 +421,38 @@ export function SimgWorklist({
             </details>
           ) : null}
 
-          <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3">
-            <p className="text-[11.5px] text-muted">
-              {projection.acceptedCount} applied · {projection.pendingCount} pending ·{" "}
-              {projection.discardedCount} discarded
-            </p>
-            <AcceptAll
-              applicationId={applicationId}
-              pendingCount={pending.length}
-              unverified={unverified}
-            />
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-foreground/40 pt-4">
+            <div>
+              <p className="text-[13px] text-muted">Projected document score</p>
+              <p className="text-[11.5px] text-faint tabular-nums">
+                {projection.acceptedCount} applied · {projection.pendingCount} pending ·{" "}
+                {projection.discardedCount} discarded
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-4">
+              <AcceptAll
+                applicationId={applicationId}
+                pendingCount={pending.length}
+                unverified={unverified}
+              />
+              <span
+                className={`n-display text-[24px] font-semibold tabular-nums ${
+                  reachedBar ? "text-positive" : ""
+                }`}
+              >
+                {projection.potential}
+              </span>
+            </div>
           </div>
         </div>
       ) : (
-        <p className="px-5 pb-4 text-xs text-muted">
+        <p className="mt-5 text-[13.5px] text-muted">
           No applicable recommendations.
           {evaluation.rejected?.length
             ? ` ${evaluation.rejected.length} were discarded as unapplicable.`
             : ""}
         </p>
       )}
-    </Card>
+    </section>
   );
 }

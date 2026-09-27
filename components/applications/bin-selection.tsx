@@ -19,15 +19,28 @@ import { useState } from "react";
  * one that actually submits is the DOM.
  */
 export const BIN_FORM_ID = "bin-form";
+/** Deliberately its own form — see `destroy` below. */
+export const DESTROY_FORM_ID = "bin-destroy-form";
 
 export function BinSelection({
   action,
   children,
   label = "Move to Bin",
+  destroy,
+  hint,
 }: {
   action: (data: FormData) => void | Promise<void>;
   children: React.ReactNode;
   label?: string;
+  /**
+   * Permanent deletion, offered only where it is legal (2026-09-23).
+   *
+   * A SEPARATE form, not a second submit button on the first one. Two buttons
+   * sharing a form means one stray Enter keypress in the wrong place destroys
+   * rows, and this is the only action in the app with no undo.
+   */
+  destroy?: (data: FormData) => void | Promise<void>;
+  hint?: string;
 }) {
   const [count, setCount] = useState(0);
 
@@ -59,6 +72,31 @@ export function BinSelection({
         onReset={() => setCount(0)}
       />
 
+      {/* The destructive twin. It reads the same ticked boxes because each one
+          declares both form ids is impossible — so instead it is submitted
+          with the selection copied across at submit time. */}
+      {destroy ? (
+        <form
+          id={DESTROY_FORM_ID}
+          action={destroy}
+          onSubmit={(e) => {
+            const source = document.getElementById(BIN_FORM_ID) as HTMLFormElement | null;
+            const target = e.currentTarget;
+            for (const stale of [...target.querySelectorAll('input[name="jobId"]')]) {
+              stale.remove();
+            }
+            for (const box of boxes(source)) {
+              if (!box.checked) continue;
+              const copy = document.createElement("input");
+              copy.type = "hidden";
+              copy.name = "jobId";
+              copy.value = box.value;
+              target.appendChild(copy);
+            }
+          }}
+        />
+      ) : null}
+
       <div className="mb-2 flex items-center gap-3 text-xs">
         <label className="flex cursor-pointer items-center gap-2 text-muted hover:text-foreground">
           <input
@@ -85,6 +123,17 @@ export function BinSelection({
             >
               {label}
             </button>
+            {destroy ? (
+              <button
+                type="submit"
+                form={DESTROY_FORM_ID}
+                className="rounded-md border px-2.5 py-1 font-medium transition-colors"
+                style={{ borderColor: "var(--negative)", color: "var(--negative)" }}
+                title="Removes the row from the database. This cannot be undone, and only applies to jobs binned more than 30 days ago."
+              >
+                Delete permanently
+              </button>
+            ) : null}
             <button
               type="reset"
               form={BIN_FORM_ID}
@@ -95,8 +144,8 @@ export function BinSelection({
           </>
         ) : (
           <span className="text-faint">
-            Tick a job to dismiss it. Binned jobs keep their verdict and stay in
-            the database.
+            {hint ??
+              "Tick a job to dismiss it. Binned jobs keep their verdict and stay in the database."}
           </span>
         )}
       </div>

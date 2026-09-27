@@ -57,6 +57,19 @@ export type TaskContext = {
    * anything was billed.
    */
   gateBlock?: string;
+
+  /**
+   * 2026-09-25 — the components the application scored itself, and the ones
+   * left to the model. See `features/scoring/fixed.ts`.
+   */
+  scoringFixedBlock?: string;
+
+  /**
+   * Whether this score may use Google Search. Decided once, with the fixed
+   * components, so the provider and the ledger cannot disagree about it; the
+   * ledger used to mark every Gemini score as grounded, UK ones included.
+   */
+  grounded?: boolean;
 };
 
 /**

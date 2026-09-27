@@ -1,20 +1,19 @@
 import Link from "next/link";
 
-import {
-  FilterStatusRow,
-  PreferredCityBadge,
-  PrequalBadge,
-} from "@/components/applications/prequal-badges";
-import { Badge, Button, Card, CardHeader, EmptyState, buttonClass } from "@/components/ui/base";
+import { BinSelection } from "@/components/applications/bin-selection";
+import { DELETABLE_AFTER_DAYS } from "@/lib/config/constants";
+import { countDeletable } from "@/features/prequalification/mutations";
+import { ClearBinButton } from "@/components/applications/clear-bin-button";
+import { HeldJobRow } from "@/components/review/held-job-row";
+import { ReviewFilters } from "@/components/review/review-filters";
+import { Button, Card, EmptyState } from "@/components/ui/base";
 import {
   binAction,
-  promoteAction,
-  rejectAction,
+  deleteBinnedFormAction,
+  restoreAction,
   requalifyAction,
 } from "@/features/prequalification/actions";
-import { BinSelection, BIN_FORM_ID } from "@/components/applications/bin-selection";
 import {
-  getFacets,
   countForReview,
   listForReview,
   REVIEW_VIEWS,
@@ -23,17 +22,22 @@ import {
   type ReviewView,
 } from "@/features/prequalification/queries";
 import {
-  AffinityNote,
-  VisaSignal,
-  WatchlistSignal,
-} from "@/components/applications/gate-verdict";
-import { FilterPanel } from "@/components/ui/filter-panel";
-import { PREQUAL_FILTERS, PREQUAL_FILTER_LABELS } from "@/lib/config/constants";
+  POSTED_WINDOWS,
+  PREQUAL_FILTERS,
+  type PostedWindow,
+  type PrequalFilter,
+} from "@/lib/config/constants";
 
 export const dynamic = "force-dynamic";
 
+/** A repeated param (`?decidedBy=a&decidedBy=b`) arrives as an array. */
+function values(param: string | string[] | undefined): string[] {
+  const raw = Array.isArray(param) ? param : param ? [param] : [];
+  return raw.flatMap((v) => v.split(",")).filter(Boolean);
+}
+
 /**
- * The review queue (JSV2S1038).
+ * The review queue (JSV2S1038, restyled under JSV2S1172).
  *
  * Everything the deterministic gate could not decide on its own, with the
  * reason and the evidence in front of you. Nothing here has cost anything yet —
@@ -42,46 +46,91 @@ export const dynamic = "force-dynamic";
 export default async function ReviewPage({
   searchParams,
 }: {
-  searchParams: Promise<Record<string, string | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const view: ReviewView = REVIEW_VIEWS.includes(params.view as ReviewView)
-    ? (params.view as ReviewView)
+  const one = (key: string) => {
+    const v = params[key];
+    return Array.isArray(v) ? v[0] : v;
+  };
+
+  /**
+   * An unrecognised view degrades to the default rather than 404-ing.
+   *
+   * `?view=stale` was a real tab until JSV2S1172 and is still in browser
+   * history and in old links, so it has to land somewhere sensible.
+   */
+  const requested = one("view");
+  const view: ReviewView = REVIEW_VIEWS.includes(requested as ReviewView)
+    ? (requested as ReviewView)
     : "review";
 
   // JSV2S1153. Anything unrecognised is dropped rather than raised: a
   // hand-edited URL should degrade to "no filter", never to a crash.
+  //
+  // Value-level selections have no control on this screen any more, but the
+  // pipeline and application-detail screens deep-link with them
+  // (`/review?fetch=<runId>`, `?company=…`, `?visa=…`), so they are still read
+  // and still applied.
   const selections: FilterSelections = {};
   for (const f of [...PREQUAL_FILTERS, "company", "fetch"] as const) {
-    const values = params[f]?.split(",").filter(Boolean) ?? [];
-    if (values.length > 0) selections[f] = values;
+    const chosen = values(params[f]);
+    if (chosen.length > 0) selections[f] = chosen;
   }
-  const isDate = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
-  const from = isDate(params.from);
-  const to = isDate(params.to);
-  const search = params.q?.trim() || null;
 
-  const [items, counts, facets] = await Promise.all([
-    listForReview({ view, selections, from, to, search }),
+  const decidedBy = values(params.decidedBy).filter((v): v is PrequalFilter =>
+    PREQUAL_FILTERS.includes(v as PrequalFilter),
+  );
+  const postedParam = one("posted");
+  const posted: PostedWindow = POSTED_WINDOWS.includes(postedParam as PostedWindow)
+    ? (postedParam as PostedWindow)
+    : "any";
+
+  const isDate = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+  const from = isDate(one("from"));
+  const to = isDate(one("to"));
+  const search = one("q")?.trim() || null;
+
+  const [items, counts, deletable] = await Promise.all([
+    listForReview({ view, selections, decidedBy, postedWithin: posted, from, to, search }),
     countForReview(),
-    getFacets(view),
+    // Only the Bin offers deletion, so only the Bin pays for the count.
+    view === "binned" ? countDeletable() : Promise.resolve(0),
   ]);
 
   const filtered =
     Object.values(selections).some((v) => v.length > 0) ||
+    decidedBy.length > 0 ||
+    posted !== "any" ||
     from !== null ||
     search !== null;
 
+  // What the filter row must carry across a chip toggle, so a deep link is not
+  // thrown away by the first click on the screen it landed on.
+  const preserve: Record<string, string> = {};
+  if (view !== "review") preserve.view = view;
+  for (const [key, chosen] of Object.entries(selections)) {
+    if (chosen.length > 0) preserve[key] = chosen.join(",");
+  }
+  if (from) preserve.from = from;
+  if (to) preserve.to = to;
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
+    <div>
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Pre-qualification</h1>
-          <p className="mt-0.5 text-xs text-muted">
+          <h1 className="n-display text-[38px] leading-none font-normal tracking-[-0.02em]">
+            Pre-qualification
+          </h1>
+          <p className="mt-1.5 max-w-[64ch] text-sm text-muted">
             Jobs the deterministic gate held back. Nothing here has been scored, so
             nothing here has cost anything.
           </p>
         </div>
+        {/*
+         * The re-run button outlived the "Rules changed" view (JSV2S1172): the
+         * stale count is worth acting on, not worth browsing.
+         */}
         {counts.stale > 0 ? (
           <form action={requalifyAction}>
             <Button
@@ -95,43 +144,33 @@ export default async function ReviewPage({
         ) : null}
       </div>
 
-      <nav className="flex items-center gap-1 border-b border-line pb-2 text-xs">
+      <nav className="mt-6 flex gap-1 overflow-x-auto border-b border-line">
         {REVIEW_VIEWS.map((key) => (
           <Link
             key={key}
             href={key === "review" ? "/review" : `/review?view=${key}`}
-            className={
+            className={`border-b-2 px-3.5 pt-2.5 pb-3 text-[13.5px] whitespace-nowrap transition-colors ${
               key === view
-                ? "rounded-md bg-surface-muted px-2 py-1 font-medium"
-                : "rounded-md px-2 py-1 text-muted hover:bg-surface-muted hover:text-foreground"
-            }
+                ? "border-accent text-foreground"
+                : "border-transparent text-muted hover:text-foreground"
+            }`}
           >
-            {REVIEW_VIEW_LABELS[key]}{" "}
-            <span className="text-subtle">{counts[key]}</span>
+            {REVIEW_VIEW_LABELS[key]}
+            <span className="n-mono ml-[7px] text-xs text-faint">{counts[key]}</span>
           </Link>
         ))}
       </nav>
 
-      <FilterPanel
-        basePath="/review"
-        preserve={{ view: view === "review" ? undefined : view }}
-        categories={[
-          ...PREQUAL_FILTERS.map((f) => ({ key: f, label: PREQUAL_FILTER_LABELS[f] })),
-          { key: "company", label: "Company" },
-          { key: "fetch", label: "Fetch" },
-        ]}
-        facets={facets as Record<string, { value: string; label: string; count: number }[]>}
-        initial={selections as Record<string, string[]>}
-        initialFrom={from}
-        initialTo={to}
-        initialSearch={search}
-        resultCount={items.length}
-        searchPlaceholder="Search title or company"
-        dateLabel="Judged between"
+      <ReviewFilters
+        decidedBy={decidedBy}
+        posted={posted}
+        search={search}
+        preserve={preserve}
+        count={items.length}
       />
 
       {items.length === 0 ? (
-        <Card>
+        <Card className="mt-4">
           <EmptyState
             title={
               filtered
@@ -140,163 +179,51 @@ export default async function ReviewPage({
                   ? "Nothing waiting on you"
                   : view === "rejected"
                     ? "Nothing has been screened out"
-                    : "Every verdict is current"
+                    : "The Bin is empty"
             }
             hint={
               // A filtered empty result must not read as "the queue is clear".
               filtered
-                ? "Widen the filters or the date range to see more."
-                : view === "stale"
-                  ? "When you change the role, domain or location config, jobs judged under the old rules appear here."
-                  : "Jobs that pass every filter go straight to Applications."
+                ? "Clear a chip or widen the posted window to see more."
+                : "Jobs that pass every filter go straight to Applications."
             }
           />
         </Card>
       ) : (
-        <BinSelection action={binAction}>
-        <ul className="space-y-2">
-          {items.map((item) => {
-            const d = item.detail;
-            return (
-              <li key={item.id}>
-                <Card>
-                  <CardHeader
-                    title={
-                      <span className="flex items-center gap-2.5">
-                        {/* Name and value are what the bulk action reads; one
-                            ticked box and fifty use the same code path. */}
-                        {/* Joins the bulk form by id, not by nesting: this row
-                            already contains promote and reject forms, and a
-                            nested <form> is dropped by the browser. */}
-                        <input
-                          type="checkbox"
-                          name="jobId"
-                          form={BIN_FORM_ID}
-                          value={item.id}
-                          aria-label={`Select ${item.title}`}
-                          className="size-3.5 shrink-0"
-                        />
-                        <a
-                          href={item.jobUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="hover:underline"
-                        >
-                          {item.title}
-                        </a>
-                      </span>
-                    }
-                    meta={`${item.company}${item.location ? ` · ${item.location}` : ""}`}
-                    action={
-                      <div className="flex items-center gap-1.5">
-                        <PreferredCityBadge city={d?.location.preferredCity ?? null} />
-                        <WatchlistSignal watchlist={d?.watchlist} />
-                        {item.stale ? (
-                          <Badge tone="info" title="Judged under an older configuration">
-                            Rules changed
-                          </Badge>
-                        ) : null}
-                        <PrequalBadge decision={item.decision} reason={d?.reason} />
-                      </div>
-                    }
-                  />
-
-                  <div className="space-y-2 px-4 py-3 text-xs">
-                    <p className="text-muted">{d?.reason ?? "No recorded reason."}</p>
-
-                    {/* JSV2S1158 — when it was judged, and which fetch brought
-                        it in. Without the run id a job in the queue cannot be
-                        traced back to the batch it arrived with. */}
-                    <p className="text-subtle">
-                      Judged{" "}
-                      {item.prequalifiedAt
-                        ? item.prequalifiedAt.toLocaleString(undefined, {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : "—"}
-                      {item.ingestionRunId ? (
-                        <>
-                          {" · run "}
-                          <span
-                            className="font-mono text-[10.5px] text-faint"
-                            title={item.ingestionRunId}
-                          >
-                            {item.ingestionRunId.slice(0, 8)}
-                          </span>
-                        </>
-                      ) : null}
-                    </p>
-
-                    {d ? (
-                      <FilterStatusRow
-                        statuses={{
-                          domain: d.domain.status,
-                          visa: d.visa?.status,
-                          role: d.role.status,
-                          location: d.location.status,
-                          experience: d.experience.status,
-                        }}
-                      />
-                    ) : null}
-
-                    {/* JSV2S1166 — the sentence the visa filter acted on, and
-                        the company signals, shown rather than asserted. */}
-                    <VisaSignal visa={d?.visa} />
-
-                    <AffinityNote
-                      affinity={d?.domain.affinity}
-                      rawStatus={d?.domain.rawStatus}
-                    />
-
-                    {d && d.domain.matchedTerms.length > 0 ? (
-                      <p className="text-subtle">
-                        Domain {d.domain.score} —{" "}
-                        {d.domain.matchedTerms.slice(0, 8).join(", ")}
-                        {d.domain.matchedTerms.length > 8 ? "…" : ""}
-                      </p>
-                    ) : null}
-
-                    {d && d.domain.suppressed.length > 0 ? (
-                      <p className="text-subtle">
-                        Ignored: {d.domain.suppressed.map((s) => s.why).join("; ")}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="flex items-center gap-2 border-t border-line px-4 py-2">
-                    <form action={promoteAction}>
-                      <input type="hidden" name="rawJobId" value={item.id} />
-                      <button type="submit" className={buttonClass.primary}>
-                        Promote to application
-                      </button>
-                    </form>
-                    {item.decision !== "reject" ? (
-                      <form action={rejectAction}>
-                        <input type="hidden" name="rawJobId" value={item.id} />
-                        <button type="submit" className={buttonClass.ghost}>
-                          Reject
-                        </button>
-                      </form>
-                    ) : null}
-                    <a
-                      href={item.jobUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-auto text-[11px] text-muted underline underline-offset-2 hover:text-foreground"
-                    >
-                      Open posting
-                    </a>
-                  </div>
-                </Card>
-              </li>
-            );
-          })}
-        </ul>
-        </BinSelection>
+        /*
+         * The Bin is the one view where the bulk action reverses: selecting
+         * there means "put these back", not "throw these away" (JSV2S1157).
+         * `BinSelection` already takes both, so the pipeline's binned count
+         * now links somewhere that can undo itself rather than to a dead end.
+         */
+        <div className="mt-3.5">
+          {/* The owner's 30-day clear (2026-09-24): everything eligible in one
+              go, not one ticked row at a time. */}
+          {view === "binned" ? (
+            <div className="mb-3 flex justify-end">
+              <ClearBinButton count={deletable} days={DELETABLE_AFTER_DAYS} />
+            </div>
+          ) : null}
+          <BinSelection
+            action={view === "binned" ? restoreAction : binAction}
+            /* Only the Bin can destroy, and only there does it make sense: a
+               job in the working queues is still a decision waiting to be
+               made. */
+            destroy={view === "binned" ? deleteBinnedFormAction : undefined}
+            hint={
+              view === "binned"
+                ? `Tick a job to restore it. Discarded applications come back with their documents. Deleting is permanent and only applies to jobs binned more than ${DELETABLE_AFTER_DAYS} days ago — ${deletable} qualify today.`
+                : undefined
+            }
+            label={view === "binned" ? "Restore from Bin" : "Move to Bin"}
+          >
+            <div className="border-t border-line">
+              {items.map((item) => (
+                <HeldJobRow key={item.id} item={item} />
+              ))}
+            </div>
+          </BinSelection>
+        </div>
       )}
     </div>
   );

@@ -42,3 +42,6 @@ next-env.d.ts
 
 # Keep the committed template
 !.env.example
+
+# Originals for the city photographs; only the derivatives are committed.
+assets/city-source/

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull } from "drizzle-orm";
 
 import { applications, rawJobs } from "@/db/schema";
 import { db } from "@/lib/db/client";
@@ -43,6 +43,8 @@ export async function listRecentlyScored(
       and(
         isNotNull(applications.jobScore),
         gte(applications.jobScoreGeneratedAt, since),
+        // Not something already discarded to the Bin (2026-09-24).
+        isNull(rawJobs.binnedAt),
       ),
     )
     .orderBy(desc(applications.jobScore))

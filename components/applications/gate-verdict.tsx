@@ -167,7 +167,7 @@ export function GateVerdictPanel({
   ];
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-1.5">
         <WatchlistSignal watchlist={detail.watchlist} />
         <AffinityNote
@@ -176,22 +176,26 @@ export function GateVerdictPanel({
         />
       </div>
 
-      <dl className="grid grid-cols-[8rem_4rem_1fr] gap-y-1.5 text-xs">
+      <dl>
         {rows.map(([label, status, note]) => (
-          <div key={label} className="contents">
-            <dt className="text-subtle">{label}</dt>
+          <div
+            key={label}
+            className="grid grid-cols-[8rem_4rem_minmax(0,1fr)] items-baseline gap-4 border-b py-2.5"
+            style={{ borderColor: "var(--hair)" }}
+          >
+            <dt className="text-[13px] text-faint">{label}</dt>
             <dd
-              className={
+              className={`text-[13px] ${
                 status === "pass"
                   ? "text-positive"
                   : status === "fail"
                     ? "text-negative"
                     : "text-warning"
-              }
+              }`}
             >
               {status ?? "—"}
             </dd>
-            <dd className="text-muted">{note ?? "—"}</dd>
+            <dd className="text-[13.5px] text-muted">{note ?? "—"}</dd>
           </div>
         ))}
       </dl>

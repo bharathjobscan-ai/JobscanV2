@@ -1,21 +1,20 @@
 import Link from "next/link";
 
-import {
-  MatchBadge,
-  ReferralBadge,
-  ScoreBadge,
-  StatusBadge,
-} from "@/components/applications/badges";
-import { PreferredCityBadge } from "@/components/applications/prequal-badges";
-import { Badge, Card, EmptyState, LinkButton } from "@/components/ui/base";
+import { Card, EmptyState, LinkButton } from "@/components/ui/base";
 import { getApplicationCosts } from "@/features/ai/queries";
-import { FilterPanel } from "@/components/ui/filter-panel";
+import { cityById } from "@/config/cities";
+import { CityGrid } from "@/components/applications/city-grid";
+import { CityTable } from "@/components/applications/city-table";
+import { CityBackdrop } from "@/components/applications/city-backdrop";
+import { getCitySummaries } from "@/features/applications/cities";
+import { CityFilters } from "@/components/applications/city-filters";
 import { formatUsd } from "@/lib/ai/pricing";
 import {
   countByView,
   countIncomplete,
   getApplicationFacets,
   listApplications,
+  relativeCutoff,
 } from "@/features/applications/queries";
 import {
   APPLICATION_VIEWS,
@@ -23,47 +22,87 @@ import {
   type ApplicationView,
 } from "@/lib/config/constants";
 
-function relative(date: Date): string {
-  const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 30) return `${days}d ago`;
-  return `${Math.floor(days / 30)}mo ago`;
-}
-
 export default async function ApplicationsPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const params = await searchParams;
+
+  /*
+   * No city chosen means the front door (JSV2S1172).
+   *
+   * The table is unchanged and still does the work; it is now reached THROUGH a
+   * city rather than instead of one. Returned before any of the filter parsing
+   * below, because none of it applies to a grid of eight photographs and doing
+   * the queries anyway would cost a round trip per visit for nothing.
+   */
+  const city = cityById(params.city);
+  if (!city) {
+    const summaries = await getCitySummaries();
+    return <CityGrid summaries={summaries} />;
+  }
+
+  /*
+   * Ready to Apply by default (2026-09-24). A city is opened to work its queue,
+   * and "all" put applied and closed rows between the user and the ones still
+   * waiting. The default is the absence of the param, so the bare city link
+   * from the grid lands here and "all" has to be asked for by name.
+   */
+  const DEFAULT_VIEW: ApplicationView = "ready";
   const view = (
     APPLICATION_VIEWS.includes(params.view as ApplicationView)
       ? params.view
-      : "all"
+      : DEFAULT_VIEW
   ) as ApplicationView;
 
 
   /**
-   * Faceted filtering (JSV2S1159). Unrecognised values from a hand-edited URL
-   * are narrowed away in the query layer rather than raised here.
+   * Faceted filtering (JSV2S1159, JSV2S1172). Unrecognised values from a
+   * hand-edited URL are narrowed away in the query layer rather than raised
+   * here.
+   *
+   * The multi-value facets the generic panel used are still honoured from the
+   * URL so older links keep working, even though the city panel now writes one
+   * value per axis.
    */
-  const FACETS = ["match", "referral", "company", "source", "country", "fetch"] as const;
+  const MULTI = ["match", "referral", "company", "source", "country", "fetch"] as const;
+  // Taken whole, never split: a location is "London Area, United Kingdom", and
+  // comma-splitting it produced a filter that could never match anything.
+  const SINGLE = [
+    "location",
+    "posted",
+    "visa",
+    "tier",
+    "minJob",
+    "minResume",
+    "starred",
+  ] as const;
   const selections: Record<string, string[]> = {};
-  for (const key of FACETS) {
+  for (const key of MULTI) {
     const values = params[key]?.split(",").filter(Boolean) ?? [];
     if (values.length > 0) selections[key] = values;
   }
+  for (const key of SINGLE) {
+    const value = params[key]?.trim();
+    if (value) selections[key] = [value];
+  }
+  // The city is a route, not a facet — it is not offered in the panel and
+  // cannot be unticked, so it is applied separately from the user's selections.
+  selections.city = [city.id];
   const isDate = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
-  const from = isDate(params.from);
+  // "Date uploaded" is the relative face of the existing ingest-date range, so
+  // it resolves to the same `from` bound rather than adding a second axis that
+  // could contradict it.
+  const from = isDate(params.from) ?? relativeCutoff(params.uploaded);
   const to = isDate(params.to);
   const search = params.q?.trim() || null;
 
   const [items, counts, incomplete, facets] = await Promise.all([
     listApplications({ view, selections, from, to, search }),
-    countByView(),
-    countIncomplete(),
-    getApplicationFacets(view),
+    countByView(city.id),
+    countIncomplete(city.id),
+    getApplicationFacets(view, city.id),
   ]);
 
   /**
@@ -77,16 +116,32 @@ export default async function ApplicationsPage({
   const pageTotal = [...costs.values()].reduce((sum, c) => sum + c.totalUsd, 0);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">Applications</h1>
-          <p className="text-xs text-muted">
-            {counts.all} tracked
-            {incomplete > 0 ? ` · ${incomplete} missing a job description` : ""}
-            {pageTotal > 0 ? ` · ${formatUsd(pageTotal)} AI spend in this view` : ""}
-          </p>
-        </div>
+    <div className="flex flex-col gap-5">
+      <CityBackdrop city={city} />
+
+      <div className="relative flex flex-col gap-5">
+      <div>
+        <Link
+          href="/applications"
+          className="text-[11px] text-muted underline-offset-2 hover:underline"
+        >
+          ← All cities
+        </Link>
+        <h1 className="n-display mt-1 text-5xl leading-none">{city.name}</h1>
+        <p
+          className="mt-1.5 text-[10px] font-medium tracking-[0.18em] uppercase"
+          style={{ color: "var(--slate)" }}
+        >
+          {city.country}
+        </p>
+      </div>
+
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-xs text-muted">
+          {counts.all} tracked
+          {incomplete > 0 ? ` · ${incomplete} missing a job description` : ""}
+          {pageTotal > 0 ? ` · ${formatUsd(pageTotal)} AI spend in this view` : ""}
+        </p>
         <LinkButton href="/upload" variant="primary">
           Upload jobs
         </LinkButton>
@@ -98,7 +153,13 @@ export default async function ApplicationsPage({
           return (
             <Link
               key={key}
-              href={key === "all" ? "/applications" : `/applications?view=${key}`}
+              /* The city has to survive a tab change, or every tab is a door
+                 back out to the grid. */
+              href={
+                key === DEFAULT_VIEW
+                  ? `/applications?city=${city.id}`
+                  : `/applications?city=${city.id}&view=${key}`
+              }
               className={`-mb-px border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
                 active
                   ? "border-accent text-foreground"
@@ -112,29 +173,24 @@ export default async function ApplicationsPage({
         })}
       </nav>
 
-      {/* JSV2S1159 — the same panel as the pre-qualification queue, asked of a
-          different subject: not "why was this screened out" but "which of these
-          needs a referral, and which fetch did they come from". */}
-      <FilterPanel
-        basePath="/applications"
-        preserve={{ view: view === "all" ? undefined : view }}
-        categories={[
-          { key: "match", label: "Match" },
-          { key: "referral", label: "Referral" },
-          { key: "company", label: "Company" },
-          { key: "source", label: "Source" },
-          { key: "country", label: "Country" },
-          { key: "fetch", label: "Fetch" },
-        ]}
+      {/* JSV2S1172 — the design's inline panel: it pushes the table down
+          rather than covering it, because a popover this tall hides the rows
+          you are filtering. */}
+      <CityFilters
+        cityId={city.id}
+        view={view === DEFAULT_VIEW ? undefined : view}
         facets={facets}
-        initial={selections}
-        initialFrom={from}
-        initialTo={to}
-        initialSearch={search}
-        resultCount={items.length}
-        searchPlaceholder="Search title or company"
-        dateLabel="Ingested between"
-        noun="application"
+        initial={{
+          q: search ?? "",
+          uploaded: params.uploaded ?? "",
+          posted: selections.posted?.[0] ?? "",
+          fetch: selections.fetch?.[0] ?? "",
+          location: selections.location?.[0] ?? "",
+          visa: selections.visa?.[0] ?? "",
+          tier: selections.tier?.[0] ?? "",
+          minJob: selections.minJob?.[0] ?? "",
+          minResume: selections.minResume?.[0] ?? "",
+        }}
       />
 
       {items.length === 0 ? (
@@ -142,13 +198,17 @@ export default async function ApplicationsPage({
           <EmptyState
             title={
               counts.all === 0
-                ? "No applications yet"
+                ? `Nothing in ${city.name} yet`
                 : `Nothing in ${VIEW_LABELS[view]}`
             }
             hint={
               counts.all === 0
-                ? "Upload a CSV, XLSX or JSON of jobs to get started. Every valid row becomes an application ready to work."
-                : "Try another view."
+                ? city.kind === "city"
+                  ? "The nightly fetch adds to this city automatically. You can also upload a CSV, XLSX or JSON of jobs."
+                  : city.kind === "remote"
+                    ? "Jobs the gate reads as remote land here, whichever city the posting names."
+                    : "Jobs that name no target city, and were not found by a city's fetch, land here."
+                : "Try another view, or widen the filters."
             }
             action={
               counts.all === 0 ? (
@@ -160,80 +220,13 @@ export default async function ApplicationsPage({
           />
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <ul className="divide-y divide-line">
-            {items.map((item) => (
-              <li key={item.id}>
-                <Link
-                  href={`/applications/${item.id}`}
-                  className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-surface-muted sm:flex-row sm:items-center sm:gap-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">
-                        {item.title}
-                      </span>
-                      {item.isIncomplete ? (
-                        <Badge tone="warning" title="No job description — scoring and tailoring are disabled">
-                          Incomplete
-                        </Badge>
-                      ) : null}
-                    </div>
-                    <p className="mt-0.5 truncate text-xs text-muted">
-                      {item.company}
-                      {item.location ? ` · ${item.location}` : ""}
-                      {" · "}
-                      <span className="text-subtle">{item.source}</span>
-                    </p>
-                    {/* JSV2S1158 — when the job arrived and which fetch brought
-                        it, so an application traces back to its batch. */}
-                    <p className="mt-0.5 truncate text-[11px] text-subtle">
-                      {item.ingestedAt
-                        ? item.ingestedAt.toLocaleDateString(undefined, {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })
-                        : "—"}
-                      {item.ingestionRunId ? (
-                        <>
-                          {" · run "}
-                          <span className="font-mono text-faint" title={item.ingestionRunId}>
-                            {item.ingestionRunId.slice(0, 8)}
-                          </span>
-                        </>
-                      ) : null}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <PreferredCityBadge city={item.preferredCity} />
-                  <MatchBadge category={item.matchCategory} />
-                    <ReferralBadge status={item.referralStatus} />
-                    <StatusBadge status={item.status} isPending={item.isPending} />
-                    <span className="w-8 text-right">
-                      <ScoreBadge score={item.jobScore} />
-                    </span>
-                    <span
-                      className="w-14 text-right text-[11px] tabular-nums text-subtle"
-                      title="AI spent on this application"
-                    >
-                      {(costs.get(item.id)?.totalUsd ?? 0) > 0
-                        ? formatUsd(costs.get(item.id)!.totalUsd)
-                        : "—"}
-                    </span>
-                  </div>
-
-                  <div className="w-full shrink-0 text-xs sm:w-44 sm:text-right">
-                    <p className="truncate font-medium">{item.nextAction}</p>
-                    <p className="text-subtle">{relative(item.lastActivityAt)}</p>
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        <CityTable items={items} />
       )}
+
+      <p className="pb-4 text-[11px]" style={{ color: "var(--faint)" }}>
+        {items.length} of {counts.all} shown · sorted by job score
+      </p>
+      </div>
     </div>
   );
 }

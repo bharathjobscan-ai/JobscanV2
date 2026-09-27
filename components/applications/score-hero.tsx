@@ -1,19 +1,27 @@
-import { MATCH_HINTS, MATCH_LABELS, type MatchCategory } from "@/lib/config/constants";
+import type { ReactNode } from "react";
+
+import { MATCH_HINTS, type MatchCategory } from "@/lib/config/constants";
 
 /**
- * The score as the single result on the page (JSV2S1139).
+ * The masthead: the posting on the left, the score on the right (JSV2S1139,
+ * restyled JSV2S1172, brought to the design 2026-09-23).
  *
- * The approved design puts one number at the centre and everything else
- * underneath it, because the page exists to answer one question — apply or
- * not — and a grid of equal-weight cards makes the reader find the answer
- * rather than be told it.
+ * The reading order is the one the decision is made in — what the job is, then
+ * what it scored — and the number keeps its own column instead of pushing the
+ * title down the page.
  *
  * The verdict is stated in words as well as a number. "54" invites arithmetic;
  * "Do not apply" is a decision, and the band is derived in code from the score
  * so it cannot drift from what the model said.
+ *
+ * Everything below the masthead — the verdict sentence, the figures, the
+ * strategy — belongs to the Overview tab, not here. The masthead is the one
+ * thing that stays on screen whichever tab is open, so it carries only what is
+ * true of the application on every tab.
  */
 
-const VERDICT: Record<MatchCategory, string> = {
+/** The band in words, spoken as a decision rather than a label. */
+export const VERDICT: Record<MatchCategory, string> = {
   priority_apply: "Strong apply",
   apply: "Apply",
   referral_only: "Only with a referral",
@@ -21,186 +29,174 @@ const VERDICT: Record<MatchCategory, string> = {
   gate_qualified: "Worth applying",
 };
 
+/** "70-84 · Apply and seek a referral" → "70-84". The pill wants the band. */
+function band(category: MatchCategory): string {
+  return MATCH_HINTS[category].split(" · ")[0];
+}
+
+export function toneFor(matchCategory: MatchCategory | null): string {
+  if (matchCategory === "priority_apply") return "var(--emerald)";
+  if (matchCategory === "reject") return "var(--negative)";
+  if (matchCategory === "referral_only") return "var(--warning)";
+  return "var(--gold)";
+}
+
+/**
+ * The three small glyphs on the meta line.
+ *
+ * Inline rather than an icon dependency: three 12px marks do not justify a
+ * package, and `currentColor` keeps them on the same ink as the text they sit
+ * beside in both themes.
+ */
+function Glyph({ name }: { name: "company" | "place" | "age" }) {
+  const common = {
+    width: 12,
+    height: 12,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+    className: "shrink-0 opacity-70",
+  };
+  if (name === "company") {
+    return (
+      <svg {...common}>
+        <path d="M2.5 13.5V3.2a.7.7 0 0 1 .7-.7h5.6a.7.7 0 0 1 .7.7v10.3M9.5 13.5V6.8h3.3a.7.7 0 0 1 .7.7v6M1 13.5h14M5 5.2h1.5M5 7.7h1.5M5 10.2h1.5" />
+      </svg>
+    );
+  }
+  if (name === "place") {
+    return (
+      <svg {...common}>
+        <path d="M8 14.5s5-4.2 5-8a5 5 0 0 0-10 0c0 3.8 5 8 5 8Z" />
+        <circle cx="8" cy="6.4" r="1.8" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 4.4V8l2.4 1.6" />
+    </svg>
+  );
+}
+
 export function ScoreHero({
   score,
   matchCategory,
-  summary,
   company,
   location,
+  age,
   title,
+  actions,
 }: {
   score: number | null;
   matchCategory: MatchCategory | null;
-  /** One line of prose on why it reads this way. */
-  summary?: string | null;
   company: string;
   location: string | null;
+  /** "3 days old", or null where nothing dates the posting. */
+  age?: string | null;
   title: string;
+  /** The generate buttons, under the posting's facts. */
+  actions?: ReactNode;
 }) {
-  const tone =
-    matchCategory === "priority_apply"
-      ? "text-positive"
-      : matchCategory === "reject"
-        ? "text-negative"
-        : matchCategory === "referral_only"
-          ? "text-warning"
-          : "";
+  const tone = toneFor(matchCategory);
 
   return (
-    <section className="py-8 text-center">
-      <p className="text-[11px] tracking-[0.18em] text-faint uppercase">
-        {company}
-        {location ? ` · ${location}` : ""}
-      </p>
-      <h1 className="mt-3 text-3xl font-normal tracking-tight">{title}</h1>
+    <section className="flex flex-wrap items-end justify-between gap-x-10 gap-y-6 pt-2 pb-8">
+      <div className="min-w-0 flex-1 basis-[22rem]">
+        <p className="text-[10px] tracking-[0.18em] text-faint uppercase">Application</p>
 
-      {score === null && matchCategory === "gate_qualified" ? (
-        /*
-         * Deliberately not a number (JSV2S1168). The page's job is to answer
-         * "apply or not", and here that is already answered — by five
-         * deterministic filters and a company known to sponsor. A score would
-         * add a digit, not an answer.
-         */
-        <div className="mt-8">
-          <p className="text-[2rem] leading-tight font-semibold tracking-tight">
-            Worth applying
-          </p>
-          <p className="mx-auto mt-3 max-w-[38ch] text-sm text-muted">
-            Every filter passed and this company is a known sponsor, so no
-            scoring call was made.
-          </p>
-          <p className="mt-2 text-xs text-faint">
-            Generate score below if you want one anyway.
-          </p>
+        <h1 className="n-display mt-2.5 text-[clamp(2rem,4vw,2.875rem)] leading-[1.05] font-normal tracking-[-0.02em]">
+          {title}
+        </h1>
+
+        <div className="mt-3 flex flex-wrap items-center gap-x-[18px] gap-y-1.5 text-[13.5px] text-muted">
+          <span className="flex items-center gap-1.5">
+            <Glyph name="company" />
+            {company}
+          </span>
+          {location ? (
+            <span className="flex items-center gap-1.5 text-faint">
+              <Glyph name="place" />
+              {location}
+            </span>
+          ) : null}
+          {age ? (
+            <span className="flex items-center gap-1.5 text-faint">
+              <Glyph name="age" />
+              {age}
+            </span>
+          ) : null}
         </div>
-      ) : score === null ? (
-        <p className="mt-8 text-sm text-muted">
-          Not scored yet. Scoring weighs sponsorship likelihood, domain
-          relevance and experience fit.
-        </p>
-      ) : (
-        <>
-          {/* Deliberately oversized. This is the page's whole point. */}
-          <p
-            className={`mt-8 text-[7rem] leading-[0.84] font-normal tracking-tighter tabular-nums ${tone}`}
-          >
-            {score}
-          </p>
-          <p className="mt-6 text-xs text-faint tabular-nums">
-            of 100
-            {matchCategory ? ` · ${MATCH_HINTS[matchCategory]}` : ""}
-          </p>
-          {matchCategory ? (
-            <p className="mt-5 text-[2rem] font-semibold tracking-tight">
-              {VERDICT[matchCategory]}
+
+        {actions ? <div className="mt-6 flex flex-wrap items-center gap-2">{actions}</div> : null}
+      </div>
+
+      <div className="flex-none basis-full text-left sm:basis-auto sm:text-right">
+        {score === null && matchCategory === "gate_qualified" ? (
+          /*
+           * Deliberately not a number (JSV2S1168). The page's job is to answer
+           * "apply or not", and here that is already answered — by five
+           * deterministic filters and a company known to sponsor. A score would
+           * add a digit, not an answer.
+           */
+          <>
+            <p className="text-[10px] tracking-[0.16em] text-faint uppercase">Verdict</p>
+            <p
+              className="n-display mt-2 text-[34px] leading-none font-semibold"
+              style={{ color: "var(--gold)" }}
+            >
+              Worth applying
             </p>
-          ) : null}
-        </>
-      )}
-
-      {summary ? (
-        <p className="mx-auto mt-4 max-w-[34ch] text-lg leading-snug font-normal text-muted">
-          {summary}
-        </p>
-      ) : null}
-    </section>
-  );
-}
-
-export type Figure = {
-  label: string;
-  value: string;
-  hint?: string;
-  tone?: "positive" | "warning" | "negative";
-};
-
-/**
- * The four figures, calm and evenly weighted.
- *
- * Deliberately not cards: hairlines between columns rather than boxes, so they
- * read as one row of facts underneath the score rather than four competing
- * claims beside it.
- */
-export function FigureRow({ figures }: { figures: Figure[] }) {
-  return (
-    <div className="grid grid-cols-2 border-y border-line sm:grid-cols-4">
-      {figures.map((f, i) => (
-        <div
-          key={f.label}
-          className={`px-4 py-5 ${i > 0 ? "sm:border-l sm:border-line" : ""} ${
-            i % 2 === 1 ? "border-l border-line sm:border-l" : ""
-          }`}
-        >
-          <p className="text-[10px] tracking-wider text-faint uppercase">{f.label}</p>
-          <p
-            className={`mt-2 text-lg font-semibold ${
-              f.tone === "negative"
-                ? "text-negative"
-                : f.tone === "warning"
-                  ? "text-warning"
-                  : f.tone === "positive"
-                    ? "text-positive"
-                    : ""
-            }`}
-          >
-            {f.value}
-          </p>
-          {f.hint ? (
-            <p className="text-[11px] text-faint tabular-nums">{f.hint}</p>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Why it reads this way — what holds, and what fails.
- *
- * Two columns rather than one list, because "strong domain match" and "no visa
- * evidence" are not the same kind of fact and reading them interleaved makes
- * neither land.
- */
-export function Basis({
-  holding,
-  failing,
-}: {
-  holding: string[];
-  failing: string[];
-}) {
-  if (holding.length === 0 && failing.length === 0) return null;
-
-  return (
-    <section className="pt-12">
-      <p className="mb-5 text-[11px] tracking-wider text-faint uppercase">
-        Why it reads this way
-      </p>
-      <div className="grid gap-8 sm:grid-cols-2">
-        {holding.length > 0 ? (
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-positive">Holding</h3>
-            <ul className="flex flex-col gap-3 text-sm">
-              {holding.map((item, i) => (
-                <li key={i} className="border-l border-positive/40 pl-3.5">
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {failing.length > 0 ? (
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-negative">Failing</h3>
-            <ul className="flex flex-col gap-3 text-sm">
-              {failing.map((item, i) => (
-                <li key={i} className="border-l border-negative/40 pl-3.5">
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+            <span
+              className="mt-2.5 inline-block rounded-full border px-3 py-1 text-[11.5px] whitespace-nowrap"
+              style={{
+                color: "var(--gold)",
+                borderColor: "color-mix(in srgb, var(--gold) 50%, transparent)",
+              }}
+            >
+              Not scored · known sponsor
+            </span>
+          </>
+        ) : score === null ? (
+          <>
+            <p className="text-[10px] tracking-[0.16em] text-faint uppercase">Job score</p>
+            <p className="n-display mt-2 text-[34px] leading-none text-faint">Not scored</p>
+            <p className="mt-3 max-w-[34ch] text-[12.5px] text-muted sm:ml-auto">
+              Scoring weighs sponsorship likelihood, domain relevance and
+              experience fit.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-[10px] tracking-[0.16em] text-faint uppercase">Job score</p>
+            <div className="mt-1 flex items-baseline gap-2 sm:justify-end">
+              {/* Deliberately oversized. This is the page's whole point. */}
+              <span
+                className="n-display text-[86px] leading-none font-normal tracking-[-0.03em] tabular-nums"
+                style={{ color: tone }}
+              >
+                {score}
+              </span>
+              <span className="text-[13px] text-faint">of 100</span>
+            </div>
+            {matchCategory ? (
+              <span
+                className="mt-2.5 inline-block rounded-full border px-3 py-1 text-[11.5px] whitespace-nowrap"
+                style={{
+                  color: tone,
+                  borderColor: `color-mix(in srgb, ${tone} 50%, transparent)`,
+                }}
+              >
+                {VERDICT[matchCategory]} · {band(matchCategory)}
+              </span>
+            ) : null}
+          </>
+        )}
       </div>
     </section>
   );
@@ -214,8 +210,8 @@ export function OnNeed({
   open,
 }: {
   title: string;
-  meta?: string;
-  children: React.ReactNode;
+  meta?: ReactNode;
+  children: ReactNode;
   /**
    * Start expanded. For a section that is the page's answer rather than its
    * footnote — a gate-qualified application has no score, so the gate's working
@@ -224,17 +220,19 @@ export function OnNeed({
   open?: boolean;
 }) {
   return (
-    <details open={open} className="border-t border-line">
-      <summary className="flex cursor-pointer items-center gap-3 py-4 text-sm font-semibold hover:text-foreground">
-        <span className="text-accent">+</span>
-        {title}
+    <details open={open} className="group border-t" style={{ borderColor: "var(--hair)" }}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-[15px]">
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span className="text-[11px] text-faint transition-transform group-open:rotate-90">
+            ▸
+          </span>
+          <span className="truncate">{title}</span>
+        </span>
         {meta ? (
-          <span className="ml-auto text-[11px] font-normal text-faint">{meta}</span>
+          <span className="shrink-0 text-[12px] whitespace-nowrap text-faint">{meta}</span>
         ) : null}
       </summary>
-      <div className="pb-5 pl-6">{children}</div>
+      <div className="pb-6 pl-6">{children}</div>
     </details>
   );
 }
-
-export { MATCH_LABELS };

@@ -1,0 +1,52 @@
+{
+  "amsterdam": {
+    "card": "/cities/amsterdam-card.webp",
+    "hero": "/cities/amsterdam-hero.webp",
+    "blur": "data:image/webp;base64,UklGRpQAAABXRUJQVlA4IIgAAACQBACdASoUAA0APt1apkyopSOiMAgBEBuJbACdMoMYOGrb/4Bu44B0LOB0BgAA96614EL7Nb9wJAGK7jghCjKQbYgcfYXrjSacyvbeAKsHRcJ0TVkyGAy9yhFLAPPunS5k4+d12gnnxbOarshArT1btq1kijQL3QqWBaCFx0JkkEL0tUFsuEgA"
+  },
+  "berlin": {
+    "card": "/cities/berlin-card.webp",
+    "hero": "/cities/berlin-hero.webp",
+    "blur": "data:image/webp;base64,UklGRqIAAABXRUJQVlA4IJYAAADwAwCdASoUAA0APt1cpkyopSOiMAgBEBuJZgCdMoGv/gJI8UGYJf/0AM44s0XA0YOZ49WuKbNM4s753NEFsNLeBDh+4UenaFuaObTXaquIzeZvZvF0KBBB+NPMS9Bz9Yfp6LEoIwLG1L0sb3qXvD+CiybyqseP/pqHu9HB9VIuckqmECyjX1OVC355gtXUKqcPh300AAA="
+  },
+  "dubai": {
+    "card": "/cities/dubai-card.webp",
+    "hero": "/cities/dubai-hero.webp",
+    "blur": "data:image/webp;base64,UklGRogAAABXRUJQVlA4IHwAAAAwBACdASoUAA0APt1cpkyopSOiMAgBEBuJaACdMoR3ACnAtQjR/RR5sGgA/vKjv5GNKSXArVN9rSE4fPqcBuY0vyVYCbDz48lIekTniPFrvo0FquAwT9XZ8f/SvTSQ7wU5K2Q0JdS8CNUkQsx/oUAHQrtgDJ69Qx60AAAA"
+  },
+  "dublin": {
+    "card": "/cities/dublin-card.webp",
+    "hero": "/cities/dublin-hero.webp",
+    "blur": "data:image/webp;base64,UklGRn4AAABXRUJQVlA4IHIAAAAQBACdASoUAA0APt1cpkyopSOiMAgBEBuJQBOkCYhXMqGjs84RkrGDSAD9xpzD61nfVawvnuck9G+vccDDDA9Qfxqxvp4Be9qlcKuZ5YzbXIKjUc176heYpkvskVgqaK+4PD9uALtUGsT/PW4bjUqAAAA="
+  },
+  "lisboa": {
+    "card": "/cities/lisboa-card.webp",
+    "hero": "/cities/lisboa-hero.webp",
+    "blur": "data:image/webp;base64,UklGRpYAAABXRUJQVlA4IIoAAABQBACdASoUAA0APt1apkyopSOiMAgBEBuJYgCdMoAvQBhb19ZXWXfP4ffeAPYjqpcHYTXWUZS3MXUOKlZXYYcrnj85tr8LMj7dNE8OC6M0Q37X54m28pBwMTLqliawfcIS/8G4HD+6WrgfG0ice3ByhuecnzuYr0Wm9NUmv5KC+naoZjEMq+Q36AA="
+  },
+  "london": {
+    "card": "/cities/london-card.webp",
+    "hero": "/cities/london-hero.webp",
+    "blur": "data:image/webp;base64,UklGRo4AAABXRUJQVlA4IIIAAACQBACdASoUAA0APt1cpkyopSOiMAgBEBuJagCdMoKCNb/4DvPpeP8NmaquGvgA/VM9HPbGyt0KcY0JMnD8Dc/ittywxxN3IU+zgBK3gDtCx3ifjCY9BXgrqs752Bd0yJvLQRXZhGerzIja/ZQNlBgZsoRd7uus6DfI/sau/zFXAAAA"
+  },
+  "luxembourg": {
+    "card": "/cities/luxembourg-card.webp",
+    "hero": "/cities/luxembourg-hero.webp",
+    "blur": "data:image/webp;base64,UklGRpQAAABXRUJQVlA4IIgAAADwBACdASoUAA0APt1apkyopSOiMAgBEBuJbACdMoRwIsC//7t1v/gPhjYpPJVLfgAA/eKDNVg39clT4co1fjVvA//sumOCaDjzJcyILQtgTLbMrQyhQDGMztvlxbyLis2lFXUUTV+/jIsFlfde8GKzDrLTa+14nzM1fQCFS5b/SaovZ1YbuAAA"
+  },
+  "manchester": {
+    "card": "/cities/manchester-card.webp",
+    "hero": "/cities/manchester-hero.webp",
+    "blur": "data:image/webp;base64,UklGRooAAABXRUJQVlA4IH4AAAAwBACdASoUAA0APt1apkyopSOiMAgBEBuJbACdMoADTOmj3XBY3x9n0QAA95xaDVhm198euzDqCltC8x+0eL8Bth7EizBvkgRRr3JN7u3lTSb+Bj3PF96GwGzTHEYbucgJGQ9qkdB4gPKerWnqSXK0HaTrv+zkVR5ID4aAAAA="
+  },
+  "other": {
+    "card": "/cities/other-card.webp",
+    "hero": "/cities/other-hero.webp",
+    "blur": "data:image/webp;base64,UklGRmQAAABXRUJQVlA4IFgAAACQAwCdASoUAA0APt1apkyopSOiMAgBEBuJYwAAYfIMXNtdpsAAAP70nU7SoGdjNjHkUSM2Q0H2HiUrPF9FlS1Frqd6AEwCWHIHSeFmm/DGPHHdSlxQTAAA"
+  },
+  "remote": {
+    "card": "/cities/remote-card.webp",
+    "hero": "/cities/remote-hero.webp",
+    "blur": "data:image/webp;base64,UklGRowAAABXRUJQVlA4IIAAAAAQBACdASoUAA0APt1apkyopSOiMAgBEBuJZwCdACFcjvf56jXKt3PQAAD+56PJI+VoJ2E7WV08RsI/Vw8SsaccAjIvBhufMHt/LNoNrSOncP2bPrAlnfe1b9q6MKgYnTO7D6PRwEDj853UO0zg3yBmZqYzCLgHjIsXkKcADqAAAA=="
+  }
+}

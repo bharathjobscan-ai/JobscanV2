@@ -1,7 +1,13 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 
-import { applicationEvents, applications, rawJobs } from "@/db/schema";
+import {
+  applicationDocuments,
+  applicationEvents,
+  applications,
+  rawJobs,
+} from "@/db/schema";
 import { CONFIG_VERSION } from "@/config/prequalification";
+import { DELETABLE_AFTER_DAYS } from "@/lib/config/constants";
 import { db } from "@/lib/db/client";
 import { prequalify } from "./engine";
 
@@ -141,6 +147,91 @@ export async function backfillVerdicts(limit = 1000): Promise<{
   }
 
   return { evaluated: jobs.length, byDecision, preferredCities };
+}
+
+/** Thrown when sending an application back would destroy paid work. */
+export class ApplicationHasSpend extends Error {}
+
+/**
+ * Send an application back to the review or rejected pile (2026-09-21).
+ *
+ * The inverse of promote. A job with an application is invisible to every
+ * review query — they are all rooted at `isNull(applications.id)` — so putting
+ * it back in a pile means the application row has to go.
+ *
+ * **GUARDED, because `application_documents` and `application_events` cascade
+ * on delete.** A tailored CV and cover letter cost roughly $0.35 to generate
+ * and cannot be recovered; a score is a billed call. Silently destroying either
+ * because a row moved piles would be the worst kind of data loss — invisible,
+ * and paid for. So an application carrying documents or a score refuses, and
+ * the caller is told to use the Bin instead, which keeps everything.
+ *
+ * The verdict itself is preserved and marked as a manual override, exactly as
+ * `rejectJob` does, so the audit trail says a person decided this rather than
+ * the gate.
+ */
+export async function demoteApplication(
+  applicationId: string,
+  to: "review" | "reject",
+  reason?: string,
+): Promise<{ rawJobId: string }> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        applicationId: applications.id,
+        rawJobId: applications.rawJobId,
+        jobScore: applications.jobScore,
+        title: rawJobs.title,
+        company: rawJobs.company,
+        detail: rawJobs.prequalificationDetail,
+      })
+      .from(applications)
+      .innerJoin(rawJobs, eq(rawJobs.id, applications.rawJobId))
+      .where(eq(applications.id, applicationId))
+      .limit(1);
+
+    if (!row) throw new ReviewJobNotFound(`No application ${applicationId}.`);
+
+    const [docs] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(applicationDocuments)
+      .where(eq(applicationDocuments.applicationId, applicationId));
+
+    if ((docs?.n ?? 0) > 0 || row.jobScore !== null) {
+      throw new ApplicationHasSpend(
+        `${row.title} at ${row.company} already has ${
+          (docs?.n ?? 0) > 0 ? "generated documents" : "a score"
+        }. Sending it back would delete them. Use Discard on the Overview instead, which moves it to the Bin and keeps everything.`,
+      );
+    }
+
+    const detail = (row.detail ?? {}) as Record<string, unknown>;
+
+    await tx
+      .update(rawJobs)
+      .set({
+        prequalification: to,
+        prequalificationDetail: {
+          ...detail,
+          decision: to,
+          decidedBy: null,
+          reason:
+            reason?.trim() ||
+            (to === "review"
+              ? "Sent back to review by hand."
+              : "Discarded by hand from the applications list."),
+          manualOverride: true,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(rawJobs.id, row.rawJobId));
+
+    // Last, so a failure above leaves the application intact rather than
+    // orphaning a job that the review queue still cannot see.
+    await tx.delete(applications).where(eq(applications.id, applicationId));
+
+    return { rawJobId: row.rawJobId };
+  });
 }
 
 /**
@@ -370,6 +461,139 @@ export async function binJobs(ids: string[]): Promise<number> {
 }
 
 /** Take jobs back out of the Bin, for when a rules change deserves a second look. */
+export class NotDeletable extends Error {}
+
+/**
+ * Permanently destroy binned jobs. THE ONLY IRREVERSIBLE ACTION IN THIS APP.
+ *
+ * Everything else here is a soft delete: rejecting keeps the row, binning keeps
+ * the row, even re-qualification only rewrites a verdict. This removes the
+ * `raw_jobs` row outright, and there is no undo and no backup.
+ *
+ * Three guards, and each one exists because the alternative is silent loss:
+ *
+ * 1. **Binned only.** A job that is merely rejected is still in a working
+ *    queue and can be promoted from it. Deleting one would remove something
+ *    the owner can still see and act on.
+ * 2. **Older than `DELETABLE_AFTER_DAYS`.** Measured from when it was BINNED,
+ *    not when it was seen — the age that matters is how long the decision has
+ *    stood, not how old the posting is.
+ * 3. **An application goes only if it was discarded.** `applications.rawJobId`
+ *    cascades on delete, so removing a promoted job takes its application,
+ *    documents and event history with it. That was refused outright until
+ *    2026-09-24. Now Discard on an application bins its job, and the owner
+ *    asked for the Bin to be cleared after 30 days to reclaim storage. Binning
+ *    the job IS the decision to let the application go, and guard 2 gives it
+ *    30 days to be restored. Spend survives: `ai_jobs.application_id` is
+ *    `set null`, so the cost rows outlive the application.
+ *
+ * A hard delete also drops the job's fingerprint, so a later fetch can bring
+ * the same posting back. That was already true of the Bin before this change.
+ *
+ * Ids that fail a guard are skipped and counted, never silently treated as
+ * deleted — a caller that asked for ten and got three needs to know.
+ */
+export async function deleteBinnedJobs(ids: string[]): Promise<{
+  deleted: number;
+  skippedNotBinned: number;
+  skippedTooRecent: number;
+}> {
+  const empty = { deleted: 0, skippedNotBinned: 0, skippedTooRecent: 0 };
+  if (ids.length === 0) return empty;
+
+  const cutoff = new Date(Date.now() - DELETABLE_AFTER_DAYS * 86_400_000);
+
+  const candidates = await db
+    .select({ id: rawJobs.id, binnedAt: rawJobs.binnedAt })
+    .from(rawJobs)
+    .where(inArray(rawJobs.id, ids));
+
+  const deletable: string[] = [];
+  const result = { ...empty };
+
+  for (const row of candidates) {
+    if (!row.binnedAt) {
+      result.skippedNotBinned += 1;
+    } else if (row.binnedAt > cutoff) {
+      result.skippedTooRecent += 1;
+    } else {
+      deletable.push(row.id);
+    }
+  }
+
+  if (deletable.length > 0) {
+    // Re-asserted in the WHERE clause rather than trusting the ids assembled
+    // above: this is the statement that cannot be undone, and a guard that
+    // lives only in application code is one refactor away from not running.
+    const gone = await db
+      .delete(rawJobs)
+      .where(
+        and(
+          inArray(rawJobs.id, deletable),
+          isNotNull(rawJobs.binnedAt),
+          lt(rawJobs.binnedAt, cutoff),
+        ),
+      )
+      .returning({ id: rawJobs.id });
+    result.deleted = gone.length;
+  }
+
+  return result;
+}
+
+/**
+ * Empty the Bin of everything past its 30 days, in one click (2026-09-24).
+ *
+ * The owner's request: "every 30 days I want Bin data to be able to delete or
+ * clear", to reclaim storage. It goes through `deleteBinnedJobs`, so the age
+ * guard is the same statement and cannot be bypassed from here.
+ */
+export async function clearBin(): Promise<number> {
+  const cutoff = new Date(Date.now() - DELETABLE_AFTER_DAYS * 86_400_000);
+  const eligible = await db
+    .select({ id: rawJobs.id })
+    .from(rawJobs)
+    .where(and(isNotNull(rawJobs.binnedAt), lt(rawJobs.binnedAt, cutoff)));
+  const { deleted } = await deleteBinnedJobs(eligible.map((r) => r.id));
+  return deleted;
+}
+
+/** How many binned jobs are old enough to destroy, for the UI to offer it. */
+export async function countDeletable(): Promise<number> {
+  const cutoff = new Date(Date.now() - DELETABLE_AFTER_DAYS * 86_400_000);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(rawJobs)
+    .where(and(isNotNull(rawJobs.binnedAt), lt(rawJobs.binnedAt, cutoff)));
+  return row?.n ?? 0;
+}
+
+/**
+ * Discard an application: bin its job, keep everything (2026-09-24).
+ *
+ * This replaces Discard's old route through `demoteApplication`, which deleted
+ * the application row and so refused any application that had a score or
+ * documents. Those are exactly the ones worth discarding after reading them.
+ * Binning keeps the application, its documents and its history. It only
+ * leaves every working list, and Restore brings the whole thing back.
+ *
+ * `binJobs` still refuses promoted jobs, because the review queue's bulk bin
+ * must never reach an application. This is the one deliberate path that does.
+ */
+export async function binApplication(applicationId: string): Promise<void> {
+  const [row] = await db
+    .select({ rawJobId: applications.rawJobId })
+    .from(applications)
+    .where(eq(applications.id, applicationId))
+    .limit(1);
+  if (!row) throw new ReviewJobNotFound(`No application ${applicationId}.`);
+
+  await db
+    .update(rawJobs)
+    .set({ binnedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(rawJobs.id, row.rawJobId), isNull(rawJobs.binnedAt)));
+}
+
 export async function restoreJobs(ids: string[]): Promise<number> {
   if (ids.length === 0) return 0;
   const updated = await db

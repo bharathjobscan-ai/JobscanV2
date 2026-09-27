@@ -28,8 +28,32 @@ function Stat({
           : "";
   return (
     <div>
-      <dt className="text-[11px] text-subtle">{label}</dt>
-      <dd className={`text-sm font-semibold tabular-nums ${colour}`}>{value}</dd>
+      <dt className="text-[10px] tracking-[0.12em] text-faint uppercase">{label}</dt>
+      <dd className={`n-display mt-1.5 text-[21px] font-semibold tabular-nums ${colour}`}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+/** A dotted list, as the design draws gaps and preparation. */
+function DotList({ items, tone }: { items: string[]; tone: string }) {
+  return (
+    <div>
+      {items.map((item, i) => (
+        <div
+          key={i}
+          className="grid grid-cols-[8px_minmax(0,1fr)] gap-3 border-b py-2.5"
+          style={{ borderColor: "var(--hair)" }}
+        >
+          <span
+            aria-hidden
+            className="mt-[0.55em] size-[5px] rounded-full"
+            style={{ background: tone }}
+          />
+          <span className="text-[13.5px] text-muted">{item}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -70,8 +94,8 @@ export function GenerationSummary({ summary }: { summary: Summary }) {
   const prep = summary.interviewPrep ?? summary.gapBridging ?? [];
 
   return (
-    <div className="flex flex-col gap-3 p-4">
-      <dl className="flex flex-wrap gap-x-8 gap-y-3">
+    <div className="flex flex-col gap-5">
+      <dl className="flex flex-wrap gap-x-12 gap-y-4">
         {summary.matchAfter !== undefined ? (
           <Stat
             label="JD match"
@@ -109,28 +133,28 @@ export function GenerationSummary({ summary }: { summary: Summary }) {
       </dl>
 
       {summary.verdict ? (
-        <div className="flex items-start gap-2">
+        <div className="flex items-start gap-2.5">
           <Badge tone={verdictTone}>Verdict</Badge>
-          <p className="text-xs">{summary.verdict}</p>
+          <p className="text-[13.5px] text-muted">{summary.verdict}</p>
         </div>
       ) : null}
 
       {summary.companyCategory ? (
-        <div className="text-xs">
-          <span className="text-subtle">Classified as </span>
-          <span className="font-medium">{summary.companyCategory}</span>
+        <p className="text-[13.5px]">
+          <span className="text-faint">Classified as </span>
+          <span>{summary.companyCategory}</span>
           {summary.emphasis ? (
             <span className="text-muted"> — {summary.emphasis}</span>
           ) : null}
-        </div>
+        </p>
       ) : null}
 
       {summary.keywords?.missing?.length ? (
         <div>
-          <h4 className="mb-1 text-xs font-semibold text-warning">
+          <p className="border-b border-line pb-2 text-[10px] tracking-[0.14em] text-warning uppercase">
             Keywords not covered
-          </h4>
-          <p className="text-xs text-muted">
+          </p>
+          <p className="pt-2.5 text-[13px] text-muted">
             {summary.keywords.missing.join(" · ")}
           </p>
         </div>
@@ -146,47 +170,31 @@ export function GenerationSummary({ summary }: { summary: Summary }) {
         the old name. Reading only the new one silently emptied this section.
       */}
       {gaps.length > 0 || prep.length > 0 ? (
-        <details className="border-t border-line pt-2.5">
-          <summary className="cursor-pointer text-xs font-medium text-muted hover:text-foreground">
+        <details className="border-t border-line pt-3">
+          <summary className="flex cursor-pointer items-center justify-between gap-4 text-[13.5px] text-muted hover:text-foreground">
             Gaps &amp; interview preparation
-            <span className="ml-1.5 text-subtle">
-              ({gaps.length} gap{gaps.length === 1 ? "" : "s"}
-              {prep.length > 0 ? ` · ${prep.length} to prepare` : ""})
+            <span className="n-mono text-[11.5px] text-faint">
+              {gaps.length} gap{gaps.length === 1 ? "" : "s"}
+              {prep.length > 0 ? ` · ${prep.length} to prepare` : ""}
             </span>
           </summary>
 
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="mt-4 grid gap-x-10 gap-y-6 sm:grid-cols-2">
             {gaps.length > 0 ? (
               <div>
-                <h4 className="mb-1 text-xs font-semibold text-negative">Gaps</h4>
-                <ul className="flex flex-col gap-1 text-xs">
-                  {gaps.map((gap, i) => (
-                    <li
-                      key={i}
-                      className="relative pl-4 before:absolute before:left-0 before:top-[0.5em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-negative"
-                    >
-                      {gap}
-                    </li>
-                  ))}
-                </ul>
+                <p className="border-b border-line pb-2 text-[10px] tracking-[0.14em] text-negative uppercase">
+                  Gaps
+                </p>
+                <DotList items={gaps} tone="var(--negative)" />
               </div>
             ) : null}
 
             {prep.length > 0 ? (
               <div>
-                <h4 className="mb-1 text-xs font-semibold text-info">
+                <p className="border-b border-line pb-2 text-[10px] tracking-[0.14em] text-positive uppercase">
                   Prepare before interview
-                </h4>
-                <ul className="flex flex-col gap-1 text-xs">
-                  {prep.map((item, i) => (
-                    <li
-                      key={i}
-                      className="relative pl-4 before:absolute before:left-0 before:top-[0.5em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-info"
-                    >
-                      {item}
-                    </li>
-                  ))}
-                </ul>
+                </p>
+                <DotList items={prep} tone="var(--positive)" />
               </div>
             ) : null}
           </div>

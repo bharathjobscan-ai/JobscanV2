@@ -132,16 +132,34 @@ export async function ingestRows(
     });
   });
 
-  // --- 2. Dedupe within the file -------------------------------------------
-  const seen = new Map<string, number>();
+  /* --- 2. Dedupe within the file -----------------------------------------
+   *
+   * BOTH identity keys, not whichever one is available (fixed 2026-09-21).
+   *
+   * The table carries two unique indexes: `(source, source_job_id)` where the
+   * id is present, and `fingerprint` ALWAYS. This deduped on the source id
+   * *when present* and on the fingerprint only otherwise — so two postings with
+   * different LinkedIn ids and the same company, title and location passed as
+   * two fresh rows and collided on `raw_jobs_fingerprint_uq` at the insert.
+   *
+   * That is a repost, or one role listed twice, which is ordinary on LinkedIn.
+   * It cost the 2026-09-21 run every job from Berlin and Dublin: 21 fetched,
+   * paid for, and inserted as zero, because the batch inserts in one statement.
+   *
+   * A row is fresh only if NEITHER key has been seen.
+   */
+  const seenIds = new Map<string, number>();
+  const seenFingerprints = new Map<string, number>();
   const unique: Prepared[] = [];
 
   for (const row of prepared) {
-    const key = row.value.source_job_id
-      ? `id:${row.value.source}:${row.value.source_job_id}`
-      : `fp:${row.fingerprint}`;
+    const idKey = row.value.source_job_id
+      ? `${row.value.source}:${row.value.source_job_id}`
+      : null;
 
-    const firstSeenAt = seen.get(key);
+    const firstSeenAt =
+      (idKey ? seenIds.get(idKey) : undefined) ?? seenFingerprints.get(row.fingerprint);
+
     if (firstSeenAt !== undefined) {
       outcomes.push({
         rowNumber: row.rowNumber,
@@ -152,7 +170,9 @@ export async function ingestRows(
       });
       continue;
     }
-    seen.set(key, row.rowNumber);
+
+    if (idKey) seenIds.set(idKey, row.rowNumber);
+    seenFingerprints.set(row.fingerprint, row.rowNumber);
     unique.push(row);
   }
 
@@ -313,16 +333,40 @@ export async function ingestRows(
         // JSV2S1158 — attribute every landed job to its run, so "what became
         // of last night's fetch" is answerable months later.
         .values(jobRows.map((row) => ({ ...row, ingestionRunId: options.runId })))
+        /*
+         * Belt and braces, after 2026-09-21 (JSV2S1170).
+         *
+         * The dedupe above is the fix; this is the blast radius. A batch
+         * inserts in ONE statement, so any single unique violation rolls back
+         * every row with it — which is how one duplicated Berlin posting threw
+         * away thirteen good jobs that had already been paid for.
+         *
+         * Skipping the colliding row cannot lose data that dedupe should have
+         * caught: a fingerprint collision means we already hold that job. What
+         * it buys is that the NEXT unforeseen collision costs one row instead
+         * of a location.
+         */
+        .onConflictDoNothing()
         .returning({ id: rawJobs.id, fingerprint: rawJobs.fingerprint });
 
       const jobIdByFingerprint = new Map(
         insertedJobs.map((j) => [j.fingerprint, j.id]),
       );
 
-      // D1, amended by ADR-0006: a job becomes an application only if it
-      // qualifies. A screened-out job keeps its raw_jobs row and waits in the
-      // review queue instead of being lost.
-      const qualifying = fresh.filter((row) => qualifies(row.fingerprint));
+      /*
+       * D1, amended by ADR-0006: a job becomes an application only if it
+       * qualifies. A screened-out job keeps its raw_jobs row and waits in the
+       * review queue instead of being lost.
+       *
+       * The `jobIdByFingerprint.has` guard exists because `onConflictDoNothing`
+       * above can return fewer rows than were offered. Without it a skipped row
+       * would reach `.get(...)!` as undefined and be inserted as an application
+       * with a null `raw_job_id` — turning a skipped duplicate into a corrupt
+       * application, which is worse than the failure this change fixes.
+       */
+      const qualifying = fresh.filter(
+        (row) => qualifies(row.fingerprint) && jobIdByFingerprint.has(row.fingerprint),
+      );
 
       const appIdByJobId = new Map<string, string>();
       if (qualifying.length > 0) {
@@ -375,6 +419,23 @@ export async function ingestRows(
       const jobId = created.jobIdByFingerprint.get(row.fingerprint);
       const verdict = verdicts.get(row.fingerprint)!;
       const screened = !qualifies(row.fingerprint);
+
+      /*
+       * A row the insert skipped on conflict did not land, and reporting it as
+       * `inserted` would make the ledger disagree with the table — the run
+       * would claim jobs that are not there, and `reconciles` would go false
+       * for a reason nobody could find.
+       */
+      if (!jobId) {
+        outcomes.push({
+          rowNumber: row.rowNumber,
+          status: "duplicate",
+          title: row.value.title,
+          company: row.value.company,
+          reason: "already present under the same identity — insert skipped it",
+        });
+        continue;
+      }
 
       outcomes.push({
         rowNumber: row.rowNumber,

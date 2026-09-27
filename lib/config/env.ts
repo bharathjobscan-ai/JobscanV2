@@ -46,6 +46,14 @@ const EnvSchema = z.object({
 
   /** Discover Gemini names with `npm run ai:models`. */
   MODEL_SCORING_GEMINI: z.string().default("gemini-3.1-pro-preview"),
+  /**
+   * Gemini thinking level for scoring (2026-09-25). About two thirds of a
+   * score's cost is hidden thinking, and a searched non-UK score still came to
+   * ₹13.22 against the owner's ₹10 target. Unset means the model's default
+   * (high), which is what every score so far ran at; "medium" or "low" is a
+   * cost-for-quality trade to be measured before it is kept.
+   */
+  THINKING_LEVEL_SCORING: z.enum(["minimal", "low", "medium", "high"]).optional(),
   MODEL_CV_GEMINI: z.string().default("gemini-3.1-pro-preview"),
 
   /** D5 — per-task models, deliberately configurable rather than hardcoded. */

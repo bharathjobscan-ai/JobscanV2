@@ -1,4 +1,5 @@
-import { Card, CardHeader } from "@/components/ui/base";
+import type { ReactNode } from "react";
+
 import {
   DOMAIN_GATE,
   DOMAIN_TIERS,
@@ -29,17 +30,75 @@ export const dynamic = "force-dynamic";
  * automatic re-qualification on change.
  */
 
-function TermList({ terms }: { terms: readonly string[] }) {
+/** A headline count of what the compiled configuration contains. */
+function RuleStat({ value, label, note }: { value: number; label: string; note: string }) {
   return (
-    <div className="flex flex-wrap gap-1">
-      {terms.map((t) => (
-        <span
-          key={t}
-          className="rounded border border-line bg-surface-muted px-1.5 py-0.5 font-mono text-[11px]"
-        >
-          {t}
+    <div className="border-t border-line pt-3">
+      <div className="n-display text-[28px] leading-none font-semibold tabular-nums">{value}</div>
+      <div className="mt-1 text-[13px]">{label}</div>
+      <div className="mt-0.5 text-xs text-subtle">{note}</div>
+    </div>
+  );
+}
+
+/**
+ * One rule, collapsed to a line.
+ *
+ * The design puts every rule group behind a `<details>`: the page is a
+ * reference, so what matters at rest is which rules exist and how big each
+ * one is, not six hundred keywords at once.
+ */
+function RuleGroup({
+  name,
+  rule,
+  count,
+  blurb,
+  open = false,
+  children,
+}: {
+  name: string;
+  rule: string;
+  count: string;
+  blurb: string;
+  open?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details open={open} className="border-b border-line">
+      <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-baseline gap-4 py-[18px] sm:grid-cols-[minmax(0,1fr)_auto_auto] [&::-webkit-details-marker]:hidden">
+        <span className="n-display text-xl font-semibold">{name}</span>
+        <span className="hidden text-[12.5px] whitespace-nowrap text-muted sm:block">{rule}</span>
+        <span className="n-mono text-[12.5px] whitespace-nowrap text-subtle">{count}</span>
+      </summary>
+      <div className="pb-[22px]">
+        <p className="mb-3.5 max-w-[76ch] text-[13.5px] text-muted">{blurb}</p>
+        {children}
+      </div>
+    </details>
+  );
+}
+
+/** A set of terms inside a rule: a heading line, then the terms themselves. */
+function Tier({
+  name,
+  meta,
+  terms,
+}: {
+  name: string;
+  meta: string;
+  terms: readonly string[];
+}) {
+  return (
+    <div className="mb-3.5">
+      <div className="flex flex-wrap items-baseline gap-2.5">
+        <span className="text-[13px]" style={{ color: "var(--platinum)" }}>
+          {name}
         </span>
-      ))}
+        <span className="n-mono text-[11.5px] text-subtle">{meta}</span>
+      </div>
+      {terms.length > 0 ? (
+        <p className="n-mono mt-1.5 text-[13px] leading-[1.7] text-muted">{terms.join(" · ")}</p>
+      ) : null}
     </div>
   );
 }
@@ -50,142 +109,135 @@ export default function RulesPage() {
     entries: WATCHLIST.filter((w) => w.tier === tier),
   }));
 
+  const domainTerms = DOMAIN_TIERS.reduce((n, t) => n + t.keywords.length, 0);
+
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-lg font-semibold">Gate rules</h1>
-        <p className="mt-1 text-xs text-muted">
-          Exactly what pre-qualification is running, read from the compiled
-          configuration — not a copy of it. Changes go through code, which is
-          what keeps a verdict reproducible.
-        </p>
-        <p className="mt-1.5 text-[11px] text-faint">
-          Engine revision {ENGINE_REVISION} · config{" "}
-          <span className="font-mono">{CONFIG_VERSION}</span>
-        </p>
+    <div className="mx-auto max-w-[1060px]">
+      <h1 className="n-display text-[38px] leading-tight font-normal tracking-[-0.02em]">
+        Gate rules
+      </h1>
+      <p className="mt-1.5 max-w-[66ch] text-sm text-muted">
+        Exactly what pre-qualification is running, read from the compiled
+        configuration — not a copy of it. Changes go through code, which is what
+        keeps a verdict reproducible.
+      </p>
+      <p className="n-mono mt-2 text-xs text-subtle">
+        Engine revision {ENGINE_REVISION} · config {CONFIG_VERSION}
+      </p>
+
+      <div className="mt-8 grid gap-x-6 gap-y-5 sm:grid-cols-3">
+        <RuleStat
+          value={domainTerms}
+          label="Domain keywords"
+          note={`${DOMAIN_TIERS.length} tiers · pass at ${DOMAIN_GATE.pass}`}
+        />
+        <RuleStat
+          value={WATCHLIST.length}
+          label="Watchlisted companies"
+          note={`tier ${WATCHLIST_SKIP_SCORING_TIER}+ skips scoring`}
+        />
+        <RuleStat
+          value={PAYMENTS_AFFINITY.length}
+          label="Payments affinity"
+          note="softens a domain rejection"
+        />
       </div>
 
-      <Card>
-        <CardHeader
-          title="Domain keywords"
-          meta={`Pass at ${DOMAIN_GATE.pass}, review at ${DOMAIN_GATE.review}`}
-        />
-        <div className="space-y-4 px-4 py-3">
+      <div className="mt-10 border-t border-line">
+        <RuleGroup
+          name="Domain keywords"
+          rule={`Pass at ${DOMAIN_GATE.pass}, review at ${DOMAIN_GATE.review}`}
+          count={`${domainTerms} terms`}
+          blurb="Each tier carries a multiplier. A posting's domain score is the weighted sum of what it matches, and the two thresholds decide pass, review or reject."
+          open
+        >
           {DOMAIN_TIERS.map((tier) => (
-            <div key={tier.id}>
-              <p className="mb-1.5 text-xs font-semibold">
-                {tier.label}
-                <span className="ml-2 font-normal text-faint">
-                  tier {tier.priority} · ×{tier.multiplier} · {tier.keywords.length} terms
-                </span>
-              </p>
-              <TermList terms={tier.keywords} />
-            </div>
+            <Tier
+              key={tier.id}
+              name={tier.label}
+              meta={`tier ${tier.priority} · ×${tier.multiplier} · ${tier.keywords.length} terms`}
+              terms={tier.keywords}
+            />
           ))}
-        </div>
-      </Card>
+        </RuleGroup>
 
-      <Card>
-        <CardHeader
-          title="Where a term counts for more"
-          meta="Section weights"
-        />
-        <div className="px-4 py-3">
-          <dl className="grid grid-cols-[12rem_1fr] gap-y-1 text-xs">
+        <RuleGroup
+          name="Where a term counts for more"
+          rule="Section weights"
+          count={`${Object.keys(SECTION_WEIGHTS).length} sections`}
+          blurb="The same word is worth more in a title than in a benefits list, so a match is multiplied by the section it was found in."
+        >
+          <dl className="grid max-w-md grid-cols-[12rem_1fr] gap-y-1 text-[13px]">
             {Object.entries(SECTION_WEIGHTS).map(([section, weight]) => (
               <div key={section} className="contents">
-                <dt className="text-subtle">{section}</dt>
-                <dd className="tabular-nums">×{String(weight)}</dd>
+                <dt className="text-muted">{section}</dt>
+                <dd className="n-mono tabular-nums">×{String(weight)}</dd>
               </div>
             ))}
           </dl>
-        </div>
-      </Card>
+        </RuleGroup>
 
-      <Card>
-        <CardHeader
-          title="Restricted terms"
-          meta="Counted only in the right company"
-        />
-        <div className="space-y-2 px-4 py-3 text-xs">
-          <p className="text-muted">
-            These score nothing on their own. “Visa” is the reason the rule
-            exists: this product searches for visa <em>sponsorship</em>, so the
-            bare word would have scored a core-payments signal on a large share
-            of exactly the jobs we want.
-          </p>
+        <RuleGroup
+          name="Restricted terms"
+          rule="Counted only in the right company"
+          count={`${RESTRICTED_TERMS.length} terms`}
+          blurb="These score nothing on their own. “Visa” is the reason the rule exists: this product searches for visa sponsorship, so the bare word would have scored a core-payments signal on a large share of exactly the jobs we want."
+        >
           {RESTRICTED_TERMS.map((r) => (
-            <div key={r.term} className="border-l-2 border-line-strong pl-2.5">
-              <p className="font-mono text-[11px]">{r.term}</p>
-              <p className="text-subtle">
-                counts as {r.tier} only near: {(r.requiresNear ?? []).join(", ")}
-              </p>
-            </div>
+            <Tier
+              key={r.term}
+              name={r.term}
+              meta={`counts as ${r.tier} only near`}
+              terms={r.requiresNear ?? []}
+            />
           ))}
-        </div>
-      </Card>
+        </RuleGroup>
 
-      <Card>
-        <CardHeader title="Never a domain signal" meta="Negative terms" />
-        <div className="px-4 py-3">
-          <TermList terms={NEGATIVE_DOMAIN_TERMS} />
-        </div>
-      </Card>
+        <RuleGroup
+          name="Never a domain signal"
+          rule="Negative terms"
+          count={`${NEGATIVE_DOMAIN_TERMS.length} terms`}
+          blurb="Matched and then discarded — these words appear in payments postings often enough to look like signal, and are not."
+        >
+          <Tier name="Excluded outright" meta="no score, any section" terms={NEGATIVE_DOMAIN_TERMS} />
+        </RuleGroup>
 
-      <Card>
-        <CardHeader
-          title="Sponsorship watchlist"
-          meta={`${WATCHLIST.length} companies · tier ${WATCHLIST_SKIP_SCORING_TIER}+ skips scoring`}
-        />
-        <div className="space-y-3 px-4 py-3">
-          <p className="text-xs text-muted">
-            A signal, never a filter — it cannot reject a job. A hit at tier{" "}
-            {WATCHLIST_SKIP_SCORING_TIER} or above marks the application as
-            gate-qualified and skips the scoring call.
-          </p>
+        <RuleGroup
+          name="Sponsorship watchlist"
+          rule={`Tier ${WATCHLIST_SKIP_SCORING_TIER}+ skips scoring`}
+          count={`${WATCHLIST.length} companies`}
+          blurb="A signal, never a filter — it cannot reject a job. A hit at the skip tier or above marks the application gate-qualified and saves the scoring call."
+        >
           {byTier.map(({ tier, entries }) =>
             entries.length === 0 ? null : (
-              <div key={tier}>
-                <p className="mb-1.5 text-xs font-semibold">
-                  Tier {tier}
-                  <span className="ml-2 font-normal text-faint">
-                    {entries.length} ·{" "}
-                    {tier >= WATCHLIST_SKIP_SCORING_TIER ? "unscored" : "still scored"}
-                  </span>
-                </p>
-                <TermList terms={entries.map((e) => e.name)} />
-              </div>
+              <Tier
+                key={tier}
+                name={`Tier ${tier}`}
+                meta={`${entries.length} · ${
+                  tier >= WATCHLIST_SKIP_SCORING_TIER ? "unscored" : "still scored"
+                }`}
+                terms={entries.map((e) => e.name)}
+              />
             ),
           )}
-        </div>
-      </Card>
+        </RuleGroup>
 
-      <Card>
-        <CardHeader
-          title="Payments affinity"
-          meta={`${PAYMENTS_AFFINITY.length} companies`}
-        />
-        <div className="space-y-3 px-4 py-3">
-          <p className="text-xs text-muted">
-            Softens a domain rejection where the posting simply does not spell
-            out what the company does. Scoped to the domain filter — it never
-            bypasses the gate.
-          </p>
+        <RuleGroup
+          name="Payments affinity"
+          rule="Scoped to the domain filter"
+          count={`${PAYMENTS_AFFINITY.length} companies`}
+          blurb="Softens a domain rejection where the posting simply does not spell out what the company does. It never bypasses the gate."
+        >
           {(["core", "significant"] as const).map((t) => (
-            <div key={t}>
-              <p className="mb-1.5 text-xs font-semibold">
-                {t === "core" ? "Payments is the business" : "Has a payments arm"}
-                <span className="ml-2 font-normal text-faint">
-                  domain fail → {t === "core" ? "admitted, marked" : "review"}
-                </span>
-              </p>
-              <TermList
-                terms={PAYMENTS_AFFINITY.filter((a) => a.tier === t).map((a) => a.name)}
-              />
-            </div>
+            <Tier
+              key={t}
+              name={t === "core" ? "Payments is the business" : "Has a payments arm"}
+              meta={`domain fail → ${t === "core" ? "admitted, marked" : "review"}`}
+              terms={PAYMENTS_AFFINITY.filter((a) => a.tier === t).map((a) => a.name)}
+            />
           ))}
-        </div>
-      </Card>
+        </RuleGroup>
+      </div>
     </div>
   );
 }

@@ -66,6 +66,109 @@ Scope decisions taken: scoring is automated but **document generation stays
 manual**; execution is **GitHub Actions cron**, not Vercel; the multi-source
 adapter framework and Application Analytics are deliberately out.
 
+### 2026-09-25 — ScoreG's report trimmed, and a cost the app was not counting
+
+- **The report is now two sections, Key Insights and Web Search Evidence**
+  (owner's decision). Application Strategy and Next Actions are gone from the
+  skill's output format and from `SCORE_CONTRACT`. Stored reports are trimmed on
+  render by `trimScoreReport`, which also drops the "SCORE: 70/100 — APPLY"
+  line and the prose breakdown the page already shows from the JSON. The model
+  wrote those in about half of 12 stored reports despite the contract.
+- **Double bullets fixed.** `.prose-doc ul` had a disc as well as the
+  renderer's own dot. Nested bullets now nest instead of flattening, so "Top 3
+  gaps" is a label over its gaps, not a fourth item.
+- **Gemini grounding input was not being counted.** Search results fed back to
+  the model are billed as input but reported apart
+  (`toolUsePromptTokenCount`). Now added. Owner's measurement: ₹223.65 of Gemini
+  credit for 14 recorded scores. Owner's bill on 2026-09-25 split it: usage
+  ₹189.44 + GST ₹34.12. Sep 3's ₹24.85 has no recorded run, most likely test
+  calls whose records the 2026-09-04 fixture cleanup deleted. The current
+  prompt's 3 runs cost ₹32.60, so **₹10.87 + GST = ₹12.83 a score**.
+- **JSV2S1149 / 1150: part of each score is now computed in code** (owner's
+  target: ₹10 a score including GST). About two thirds of a score's cost was
+  the model's hidden thinking, much of it spent working through rubric rules
+  the gate had already settled. `features/scoring/fixed.ts` now scores those
+  components in code: country pathway, portal, the years part of seniority,
+  experience fit, location, reachability, posting age, and the evidence tier
+  in the UK or at Tier A. The model scores only the judgement components, and
+  `finaliseScore` adds up the total, weights and overrides. Every rule was
+  checked against the 14 stored scores. Where the model had been inconsistent
+  (Reachability scored 5, 2 and 0 on the same input), code takes the value it
+  chose most often.
+  **Every score now searches the web, in every country** (owner, 2026-09-25).
+  This reverses JSV2S1146's UK exception from 2026-09-19, and the watchlist
+  exception briefly added the same day. Behavioral Signals exist only in search
+  results, and the skill scores them 0 when no search ran, so each exception
+  capped the visa pillar: the first re-score of GoCardless fell from 65 to 40 on
+  visa. The ledger now records whether a run actually searched. First live
+  re-score (GoCardless, before this reversal): **₹5.6 + GST = ₹6.6**, against
+  ₹12.9 for the same job before; output and thinking tokens 8,365 → 3,872.
+  With search restored: **GoCardless ₹9.61, Thought Machine ₹13.22** (was
+  ₹14.68). Searched non-UK scores are still over the target: their thinking is
+  spent weighing search results, which fixing components does not reduce.
+  `THINKING_LEVEL_SCORING` now exists to test a lower thinking level. Unset, it
+  keeps today's default (high).
+  One regression was found and fixed: the prompt told the model that a company
+  missing from the payments-core list gets no affinity bonus, which overrode
+  the skill's own test. Thought Machine lost its +5 for Vault Payments that way
+  (Domain Match 50 → 40). The list is curated, not complete, so the model now
+  applies the skill's test to unlisted companies. The skill went from 19.7
+  KB to 10.3 KB: history notes, the stale Source Trust table (it contradicted
+  the evidence tiers), the input format and the duplicated search list are
+  gone. **Not yet measured live**: the owner is regenerating a few scores.
+
+
+Owner-requested, on `redesign/city-view` (JSV2S1172).
+
+- **The resume column was empty on every row.** The list read
+  `simg->'current'->>'composite'`, a key SimG has never written. It now computes
+  the detail panel's own figure (weighted lenses from `LENS_WEIGHTS` plus
+  accepted points, capped at 100) in SQL. Checked against live data: 2 of 2
+  evaluated resumes match the detail screen (85, 99). The `minResume` filter
+  was also a no-op for the same reason, and now works too.
+- **Landing grid** leads with *ready to apply* (the card used to say "ready
+  today", but the number was the all-time total) and adds *+N from today's run*,
+  counted by `applications.created_at` in the pipeline page's `todayWindow()`.
+  That window covers both scheduled runs and manual uploads. Live: 22 today,
+  which matches the pipeline page's Qualified-today figure.
+- **Opening a city lands on Ready to Apply.** "All" now needs `view=all`.
+- **Every application is on exactly one card.** 34 of 160 were on none: they
+  were not remote, they named only a country ("Netherlands", "United Kingdom")
+  or a town outside the plan. `cityKeySql` is now the single definition, used
+  by both the grid and the city table, replacing `cityForJob` and a SQL OR that
+  had drifted apart. Order: remote → the city the posting names → **the city
+  the fetch was looking for** → `other`. There are two new cards, **Remote**
+  (always shown) and **Other locations** (shown only when non-empty). Live:
+  160 of 160 placed, and every card's count matches its table.
+- **Remote and Other locations have photographs**, built by
+  `npm run cities:build` like the cities. Remote: "Laptop on a neat desk"
+  (CC0). Other: "Northwestern Europe at Night" (NASA ISS, public domain). Both
+  come from Wikimedia Commons.
+- **The list gains an *Uploaded* column, and *Posted* is fixed.** Posted had
+  been showing the ingest date, so a month-old advert fetched this morning
+  read "today". It now shows the posting's own date.
+- **Discard moved to the Overview, and it bins now.** It had been a demotion
+  to `reject`, which deletes the application row, so it refused every scored
+  or generated application with "Use the Bin" — and there was no way to bin
+  one. `binApplication` bins the job and keeps the application, documents
+  and history. Every applications query and the nightly scorer now exclude
+  binned jobs, and the Bin view lists discarded applications with Restore.
+  Checked on live data: a scored application was discarded, left all lists,
+  appeared in the Bin, and came back with its resume score intact.
+- **The Bin clears after 30 days, in one click**: *Clear N older than 30
+  days*, with a confirm step. Permanent delete no longer refuses a promoted
+  job if that job was binned, since discarding it was the decision. To keep
+  spend history through that, **`ai_jobs.application_id` is now nullable and
+  `on delete set null`** (applied to the live DB, 2026-09-24). Before this it
+  cascaded, and a purge would have deleted cost rows and understated the
+  month's budget.
+- **Pipeline runs highlight qualified** in the Qualified pile's colour, in
+  place in the run's summary line. The run's *Auto/Force qualified* links
+  had pointed at `/applications?fetch=` with no city since the city redesign.
+  That URL lands on the grid and drops the filter. They now open the run's
+  city on `view=all`. Upload runs have no single city, so they show an unlinked
+  count.
+
 ### 2026-09-19, later — six decisions closed, and ScoreG stopped paying twice
 
 The owner settled 1161, 1053, 1050, 1051, 1164 and 1060 in one pass. Only

@@ -90,7 +90,7 @@ export const FETCH_DAILY_BUDGET_USD = 1;
  */
 export function estimatedFetchCostUsd(
   locations = FETCH_LOCATIONS.length,
-  limit = FETCH_DEFAULTS.limitPerLocation,
+  limit: number = FETCH_DEFAULTS.limitPerLocation,
 ): number {
   return locations * (limit * APIFY_PRICING.perResultUsd + APIFY_PRICING.perActorStartUsd);
 }
@@ -104,7 +104,7 @@ export function estimatedFetchCostUsd(
  */
 export function fetchWithinBudget(
   locations = FETCH_LOCATIONS.length,
-  limit = FETCH_DEFAULTS.limitPerLocation,
+  limit: number = FETCH_DEFAULTS.limitPerLocation,
 ): boolean {
   return estimatedFetchCostUsd(locations, limit) <= FETCH_DAILY_BUDGET_USD;
 }

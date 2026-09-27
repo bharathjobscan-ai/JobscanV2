@@ -1,7 +1,13 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+
+const THINKING_LEVELS = {
+  minimal: ThinkingLevel.MINIMAL,
+  low: ThinkingLevel.LOW,
+  medium: ThinkingLevel.MEDIUM,
+  high: ThinkingLevel.HIGH,
+} as const;
 
 import { getEnv } from "@/lib/config/env";
-import { shouldGroundScoring } from "@/features/ai/grounding";
 import { parseTaskResponse, type AiProvider, type TaskContext, type TaskResult } from "./types";
 
 /**
@@ -43,10 +49,11 @@ export class GeminiProvider implements AiProvider {
      * rediscover it from pages that do not contain it. Non-UK countries keep
      * grounding until their registers are local too.
      */
+    // Decided by `fixedScoring` and recorded on the ledger row; true for every
+    // score since 2026-09-25. A caller that did not decide gets search.
+    const grounded = context.grounded ?? true;
     const tools =
-      context.taskType === "score" && shouldGroundScoring(context.country)
-        ? [{ googleSearch: {} }]
-        : undefined;
+      context.taskType === "score" && grounded ? [{ googleSearch: {} }] : undefined;
 
     // Gemini has no equivalent cache breakpoint here, so the split halves are
     // simply concatenated.
@@ -56,7 +63,12 @@ export class GeminiProvider implements AiProvider {
     const response = await ai.models.generateContent({
       model,
       contents,
-      config: tools ? { tools } : {},
+      config: {
+        ...(tools ? { tools } : {}),
+        ...(context.taskType === "score" && env.THINKING_LEVEL_SCORING
+          ? { thinkingConfig: { thinkingLevel: THINKING_LEVELS[env.THINKING_LEVEL_SCORING] } }
+          : {}),
+      },
     });
 
     const text = response.text ?? "";
@@ -73,7 +85,11 @@ export class GeminiProvider implements AiProvider {
       model,
       provider: this.name,
       usage: {
-        inputTokens: u?.promptTokenCount ?? 0,
+        // Grounding feeds the search results back to the model, and Google bills
+        // them as input, but reports them apart from the prompt. Leaving them
+        // out made every grounded score look cheaper than the invoice
+        // (2026-09-25: 14 recorded scores at ~$0.12 against ~₹224 billed).
+        inputTokens: (u?.promptTokenCount ?? 0) + (u?.toolUsePromptTokenCount ?? 0),
         outputTokens: u?.candidatesTokenCount ?? 0,
         // Gemini reports reasoning tokens separately; they are billed as output.
         thinkingTokens: u?.thoughtsTokenCount ?? 0,

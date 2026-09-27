@@ -316,6 +316,23 @@ export const PREQUAL_FILTER_LABELS: Record<PrequalFilter, string> = {
 };
 
 /**
+ * The queue's posted-age select (JSV2S1172).
+ *
+ * Here rather than in `features/prequalification/queries.ts` because the filter
+ * row is a client component: importing the vocabulary from the query module
+ * would drag the database client into the browser bundle.
+ */
+export const POSTED_WINDOWS = ["any", "today", "week", "month"] as const;
+export type PostedWindow = (typeof POSTED_WINDOWS)[number];
+
+export const POSTED_WINDOW_LABELS: Record<PostedWindow, string> = {
+  any: "Posted any time",
+  today: "Posted today",
+  week: "Posted this week",
+  month: "Posted this month",
+};
+
+/**
  * Which filters are allowed to reject on their own (ADR-0006, revised
  * 2026-09-19).
  *
@@ -486,3 +503,30 @@ export function nextAction(input: {
       return "Closed — review learnings";
   }
 }
+
+/**
+ * How old a binned job must be before it can be destroyed (2026-09-23).
+ *
+ * Lives here rather than beside the mutation because it is a policy, not a
+ * query — and because `mutations.ts` pulls in the database client, which put it
+ * out of reach of a unit test.
+ *
+ * Measured from when the job was BINNED, not when it was seen. The age that
+ * matters is how long the decision has stood: a posting scraped four months ago
+ * and dismissed this morning is a decision one morning old, and the Bin's whole
+ * value is that such a decision stays recoverable.
+ */
+export const DELETABLE_AFTER_DAYS = 30;
+
+/**
+ * How long a succeeded AI task blocks an identical one (JSV2S1174).
+ *
+ * Here rather than beside `enqueueTask` for the same reason as the Bin's
+ * retention: `features/ai/tasks.ts` pulls in the database client, which put it
+ * out of reach of a unit test.
+ *
+ * Ten minutes, chosen against a measured failure. On 2026-09-23 Generate
+ * CV + CL ran twice three minutes and sixteen seconds apart and cost $0.2577
+ * the second time; a shorter window would not have caught it.
+ */
+export const DUPLICATE_TASK_WINDOW_MS = 10 * 60 * 1000;
